@@ -1,194 +1,145 @@
-# GoDaddy 风格的自带权威 DNS 注册架构
+# source 自有 DNS 与域名注册设计
 
-## DNS tools 分类
+## 设计概览
 
-DNS tools 按职责可以分为三类：
-
-1. **基础工具**：完成常规 DNS 查询与信息获取，例如查询 A、AAAA、NS、MX、TXT、SOA
-   等记录。
-2. **域名注册及更新工具**：负责改变域名及其 DNS 状态，包括当前实现中的域名可用性查询、
-   域名注册、订单状态查询、权威 zone 创建、记录更新、nameserver 设置以及父区委派。
-3. **诊断工具**：用于检查 DNS 配置和解析链路，例如比较不同服务器的响应、检查权威性、
-   委派、glue、主从同步和解析结果是否一致，并返回可定位问题的结构化信息。
-
-本设计文档主要实现域名更新工具。
-
-## 简化架构图
-
-架构图只表达部署、服务和接口，不展开每一次调用的时序。完整顺序见后面的文字流程。
+B02a 展示 Agent 如何在 SeedEmu 网络内配置自有权威 DNS，并通过 Loom 和 Namingo 注册 `example.com`。总体架构由 Agent、Registrar、Registry，以及父区和子区 DNS 组成。
 
 ```mermaid
-%%{init: {"theme": "base", "flowchart": {"rankSpacing": 80, "nodeSpacing": 35}, "themeVariables": {"background": "#000000", "primaryColor": "#111827", "primaryTextColor": "#ffffff", "primaryBorderColor": "#9ca3af", "lineColor": "#d1d5db", "clusterBkg": "#0b0f14", "clusterBorder": "#6b7280", "edgeLabelBackground": "#000000"}}}%%
-flowchart TD
+%%{init: {"theme": "base", "flowchart": {"useMaxWidth": true, "rankSpacing": 38, "nodeSpacing": 12}, "themeVariables": {"fontSize": "20px", "background": "#000000", "primaryColor": "#111827", "primaryTextColor": "#ffffff", "primaryBorderColor": "#9ca3af", "lineColor": "#d1d5db", "clusterBkg": "#0b0f14", "clusterBorder": "#6b7280", "edgeLabelBackground": "#000000"}}}%%
+flowchart TB
     agent["Agent"]
+    source["selected source<br/>私有凭据与本地 session"]
 
-    subgraph tool_service["tool-service"]
+    subgraph registrar_side["Registrar 侧"]
         direction TB
-        tools["Agent 工具服务"]
-        runtime["Docker runtime backend"]
+        loom["Loom HTTPS 前端<br/>订单、支付与 EPP client"]
+        loom_db[("Loom MariaDB")]
+        namingo["Namingo Registrar<br/>只读 Loom 数据的 WHOIS / RDAP"]
     end
 
-    subgraph emulator["仿真器生成的 Docker 网络"]
+    subgraph registry_side["Registry 侧"]
         direction TB
-        source["普通源节点<br/>HTTP 与 DNS 命令执行环境"]
-        other_nodes["其他仿真节点<br/>未获得父区更新授权"]
-
-        subgraph registrar["注册节点"]
-            direction TB
-            registrar_frontend["Registrar 前端服务"]
-            registrar_auth["身份认证与授权服务"]
-            registrar_backend["Registrar 后端服务"]
-        end
-
-        subgraph owner_dns["自带权威 DNS（example.com）"]
-            direction TB
-            dns_primary["权威 DNS 主节点<br/>BIND9 权威服务"]
-            dns_secondary["权威 DNS 从节点<br/>BIND9 权威服务"]
-        end
-
-        subgraph parent_dns["父区权威 DNS（.com）"]
-            direction TB
-            parent_primary["父区主节点<br/>BIND9 权威服务"]
-            parent_secondary["父区从节点<br/>BIND9 权威服务"]
-        end
+        registry["Namingo Registry<br/>EPP 与 Registry WHOIS / RDAP"]
+        registry_db[("Registry MariaDB")]
+        writer["Registry Zone Writer"]
     end
 
-    agent -->|"认证会话并调用工具"| tools
-    tools -->|"提交运行时操作"| runtime
-    runtime -->|"校验目标后进入节点执行"| source
-    source -->|"携带 Registrar 身份凭据"| registrar_frontend
-    source -->|"动态创建 zone（需权限验证）"| dns_primary
-    source -->|"普通 DNS 查询"| dns_primary
-    source -->|"普通 DNS 查询"| dns_secondary
-    registrar_frontend -->|"提交身份与请求"| registrar_auth
-    registrar_auth -->|"授权 registrant 上下文"| registrar_backend
-    registrar_backend -->|"SOA、NS 与权威响应预检"| dns_primary
-    registrar_backend -->|"SOA、NS 与权威响应预检"| dns_secondary
-    registrar_backend -->|"Registrar 专用 TSIG：接受"| parent_primary
-    other_nodes -.->|"未授权更新：拒绝"| parent_primary
-    dns_primary -->|"传送专用 TSIG：同步子区"| dns_secondary
-    parent_primary -->|"传送专用 TSIG：同步父区"| parent_secondary
+    subgraph parent_dns[".com 父区权威 DNS"]
+        direction TB
+        hidden["隐藏 Primary"]
+        public_dns["公共 Secondary B / C"]
+    end
 
+    subgraph child_dns["source 自有 example.com DNS"]
+        direction TB
+        child_primary["ns1 Primary"]
+        child_secondary["ns2 Secondary"]
+    end
+
+    %% Invisible layout spine: keep the architecture regions stacked vertically.
+    source ~~~ loom
+    namingo ~~~ registry
+    writer ~~~ hidden
+    public_dns ~~~ child_primary
+
+    agent -->|"发起操作"| source
+    source -->|"HTTPS 表单与 session"| loom
+    loom -->|"读写业务数据"| loom_db
+    loom -->|"mTLS EPP"| registry
+    namingo -->|"loom adapter 只读查询"| loom_db
+
+    registry <-->|"注册与 RDDS 数据"| registry_db
+    writer -->|"读取有效域名"| registry_db
+    writer -->|"发布 .com zone"| hidden
+    hidden -->|"NOTIFY + AXFR/IXFR"| public_dns
+    source -->|"SSH 配置、更新、验证"| child_primary
+    source -->|"SSH 配置、验证"| child_secondary
+    child_primary -->|"AXFR/IXFR"| child_secondary
     classDef dark fill:#111827,stroke:#9ca3af,color:#ffffff
-    class agent,tools,runtime,source,other_nodes,registrar_frontend,registrar_auth,registrar_backend,dns_primary,dns_secondary,parent_primary,parent_secondary dark
-    classDef denied fill:#2a0a0a,stroke:#ef4444,color:#ffffff
-    class other_nodes denied
-    style tool_service fill:#151008,stroke:#f59e0b,color:#ffffff
-    style emulator fill:#111827,stroke:#a78bfa,color:#ffffff
-    style registrar fill:#0b1220,stroke:#60a5fa,color:#ffffff
-    style owner_dns fill:#071a12,stroke:#4ade80,color:#ffffff
+    class agent,source,loom,loom_db,namingo,registry,registry_db,writer,hidden,public_dns,child_primary,child_secondary dark
+    style registrar_side fill:#0b1220,stroke:#60a5fa,color:#ffffff
+    style registry_side fill:#17110a,stroke:#f59e0b,color:#ffffff
     style parent_dns fill:#1a0d14,stroke:#f472b6,color:#ffffff
+    style child_dns fill:#071a12,stroke:#4ade80,color:#ffffff
 ```
 
-## 节点、服务与接口
+Loom 是购买流程的业务入口。它保存客户、订单和账单，在付款成功后通过 EPP 向 Namingo Registry 创建 contact、host 和 domain 对象。Namingo Registrar 使用 `loom` backend 读取同一份 Loom 数据，为注册结果提供 WHOIS 和 RDAP 查询。Registry 的 Zone Writer 再把有效委派发布到 `.com` 权威 DNS。
 
-### tool-service
+工具服务通过 Docker metadata 发现 source 所持有的权威 DNS；真正的 Registrar 请求、RDDS 查询和 DNS 配置则由 RuntimeBackend 在所选 source 内执行。Namingo Registrar 提供 Loom 业务视图，Namingo Registry 另行提供最终登记视图。
 
-tool-service 位于仿真 Docker 外部。它不直接访问仿真地址，而是通过 Docker runtime
-backend 在 Agent 选择的 `source` 容器内执行命令。
+父区和子区分别管理不同的数据：`.com` 保存 `example.com` 的 NS 与 glue；source 自有 DNS 保存 `www.example.com` 等域内记录。两者通过正常 DNS 委派连接。
 
-| 工具                  | 功能                                  | 输入         | 输出           |
-| --------------------- | ------------------------------------- | ------------ | -------------- |
-| `registrar_find`    | 定位允许 Agent 使用的注册节点前端     | 查找条件或无 | 注册服务位置   |
-| `registrar_request` | 读取 Registrar 前端并发送受限同源请求 | 注册业务请求 | 请求处理结果   |
-| `dns_configure`     | 动态创建 zone，并维护 zone 内的记录   | DNS 配置需求 | 配置与验证结果 |
+## Agent 工具调用流程
 
-### 注册节点
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant T as tool-service
+    participant S as selected source
+    participant L as Loom
+    participant R as Namingo Registry
+    participant P as .com DNS
+    participant D as example.com DNS
 
-注册节点可新加或使用仿真器已有节点并安装服务。注册节点安装两个逻辑层，可以运行在同一容器中：
-
-1. Registrar 前端：面向 Agent 的 REST JSON API，负责认证、输入模型、错误结构和
-   operation 链接。
-2. Registrar 后端：负责域名占有、所有权、quote、幂等、SQLite 事务、异步任务、glue
-   和父区委派。
-
-前端不提供单独的 capabilities API。Agent 先读取 Registrar 的公开网页和同源 JavaScript，依据
-页面表单、请求代码及响应处理推断可执行的业务步骤，再通过 `registrar_request` 发起请求。
-tool-service 仍须把请求限制在 `registrar_find` 确认的 Registrar origin 内，并限制危险的
-method、重定向和跨源访问；“Agent 能推理接口”不等于“Registrar 接受任意请求”。
-
-### 自带权威 DNS 节点
-
-权威 DNS 节点可新加或使用仿真器已有节点并安装服务。两个节点都安装 SeedEmu `DomainNameService` 生成的 BIND9 权威服务：主节点为`ns1.example.com`（例如 `10.161.0.53`），从节点为 `ns2.example.com`（例如`10.162.0.53`）。
-
-现有 `DomainNameService.py` 主要面向编译期配置，只能预先生成 zone 和主从关系；容器
-启动后不能创建未知 zone，也缺少运行时 TSIG 权限管理和主从收敛验证。
-
-本设计计划在该服务中增加默认关闭的 runtime-zone 模式，不引入独立的 DNS 控制服务。
-`dns_configure` 先验证当前 `source` 对 DNS 节点和 zone 的权限；zone 不存在时执行
-provisioning，动态建立 Primary/Secondary；zone 加载后再通过 RFC 2136 + update TSIG
-维护记录，并使用独立的 transfer TSIG 完成主从同步。
-
-### 父区权威 DNS 节点
-
-父区继续使用B02已有的 `.com` 主从节点。
-
-## `example.com` 文字流程（参考流程，不代表最终实现）
-
-本设计支持两种现实中常见的方式：
-
-1. **注册与委派一并处理**：提前配置自带权威 DNS，在 registration quote 中提交
-   nameserver，注册成功后由 Registrar 同时完成父区委派。本节以这种方式为例。
-2. **注册后更新 Nameserver**：先使用默认 nameserver 完成注册，之后配置自带权威 DNS，
-   再单独提交 nameserver update。该更新使用独立的异步 operation，但不重新购买域名。
-
-下面的参考流程为：
-`Availability Check → Authoritative DNS Configuration → Registration Quote with Nameservers → Registration and Delegation`。
-
-### 一、Registrar Service Discovery
-
-1. Agent 调用 `registrar_find`。
-2. tool-service 从授权服务目录返回注册节点及其公开网页位置，不直接列出接口名称和功能，
-   也不返回任何 secret。
-3. Agent 显式选择一个 Registrar，读取其 HTML 和同源 JavaScript，自行推断 availability、
-   quote、registration、operation 查询和 nameserver 更新等页面行为，并引用环境为当前
-   principal 配置的 Registrar `credential_ref`。
-
-### 二、Availability Check
-
-4. Agent 通过 `registrar_request` 调用 availability，查询 `example.com`。
-5. 若不可用，流程结束，不创建订单和 DNS zone。
-
-### 三、Authoritative DNS Configuration
-
-6. Agent 通过当前控制的 `source` 调用 `dns_configure`。tool-service 验证该 `source`
-   是否属于当前仿真环境，以及它是否获准管理两个自带 DNS 节点和 `example.com`；发现
-   zone 尚不存在后，在主节点创建并加载 primary zone，在从节点创建并加载 secondary
-   zone，同时安装相互分离的 update/transfer TSIG。完成建区后，再通过 RFC 2136 向
-   主节点写入：
-
-```dns
-example.com.     SOA  ns1.example.com. hostmaster.example.com. (...)
-example.com.     NS   ns1.example.com.
-example.com.     NS   ns2.example.com.
-ns1.example.com. A    10.161.0.53
-ns2.example.com. A    10.162.0.53
-www.example.com. A    10.160.0.80
+    A->>T: domain.registrar_find
+    T-->>A: Loom origin
+    A->>T: dns.authoritative_find(source)
+    T-->>A: service ID、Primary、Secondary
+    A->>T: dns.configure(已发现 service, zone, A record)
+    T->>S: 执行 DNS 配置
+    S->>D: 更新 Primary 并同步 Secondary
+    D-->>A: 权威响应与 SOA 收敛
+    A->>T: domain.registrar_request(GET /)
+    T->>S: 建立 source-local session
+    S->>L: HTTPS + source token
+    L-->>A: HTML、session_id、CSRF 表单
+    A->>T: domain.registrar_request(注册表单)
+    T->>L: 域名、联系人、NS 与 glue
+    L-->>A: invoice 跳转
+    A->>T: domain.registrar_request(支付表单)
+    T->>L: 余额付款
+    L->>R: EPP contact/host/domain create
+    R-->>L: 注册成功
+    R->>P: Zone Writer 发布 NS/glue
+    A->>T: dns.check_delegation
+    T->>P: 查询父区 referral/glue
+    T->>D: 查询子区 NS/SOA
+    A->>T: dns.lookup（两台递归解析器）
+    T-->>A: www.example.com A
 ```
 
-7. 主节点使用传送专用 TSIG 通知从节点完成 AXFR/IXFR。
-8. `dns_configure` 按两个服务器的明确 IP 验证 SOA、NS、serial 和 `AA=1`；此时父区
-   尚未委派，因此不能依赖递归解析找到它们。
+实际调用步骤如下：
 
-### 四、Registration and Delegation
+1. Agent 调用 `domain.registrar_find`，从显式发布的 metadata 中发现 Loom origin。
+2. Agent 使用所选 source 调用 `dns.authoritative_find`，发现分配给它的 service ID 以及 Primary/Secondary 地址。
+3. Agent 将发现的 service ID 传给 `dns.configure`，创建 `example.com` 子区并写入 `www` 等记录；工具同时验证 Primary、Secondary 和 SOA。
+4. Agent 调用 `domain.registrar_request` 请求 Loom 首页。工具从所选 source 建立认证 session，并返回页面、`session_id` 和 HTTP 证据。
+5. Agent继续用同一 `session_id` 读取注册表单，保留 CSRF 字段，再提交域名、联系人、`ns1/ns2` 和 glue 地址。
+6. Loom 创建订单和账单；Agent读取支付页面并提交余额付款。
+7. Loom 的 EPP client 向 Namingo Registry 创建注册对象。Registry 成功提交后，Zone Writer 发布 `.com` 委派。
+8. Agent 调用 `dns.check_delegation`，确认父区 NS/glue 与两台子区权威服务器一致。
+9. Agent 调用 `dns.lookup`，分别通过 B02a 的两台递归解析器验证最终 A 记录。
 
-9. Agent 请求 registration quote，并在注册配置中提交自带 nameserver：
+Registrar session 和私有凭据保留在所选 source 内；Agent 通过工具看到的是可发现的 Loom 页面和结构化 DNS 结果。父区变更经 Registrar/Registry 完成，而购买后的普通子区记录继续使用 `dns.configure` 更新。
 
-```text
-ns1.example.com
-ns2.example.com
-```
+## Namingo Registrar 与 Loom
 
-10. Registrar 再次检查域名可用性，并直接预检两个权威 DNS；检查通过后返回包含最终
-    nameserver 配置的短期 `quote_token`。
-11. Agent 使用 `quote_token` 和 `Idempotency-Key` 执行 registration。Registrar 在事务
-    内最终检查并占有 `example.com`，随后创建注册与委派的异步 operation。
-12. Registrar 使用父区专用 TSIG 向 COM-A 写入 `example.com` 的 NS；对于域内
-    nameserver，同时写入必要 glue。COM-A 再使用传送专用 TSIG 同步到 COM-B。
-13. Registrar 验证父区 referral/glue 和两个子区服务器的权威响应。全部一致后，将域名
-    和 operation 标记为 `active`；如果委派失败，域名保持已注册并进入
-    `pending_delegation` 或 `failed`，不会回滚域名所有权。
-14. Agent 轮询 operation/domain 状态；完成后可继续用 `dns_configure` 维护业务记录。
+B02a 将 `NamingoRegistrarService` 配置为 `loom` backend。Namingo Registrar 通过专用只读账号连接 Loom MariaDB，因此 Registrar WHOIS/RDAP 与 Loom 订单展示的是同一份业务数据。Namingo Registry 另行提供直接读取 Registry MariaDB 的 WHOIS/RDAP 最终登记视图。Agent 使用 `domain.rdds_lookup` 的 `protocol` 和 `authority` 参数选择协议与视图。B02a 不启用 Namingo automation，订单驱动的域名生命周期由 Loom 负责。
 
-如果采用第二种方式，则 registration quote 不携带自带 nameserver；域名注册成功后，
-再执行第三节的 DNS 配置，并通过独立的 nameserver update 请求完成第 12 至 14 步。
+## DNS 发布与解析
+
+Namingo Registry 将注册数据交给 Zone Writer，Zone Writer 发布到 `.com` 隐藏 Primary，再通过 NOTIFY 和 TSIG 保护的 AXFR/IXFR 同步两台公共 Secondary。递归解析器从公共 Secondary 获得 `example.com` 的 referral 和 glue，随后查询 source 自有权威 DNS。
+
+动态委派可能受到递归缓存影响，因此完整测试分别等待两台递归解析器收敛，而不是只验证其中一台，也不会通过清空缓存伪造成功。
+
+## 实现与验证
+
+主要实现位于：
+
+- `seed-emulator/examples/internet/B02a_domain_registration/domain_registration.py`
+- `seed-emulator/seedemu/services/LoomRegistrarService.py`
+- `seed-emulator/seedemu/services/NamingoRegistrarService.py`
+- `seed-emulator/seedemu/services/NamingoRegistryService.py`
+- `seedemu-agent-tools/tool-service/seedemu_tool_service/tools/dns/`
+
+Docker 购买测试覆盖 Loom session、下单付款、EPP 注册、WHOIS/RDAP、父区委派、子区权威响应，以及两台递归解析器的最终解析。

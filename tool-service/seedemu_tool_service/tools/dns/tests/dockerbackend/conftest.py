@@ -11,6 +11,17 @@ def pytest_configure(config: pytest.Config) -> None:
 
     if config.option.verbose == 0:
         config.option.verbose = 1
+    config.addinivalue_line(
+        "markers",
+        "docker_backend: requires a running Docker-backed SEED-Emulator deployment (B02a)",
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Mark every test collected in this directory as a Docker-backend test."""
+
+    for item in items:
+        item.add_marker(pytest.mark.docker_backend)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
