@@ -86,10 +86,11 @@ The pinned Namingo Registrar adapter and Loom schema use different names for the
 The Agent purchases through Loom rather than Namingo Registrar:
 
 1. `domain.registrar_find` discovers the Loom HTTPS origin.
-2. `domain.registrar_request` accesses Loom from the selected source, maintains the session, and submits registration and payment forms.
-3. Loom performs order handling and EPP provisioning internally.
-4. Namingo WHOIS/RDAP exposes the resulting Registrar data.
-5. `dns.check_delegation` and `dns.lookup` verify delegation and final resolution.
+2. `dns.authoritative_find` discovers the authoritative DNS service assigned to the selected source, and `dns.configure` prepares the child zone using that service ID.
+3. `domain.registrar_request` accesses Loom from the selected source, maintains the session, and submits registration and payment forms.
+4. Loom performs order handling and EPP provisioning internally.
+5. `domain.rdds_lookup` selects WHOIS or RDAP; `authority=registrar` checks the Loom-backed Registrar view and `authority=registry` independently checks the Registry ledger.
+6. `dns.check_delegation` and `dns.lookup` verify delegation and final resolution.
 
 `domain.registrar_request` works with the normal HTML/HTTP frontend instead of defining a private Loom purchase API. Its source-local session supports page discovery, CSRF fields, redirects, and multi-step forms.
 

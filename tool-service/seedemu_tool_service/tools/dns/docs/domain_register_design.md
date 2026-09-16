@@ -50,7 +50,7 @@ flowchart TD
     writer -->|"Publish .com zone"| hidden
     hidden -->|"NOTIFY + AXFR/IXFR"| public_b
     hidden -->|"NOTIFY + AXFR/IXFR"| public_c
-    source -->|"dns.configure"| child_primary
+    source -->|"dns.authoritative_find + dns.configure"| child_primary
     child_primary -->|"AXFR/IXFR"| child_secondary
     classDef dark fill:#111827,stroke:#9ca3af,color:#ffffff
     class agent,tools,runtime,source,loom,loom_db,loom_epp,namingo,rdds,registry,registry_db,writer,hidden,public_b,public_c,child_primary,child_secondary dark
@@ -79,7 +79,9 @@ sequenceDiagram
 
     A->>T: domain.registrar_find
     T-->>A: Loom origin
-    A->>T: dns.configure(zone, A record)
+    A->>T: dns.authoritative_find(source)
+    T-->>A: service ID, Primary, Secondary
+    A->>T: dns.configure(discovered service, zone, A record)
     T->>S: Execute DNS configuration
     S->>D: Update Primary and synchronize Secondary
     D-->>A: Authoritative answers and matching SOA
@@ -105,19 +107,20 @@ sequenceDiagram
 The concrete call sequence is:
 
 1. The Agent calls `domain.registrar_find` to discover the Loom origin published in service metadata.
-2. It calls `dns.configure` to provision the `example.com` child zone and its records. The tool verifies both authorities and their SOA state.
-3. It calls `domain.registrar_request` for the Loom home page. The selected source establishes an authenticated session, and the tool returns the page, `session_id`, and HTTP evidence.
-4. Using the same `session_id`, the Agent reads the registration form, preserves its CSRF fields, and submits the domain, contacts, `ns1/ns2`, and glue addresses.
-5. Loom creates an order and invoice. The Agent reads the payment page and submits a balance payment.
-6. Loom's EPP client creates the registration objects in Namingo Registry. Zone Writer then publishes the `.com` delegation.
-7. The Agent calls `dns.check_delegation` to compare parent NS/glue with both child authorities.
-8. It calls `dns.lookup` through both B02a recursive resolvers to verify the final A record.
+2. With the selected source, it calls `dns.authoritative_find` to discover the assigned service ID and paired Primary/Secondary addresses.
+3. It passes that discovered service ID to `dns.configure` to provision the `example.com` child zone and its records. The tool verifies both authorities and their SOA state.
+4. It calls `domain.registrar_request` for the Loom home page. The selected source establishes an authenticated session, and the tool returns the page, `session_id`, and HTTP evidence.
+5. Using the same `session_id`, the Agent reads the registration form, preserves its CSRF fields, and submits the domain, contacts, `ns1/ns2`, and glue addresses.
+6. Loom creates an order and invoice. The Agent reads the payment page and submits a balance payment.
+7. Loom's EPP client creates the registration objects in Namingo Registry. Zone Writer then publishes the `.com` delegation.
+8. The Agent calls `dns.check_delegation` to compare parent NS/glue with both child authorities.
+9. It calls `dns.lookup` through both B02a recursive resolvers to verify the final A record.
 
 Registrar sessions and private credentials remain in the selected source. The Agent works with discoverable Loom pages and structured DNS results. Parent-zone changes go through the Registrar/Registry path, while ordinary child-zone records continue to use `dns.configure` after purchase.
 
 ## Namingo Registrar and Loom
 
-B02a configures `NamingoRegistrarService` with the `loom` backend. Namingo Registrar connects to Loom MariaDB through a dedicated read-only account, so WHOIS/RDAP and the Loom order view use the same Registrar data. Namingo automation is disabled in B02a because Loom owns the order-driven lifecycle.
+B02a configures `NamingoRegistrarService` with the `loom` backend. Its WHOIS/RDAP reads Loom MariaDB as the Registrar business view. Namingo Registry separately exposes WHOIS/RDAP backed by Registry MariaDB as the final ledger view. The Agent selects the protocol and authority through `domain.rdds_lookup`. Namingo automation is disabled in B02a because Loom owns the order-driven lifecycle.
 
 ## DNS publication and resolution
 

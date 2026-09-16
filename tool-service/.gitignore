@@ -1,2 +1,4 @@
 for_agent/
 run_b02a_domain_purchase_test.sh
+check_openai_api.py
+qwen_domain_agent.py

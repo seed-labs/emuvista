@@ -47,10 +47,21 @@ def child_response(*, matching: bool = True, authoritative: bool = True) -> str:
     )
 
 
+def address_response(name: str, address: str) -> str:
+    """Build an authoritative child address response."""
+
+    return (
+        ";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 3\n"
+        ";; flags: qr aa; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0\n\n"
+        ";; ANSWER SECTION:\n"
+        f"{name} 86400 IN A {address}\n"
+    )
+
+
 class FakeRuntimeBackend:
     """Return one configured result per queried server."""
 
-    def __init__(self, results: dict[str, RuntimeCommandResult]) -> None:
+    def __init__(self, results: dict[object, RuntimeCommandResult]) -> None:
         self.results = results
         self.commands: list[list[str]] = []
 
@@ -61,7 +72,7 @@ class FakeRuntimeBackend:
         captured = list(command)
         self.commands.append(captured)
         server = next(part[1:] for part in captured if part.startswith("@"))
-        return self.results[server]
+        return self.results.get((server, captured[-2], captured[-1]), self.results[server])
 
 
 def invoke_delegation(
@@ -94,6 +105,26 @@ def test_delegation_is_consistent_when_parent_child_and_glue_match() -> None:
             "192.0.2.54": RuntimeCommandResult(
                 exit_code=0, stdout=child_response(), stderr=""
             ),
+            ("192.0.2.53", "ns1.example.net.", "A"): RuntimeCommandResult(
+                exit_code=0,
+                stdout=address_response("ns1.example.net.", "192.0.2.53"),
+                stderr="",
+            ),
+            ("192.0.2.53", "ns2.example.net.", "A"): RuntimeCommandResult(
+                exit_code=0,
+                stdout=address_response("ns2.example.net.", "192.0.2.54"),
+                stderr="",
+            ),
+            ("192.0.2.54", "ns1.example.net.", "A"): RuntimeCommandResult(
+                exit_code=0,
+                stdout=address_response("ns1.example.net.", "192.0.2.53"),
+                stderr="",
+            ),
+            ("192.0.2.54", "ns2.example.net.", "A"): RuntimeCommandResult(
+                exit_code=0,
+                stdout=address_response("ns2.example.net.", "192.0.2.54"),
+                stderr="",
+            ),
         }
     )
 
@@ -114,7 +145,11 @@ def test_delegation_is_consistent_when_parent_child_and_glue_match() -> None:
     assert len(result.glue_records) == 2
     assert all(child.authoritative for child in result.child_results)
     assert all(child.ns_matches_parent for child in result.child_results)
-    assert all(command[-2:] == ["example.net.", "NS"] for command in backend.commands)
+    assert all(
+        address.matches_parent
+        for child in result.child_results
+        for address in child.address_results
+    )
 
 
 def test_delegation_reports_missing_glue_and_child_mismatch() -> None:
@@ -128,6 +163,11 @@ def test_delegation_reports_missing_glue_and_child_mismatch() -> None:
             "192.0.2.53": RuntimeCommandResult(
                 exit_code=0,
                 stdout=child_response(matching=False, authoritative=False),
+                stderr="",
+            ),
+            ("192.0.2.53", "ns1.example.net.", "A"): RuntimeCommandResult(
+                exit_code=0,
+                stdout=address_response("ns1.example.net.", "192.0.2.99"),
                 stderr="",
             ),
         }

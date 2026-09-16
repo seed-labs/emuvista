@@ -8,12 +8,19 @@ from pydantic import ValidationError
 from seedemu_tool_service.models.runtime import RuntimeCommandResult, RuntimeStatus
 from seedemu_tool_service.registry import ToolRegistry
 from seedemu_tool_service.tools.dns import register_dns_tools
-from seedemu_tool_service.tools.dns.models import RegistrarFindArguments, RegistrarRequestArguments
+from seedemu_tool_service.tools.dns.models import (
+    RddsLookupArguments,
+    RegistrarFindArguments,
+    RegistrarRequestArguments,
+)
 from seedemu_tool_service.tools.dns.tools import DNSTools, RegistrarMetadataError
 
 REGISTRAR_LABEL = "org.seedsecuritylabs.seedemu.meta.agent.exposed.registrar_url"
 CREDENTIAL_LABEL = "org.seedsecuritylabs.seedemu.meta.agent.exposed.registrar_credential_ref"
 REGISTRAR_URL = "http://10.0.0.10:8080"
+RDDS_AUTHORITY_LABEL = "org.seedsecuritylabs.seedemu.meta.agent.exposed.rdds.authority"
+RDDS_WHOIS_LABEL = "org.seedsecuritylabs.seedemu.meta.agent.exposed.rdds.whois_server"
+RDDS_RDAP_LABEL = "org.seedsecuritylabs.seedemu.meta.agent.exposed.rdds.rdap_url"
 
 
 class FakeRuntimeBackend:
@@ -59,17 +66,60 @@ def expose_source_owned_dns(monkeypatch: pytest.MonkeyPatch) -> None:
 
     class Container:
         def __init__(self, role: str) -> None:
-            self.attrs = {"Config": {"Labels": {
-                **common,
-                "org.seedsecuritylabs.seedemu.meta.agent.exposed.dns.role": role,
-            }}}
+            labels = (
+                {
+                    "org.seedsecuritylabs.seedemu.meta.agent.exposed.dns."
+                    "authoritative_services": "owned-dns"
+                }
+                if role == "source"
+                else {
+                    **common,
+                    "org.seedsecuritylabs.seedemu.meta.agent.exposed.dns.role": role,
+                }
+            )
+            self.attrs = {"Config": {"Labels": labels}}
 
     class Containers:
+        def get(self, name: str) -> Container:
+            assert name == "client"
+            return Container("source")
+
         def list(self, *, filters: dict[str, str]) -> list[Container]:
             assert filters == {
                 "label": "org.seedsecuritylabs.seedemu.meta.agent.exposed.dns.service_id"
             }
             return [Container("primary"), Container("secondary")]
+
+    class Client:
+        containers = Containers()
+
+    monkeypatch.setattr(
+        "seedemu_tool_service.tools.dns.domain_registration.tools.docker.from_env", lambda: Client()
+    )
+
+
+def expose_rdds(monkeypatch: pytest.MonkeyPatch) -> None:
+    values = [
+        {
+            RDDS_AUTHORITY_LABEL: "registrar",
+            RDDS_WHOIS_LABEL: "whois.registrar.test",
+            RDDS_RDAP_LABEL: "http://rdap.registrar.test",
+        },
+        {
+            RDDS_AUTHORITY_LABEL: "registry",
+            RDDS_WHOIS_LABEL: "whois.registry.test",
+            RDDS_RDAP_LABEL: "http://rdap.registry.test",
+        },
+    ]
+
+    class Container:
+        def __init__(self, labels: dict[str, str]) -> None:
+            self.attrs = {"Config": {"Labels": labels}}
+
+    class Containers:
+        def list(self, *, filters: dict[str, str]) -> list[Container]:
+            assert filters == {"label": RDDS_AUTHORITY_LABEL}
+            return [Container(labels) for labels in values]
 
     class Client:
         containers = Containers()
@@ -85,8 +135,9 @@ def test_registers_documented_registrar_tools() -> None:
         registry, FakeRuntimeBackend(RuntimeCommandResult(exit_code=0, stdout="", stderr=""))
     )
     names = {tool.name for tool in registry.list_tools() if tool.name.startswith("domain.")}
-    assert names == {"domain.registrar_find", "domain.registrar_request"}
-    assert "dns.configure" in {tool.name for tool in registry.list_tools()}
+    assert names == {"domain.registrar_find", "domain.registrar_request", "domain.rdds_lookup"}
+    dns_names = {tool.name for tool in registry.list_tools() if tool.domain == "dns"}
+    assert {"dns.authoritative_find", "dns.configure"} <= dns_names
 
 
 def test_configure_uses_source_private_identity_and_verifies_both_authorities(
@@ -117,6 +168,23 @@ def test_configure_uses_source_private_identity_and_verifies_both_authorities(
     assert result.primary_authoritative is True
     assert result.secondary_authoritative is True
     assert result.primary_soa == result.secondary_soa
+
+
+def test_authoritative_find_returns_services_owned_by_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expose_source_owned_dns(monkeypatch)
+    tools = DNSTools(FakeRuntimeBackend(RuntimeCommandResult(exit_code=0, stdout="", stderr="")))
+
+    result = tools.authoritative_find("client")
+
+    assert result.source == "client"
+    assert [service.model_dump() for service in result.services] == [{
+        "service_id": "owned-dns",
+        "primary": "10.0.0.53",
+        "secondary": "10.0.0.54",
+        "credential_ref": "owned-dns.control",
+    }]
 
 
 def test_registrar_find_filter_is_an_empty_future_extension_point() -> None:
@@ -169,6 +237,44 @@ def test_registrar_request_rejects_unexposed_origin(monkeypatch: pytest.MonkeyPa
     tools = DNSTools(FakeRuntimeBackend(RuntimeCommandResult(exit_code=0, stdout="", stderr="")))
     with pytest.raises(RegistrarMetadataError, match="not present"):
         tools.registrar_request("client", "http://attacker.invalid", path="/")
+
+
+def test_rdds_lookup_selects_whois_protocol_and_registry_view(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expose_rdds(monkeypatch)
+    backend = FakeRuntimeBackend(RuntimeCommandResult(
+        exit_code=0, stdout="Domain Name: EXAMPLE.COM\n", stderr=""
+    ))
+    result = DNSTools(backend).rdds_lookup("client", "whois", "registry", "Example.COM.")
+    assert backend.command == ["whois", "-h", "whois.registry.test", "example.com"]
+    assert result.successful and result.found is True
+    assert result.authority == "registry"
+
+
+def test_rdds_lookup_selects_rdap_protocol_and_registrar_view(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expose_rdds(monkeypatch)
+    payload = '{"objectClassName":"domain","ldhName":"example.com"}'
+    backend = FakeRuntimeBackend(RuntimeCommandResult(
+        exit_code=0,
+        stdout=payload + "\n__SEED_RDDS_RESPONSE__200|application/rdap+json",
+        stderr="",
+    ))
+    result = DNSTools(backend).rdds_lookup("client", "rdap", "registrar", "example.com")
+    assert backend.command is not None
+    assert backend.command[-1] == "http://rdap.registrar.test/domain/example.com"
+    assert result.successful and result.rdap is not None
+    assert result.rdap["ldhName"] == "example.com"
+
+
+def test_rdds_lookup_arguments_reject_invalid_domains() -> None:
+    with pytest.raises(ValidationError):
+        RddsLookupArguments.model_validate({
+            "source": "client", "protocol": "rdap", "authority": "registry",
+            "domain": "https://example.com/path",
+        })
 
 
 @pytest.mark.parametrize(

@@ -1,5 +1,6 @@
 """Domain Registration DNS models."""
 
+import re
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -8,6 +9,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from seedemu_tool_service.tools.dns.shared.models import DNSRecordType, ToolArguments
 
 DNSConfigureOperation = Literal["replace", "delete"]
+RddsProtocol = Literal["whois", "rdap"]
+RddsAuthority = Literal["registrar", "registry"]
 
 
 class RegistrarFindArguments(ToolArguments):
@@ -136,6 +139,51 @@ class RegistrarRequestResult(BaseModel):
     stderr: str
 
 
+class RddsLookupArguments(ToolArguments):
+    """Arguments for a WHOIS or RDAP lookup through an exposed RDDS service."""
+
+    source: str = Field(description="Name or ID of the emulated source container")
+    protocol: RddsProtocol = Field(description="Use WHOIS text or RDAP JSON")
+    authority: RddsAuthority = Field(
+        description="Query the Registrar business view or Registry ledger view"
+    )
+    domain: str = Field(description="Domain name to query, for example example.com")
+
+    @model_validator(mode="after")
+    def validate_lookup(self) -> "RddsLookupArguments":
+        if not self.source.strip() or any(character.isspace() for character in self.source):
+            raise ValueError("source must be one non-empty token")
+        domain = self.domain.lower().rstrip(".")
+        pattern = (
+            r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+            r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+        )
+        if not re.fullmatch(pattern, domain):
+            raise ValueError("domain must be a valid fully-qualified domain name")
+        self.domain = domain
+        return self
+
+
+class RddsLookupResult(BaseModel):
+    """Bounded response from one explicitly exposed RDDS endpoint."""
+
+    source: str
+    protocol: RddsProtocol
+    authority: RddsAuthority
+    domain: str
+    endpoint: str
+    transport_successful: bool
+    successful: bool
+    found: bool | None = None
+    http_status: int | None = None
+    content_type: str | None = None
+    body: str
+    rdap: dict | None = None
+    truncated: bool = False
+    exit_code: int
+    stderr: str
+
+
 class DNSRecordChange(BaseModel):
     """One complete RRset replacement or deletion."""
 
@@ -190,11 +238,31 @@ class DNSConfigureArguments(ToolArguments):
         return self
 
 
+class DNSAuthoritativeFindArguments(ToolArguments):
+    """Arguments for discovering authoritative DNS services owned by one source."""
+
+    source: str = Field(description="Authorized emulated source container")
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, value: str) -> str:
+        if not value.strip() or any(character.isspace() for character in value):
+            raise ValueError("source must be one non-empty token")
+        return value
+
+
 class DNSServiceLocation(BaseModel):
     service_id: str
     primary: str
     secondary: str
     credential_ref: str
+
+
+class DNSAuthoritativeFindResult(BaseModel):
+    """Authoritative DNS services explicitly assigned to a source."""
+
+    source: str
+    services: list[DNSServiceLocation] = Field(default_factory=list)
 
 
 class DNSConfigureResult(BaseModel):

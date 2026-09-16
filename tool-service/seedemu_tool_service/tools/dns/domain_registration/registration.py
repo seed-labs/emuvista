@@ -4,7 +4,9 @@ from seedemu_tool_service.backends import RuntimeBackend
 from seedemu_tool_service.models.tool import ToolDefinition
 from seedemu_tool_service.registry import ToolRegistry
 from seedemu_tool_service.tools.dns.domain_registration.models import (
+    DNSAuthoritativeFindArguments,
     DNSConfigureArguments,
+    RddsLookupArguments,
     RegistrarFindArguments,
     RegistrarRequestArguments,
 )
@@ -47,6 +49,33 @@ def register_domain_registration_tools(registry: ToolRegistry, backend: RuntimeB
         ),
         handler=tools.registrar_request,
         arguments_model=RegistrarRequestArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="domain.rdds_lookup",
+            domain="domain",
+            description=(
+                "Query registration data using protocol=whois or protocol=rdap. "
+                "Use authority=registrar for the Registrar business view or "
+                "authority=registry for the Registry ledger view. The endpoint is "
+                "discovered from explicit emulator metadata and the query runs from source."
+            ),
+        ),
+        handler=tools.rdds_lookup,
+        arguments_model=RddsLookupArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="dns.authoritative_find",
+            domain="dns",
+            description=(
+                "Discover the authoritative DNS Primary/Secondary services explicitly owned by "
+                "the selected source. Call this when source is known and before dns.configure; "
+                "no private credential material is returned."
+            ),
+        ),
+        handler=tools.authoritative_find,
+        arguments_model=DNSAuthoritativeFindArguments,
     )
     registry.register(
         definition=ToolDefinition(

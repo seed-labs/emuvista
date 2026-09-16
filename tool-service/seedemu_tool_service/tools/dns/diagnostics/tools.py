@@ -7,6 +7,7 @@ from seedemu_tool_service.tools.dns.diagnostics.models import (
     DNSCompareDifference,
     DNSCompareResult,
     DNSCompareServerResult,
+    DNSDelegationAddressResult,
     DNSDelegationChildResult,
     DNSDelegationResult,
     DNSTraceResult,
@@ -148,16 +149,6 @@ class DiagnosticTools(BasicTools):
             raw_output=result.stdout,
         )
 
-    def zone_transfer(self) -> None:
-        """Transfer a DNS zone from an authoritative server using AXFR or IXFR."""
-
-        raise NotImplementedError("dns.zone_transfer is a concept-only tool")
-
-    def validate_dnssec(self) -> None:
-        """Validate the DNSSEC chain of trust for a DNS query."""
-
-        raise NotImplementedError("dns.validate_dnssec is a concept-only tool")
-
     def check_delegation(
         self,
         source: str,
@@ -210,6 +201,10 @@ class DiagnosticTools(BasicTools):
             if name == normalized_zone or name.endswith(f".{normalized_zone}")
         }
         missing_glue_names = sorted(in_bailiwick_names - glue_names)
+        parent_glue_rrsets: dict[tuple[str, str], set[str]] = {}
+        for record in glue_records:
+            key = (f"{record.name.rstrip('.').lower()}.", record.record_type)
+            parent_glue_rrsets.setdefault(key, set()).add(record.value)
 
         issues: list[str] = []
         if not parent_result.command_successful:
@@ -259,6 +254,42 @@ class DiagnosticTools(BasicTools):
             if not child_ns_names:
                 child_issues.append("returned no apex NS records")
 
+            address_results: list[DNSDelegationAddressResult] = []
+            for (name, address_type), parent_addresses in sorted(
+                parent_glue_rrsets.items()
+            ):
+                address_lookup = self.lookup(
+                    source=source,
+                    name=name,
+                    record_type=address_type,
+                    include_details=True,
+                    server=child_server,
+                    timeout_seconds=timeout_seconds,
+                )
+                child_addresses = sorted(set(address_lookup.answers))
+                matches_parent = (
+                    address_lookup.command_successful
+                    and address_lookup.response_status == "NOERROR"
+                    and address_lookup.authoritative
+                    and set(child_addresses) == parent_addresses
+                )
+                address_results.append(
+                    DNSDelegationAddressResult(
+                        name=name,
+                        record_type=address_type,
+                        parent_addresses=sorted(parent_addresses),
+                        child_addresses=child_addresses,
+                        command_successful=address_lookup.command_successful,
+                        response_status=address_lookup.response_status,
+                        authoritative=address_lookup.authoritative,
+                        matches_parent=matches_parent,
+                    )
+                )
+                if not matches_parent:
+                    child_issues.append(
+                        f"{name} {address_type} differs from parent glue"
+                    )
+
             child_results.append(
                 DNSDelegationChildResult(
                     server=child_server,
@@ -267,6 +298,7 @@ class DiagnosticTools(BasicTools):
                     authoritative=child_lookup.authoritative,
                     ns_names=child_ns_names,
                     ns_matches_parent=set(child_ns_names) == parent_ns_set,
+                    address_results=address_results,
                     issues=child_issues,
                 )
             )
@@ -287,16 +319,6 @@ class DiagnosticTools(BasicTools):
             consistent=not issues,
             issues=issues,
         )
-
-    def observe_cache(self) -> None:
-        """Observe DNS resolver cache behavior across repeated queries."""
-
-        raise NotImplementedError("dns.observe_cache is a concept-only tool")
-
-    def diagnose_resolver(self) -> None:
-        """Inspect the capabilities and health of a DNS resolver."""
-
-        raise NotImplementedError("dns.diagnose_resolver is a concept-only tool")
 
     @staticmethod
     def _parse_trace_steps(output: str) -> list[DNSTraceStep]:

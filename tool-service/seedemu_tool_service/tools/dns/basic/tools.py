@@ -106,8 +106,3 @@ class BasicTools(DNSParsingMixin):
             records=records,
             successful=result.exit_code == 0 and response_status == "NOERROR",
         )
-
-    def batch_lookup(self) -> None:
-        """Resolve multiple DNS names and record types in one invocation."""
-
-        raise NotImplementedError("dns.batch_lookup is a concept-only tool")

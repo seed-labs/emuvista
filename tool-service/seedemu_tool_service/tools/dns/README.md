@@ -10,7 +10,7 @@ does not need direct routing to emulated addresses.
 | Package | Responsibility | Registered tools |
 | --- | --- | --- |
 | `basic/` | Individual read-only DNS queries | `dns.lookup`, `dns.reverse_lookup` |
-| `domain_registration/` | Registrar discovery/session access and authorized zone changes | `domain.registrar_find`, `domain.registrar_request`, `dns.configure` |
+| `domain_registration/` | Registrar access, RDDS lookup, and authorized zone changes | `domain.registrar_find`, `domain.registrar_request`, `domain.rdds_lookup`, `dns.authoritative_find`, `dns.configure` |
 | `diagnostics/` | Multi-point and delegation diagnostics | `dns.compare`, `dns.trace`, `dns.check_delegation` |
 | `shared/` | Common models and `dig` parsing | None |
 
@@ -42,6 +42,12 @@ register_dns_tools(registry, backend)
   selected source to a discovered Registrar origin. It accepts same-origin paths,
   reports redirects without following them, and returns HTML/HTTP evidence so an
   Agent can discover the frontend workflow by starting with `GET /`.
+- `domain.rdds_lookup` selects WHOIS or RDAP with `protocol`, and selects the
+  Registrar business view or Registry ledger view with `authority`. Both
+  endpoints are discovered from explicit service metadata.
+- `dns.authoritative_find` takes a known source and returns only the authoritative
+  DNS services explicitly assigned to it, including the service ID and paired
+  Primary/Secondary addresses.
 - `dns.configure` provisions an authorized Primary/Secondary zone and replaces
   or deletes RRsets. It verifies authority and Primary/Secondary convergence.
 
@@ -75,7 +81,8 @@ Agent -> tool-service -> selected source
                            `-> source-owned authoritative DNS Primary/Secondary
 
 Namingo Registrar backend node
-  |-> loom adapter -> read-only Loom MariaDB -> WHOIS/RDAP
+  |-> Registrar WHOIS/RDAP -> loom adapter -> read-only Loom MariaDB
+  |-> Registry WHOIS/RDAP -> Namingo Registry MariaDB
   `-> optional automation
 ```
 
@@ -100,23 +107,25 @@ Architecture documentation:
 
 - [End-to-end architecture and Agent workflow](docs/domain_register_design.md)
 - [端到端架构与 Agent 调用流程](docs/domain_register_design_zh.md)
-- Namingo Registrar and Loom: [English](docs/NamingoRegistrar_en.md) / [中文](docs/NamingoRegistrar.md)
-- Namingo Registry and TLD DNS: [English](docs/NamingoRegistry_en.md) / [中文](docs/NamingoRegistry.md)
+- Namingo Registrar and Loom: [English](docs/NamingoRegistrar.md) / [中文](docs/NamingoRegistrar_zh.md)
+- Namingo Registry and TLD DNS: [English](docs/NamingoRegistry.md) / [中文](docs/NamingoRegistry_zh.md)
 
 ## `example.com` workflow
 
 The end-to-end B02a workflow is:
 
 1. Call `domain.registrar_find` and select the exposed Loom origin.
-2. Call `dns.configure` from the authorized source to provision `example.com`
+2. Call `dns.authoritative_find` with the selected source and choose its returned
+   authoritative DNS service.
+3. Call `dns.configure` with the discovered service ID to provision `example.com`
    and configure records on both child authoritative servers.
-3. Start with `domain.registrar_request` on `/`, retain its `session_id`, and
+4. Start with `domain.registrar_request` on `/`, retain its `session_id`, and
    follow Loom's HTML forms and CSRF fields using explicit same-origin requests.
-4. Submit an order containing `ns1.example.com` and `ns2.example.com` plus their
+5. Submit an order containing `ns1.example.com` and `ns2.example.com` plus their
    IPv4 glue, then pay its invoice.
-5. Loom uses EPP to create the Registry objects. Zone Writer publishes the
+6. Loom uses EPP to create the Registry objects. Zone Writer publishes the
    resulting NS/glue into `.com` and its public secondaries converge.
-6. Verify the parent referral, child authority, and recursive A-record lookup.
+7. Verify the parent referral, child authority, and recursive A-record lookup.
 
 After registration, ordinary records inside `example.com` are maintained by
 calling `dns.configure`; purchasing the domain again is unnecessary. Changing
@@ -140,7 +149,9 @@ Docker-backend tests expect an already generated and running B02a deployment:
 ```
 
 The purchase test requires a fresh Registry because it intentionally registers
-`example.com`. It also verifies that Namingo WHOIS and RDAP read the resulting
+`example.com`. It also uses `domain.rdds_lookup` to verify both the Registrar
+view backed by Loom and the Registry view backed by Namingo Registry through
+the caller-selected `whois` or `rdap` protocol.
 domain from Loom MariaDB and that both B02a recursive resolvers return the
 configured address:
 

@@ -170,7 +170,20 @@ class DNSDelegationChildResult(BaseModel):
     authoritative: bool = False
     ns_names: list[str] = Field(default_factory=list)
     ns_matches_parent: bool = False
+    address_results: list["DNSDelegationAddressResult"] = Field(default_factory=list)
     issues: list[str] = Field(default_factory=list)
+
+class DNSDelegationAddressResult(BaseModel):
+    """One authoritative child view of a parent glue address RRset."""
+
+    name: str
+    record_type: str
+    parent_addresses: list[str] = Field(default_factory=list)
+    child_addresses: list[str] = Field(default_factory=list)
+    command_successful: bool
+    response_status: str | None = None
+    authoritative: bool = False
+    matches_parent: bool = False
 
 class DNSDelegationResult(BaseModel):
     """Comparison of a parent referral with child authoritative responses."""

@@ -67,7 +67,7 @@ sequenceDiagram
     N-->>A: WHOIS 文本或 RDAP JSON
 ```
 
-Registry 和 Loom 各自保存不同视角的数据：Registry 是 TLD 的最终登记簿，Loom 保存 Registrar 的客户和订单视图。WHOIS/RDAP 使用 Loom 视图，DNS 委派则由 Registry 的 Zone Writer 发布。
+Registry 和 Loom 各自保存不同视角的数据：Registry 是 TLD 的最终登记簿，Loom 保存 Registrar 的客户和订单视图。Registrar WHOIS/RDAP 使用 Loom 视图；Registry WHOIS/RDAP 直接使用 Registry 数据库；DNS 委派由 Registry 的 Zone Writer 发布。
 
 ## SeedEmu 部署
 
@@ -76,7 +76,7 @@ B02a 将 Loom 和 Namingo Registrar 部署为两个独立节点：
 ```text
 10.150.0.74  Loom HTTPS frontend + Loom MariaDB + order EPP client
 10.150.0.73  Namingo Registrar WHOIS/RDAP
-10.154.0.73  Namingo Registry EPP + Registry MariaDB + Zone Writer
+10.154.0.73  Namingo Registry EPP + WHOIS/RDAP + Registry MariaDB + Zone Writer
 ```
 
 `NamingoRegistrarService` 使用如下组合：
@@ -100,10 +100,11 @@ registrar.install("namingo-registrar").setBackend("loom").setExternalDatabase(
 Agent 不直接调用 Namingo Registrar 完成购买。购买入口是 Loom：
 
 1. `domain.registrar_find` 发现 Loom HTTPS origin。
-2. `domain.registrar_request` 从所选 source 访问 Loom 页面、维持 session，并提交注册及支付表单。
-3. Loom 在内部完成订单处理和 EPP provisioning。
-4. 购买后可以通过 Namingo WHOIS/RDAP确认 Registrar 数据已经出现。
-5. `dns.check_delegation` 和 `dns.lookup` 验证 Registry 发布的委派与最终解析。
+2. `dns.authoritative_find` 发现分配给所选 source 的权威 DNS service，`dns.configure` 使用该 service ID 准备子区。
+3. `domain.registrar_request` 从所选 source 访问 Loom 页面、维持 session，并提交注册及支付表单。
+4. Loom 在内部完成订单处理和 EPP provisioning。
+5. 购买后通过 `domain.rdds_lookup` 选择 WHOIS/RDAP；`authority=registrar` 确认 Loom 的 Registrar 数据，`authority=registry` 独立确认 Registry 最终登记数据。
+6. `dns.check_delegation` 和 `dns.lookup` 验证 Registry 发布的委派与最终解析。
 
 `domain.registrar_request` 面向正常 HTML/HTTP 前端，不为 Loom 固化一套私有购买 API。source-local session 让 Agent 可以连续读取页面、保存 CSRF 字段、处理重定向并完成多个表单步骤。
 

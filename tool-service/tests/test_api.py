@@ -52,6 +52,7 @@ def test_tool_registry_lists_network_tools() -> None:
     expected_existing_tools = {
         "bgp.summary",
         "dns.compare",
+        "dns.authoritative_find",
         "dns.lookup",
         "dns.reverse_lookup",
         "dns.trace",

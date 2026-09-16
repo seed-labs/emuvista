@@ -2,9 +2,11 @@
 
 import base64
 import json
+import re
 from hashlib import sha256
 from shlex import quote
-from urllib.parse import urljoin
+from urllib.parse import quote as url_quote
+from urllib.parse import urljoin, urlparse
 from uuid import uuid4
 
 import docker
@@ -12,9 +14,13 @@ from docker.errors import DockerException
 
 from seedemu_tool_service.backends import RuntimeBackend
 from seedemu_tool_service.tools.dns.domain_registration.models import (
+    DNSAuthoritativeFindResult,
     DNSConfigureResult,
     DNSRecordChange,
     DNSServiceLocation,
+    RddsAuthority,
+    RddsLookupResult,
+    RddsProtocol,
     RegistrarFindResult,
     RegistrarLocation,
     RegistrarRequestMethod,
@@ -26,11 +32,18 @@ _REGISTRAR_CREDENTIAL_REF_LABEL = (
     "org.seedsecuritylabs.seedemu.meta.agent.exposed.registrar_credential_ref"
 )
 _REGISTRAR_RESPONSE_LIMIT = 256 * 1024
+_RDDS_RESPONSE_LIMIT = 256 * 1024
+_RDDS_AUTHORITY_LABEL = "org.seedsecuritylabs.seedemu.meta.agent.exposed.rdds.authority"
+_RDDS_WHOIS_LABEL = "org.seedsecuritylabs.seedemu.meta.agent.exposed.rdds.whois_server"
+_RDDS_RDAP_LABEL = "org.seedsecuritylabs.seedemu.meta.agent.exposed.rdds.rdap_url"
 _DNS_SERVICE_LABEL = "org.seedsecuritylabs.seedemu.meta.agent.exposed.dns.service_id"
 _DNS_ROLE_LABEL = "org.seedsecuritylabs.seedemu.meta.agent.exposed.dns.role"
 _DNS_PRIMARY_LABEL = "org.seedsecuritylabs.seedemu.meta.agent.exposed.dns.primary"
 _DNS_SECONDARY_LABEL = "org.seedsecuritylabs.seedemu.meta.agent.exposed.dns.secondary"
 _DNS_CREDENTIAL_LABEL = "org.seedsecuritylabs.seedemu.meta.agent.exposed.dns.credential_ref"
+_DNS_SOURCE_SERVICES_LABEL = (
+    "org.seedsecuritylabs.seedemu.meta.agent.exposed.dns.authoritative_services"
+)
 
 
 class RegistrarMetadataError(RuntimeError):
@@ -267,6 +280,127 @@ class DomainRegistrationTools:
             stderr=stderr,
         )
 
+    def rdds_lookup(
+        self,
+        source: str,
+        protocol: RddsProtocol,
+        authority: RddsAuthority,
+        domain: str,
+    ) -> RddsLookupResult:
+        """Query a metadata-published Registrar or Registry WHOIS/RDAP endpoint."""
+        from seedemu_tool_service.tools.dns.domain_registration.models import (
+            RddsLookupArguments,
+        )
+
+        arguments = RddsLookupArguments(
+            source=source, protocol=protocol, authority=authority, domain=domain
+        )
+        endpoint = self._rdds_endpoint(arguments.authority, arguments.protocol)
+        marker = "__SEED_RDDS_RESPONSE__"
+        if arguments.protocol == "whois":
+            result = self._backend.execute(
+                arguments.source, ["whois", "-h", endpoint, arguments.domain]
+            )
+            body = result.stdout
+            http_status = None
+            content_type = None
+            transport_successful = result.exit_code == 0
+            successful = transport_successful
+            found = (
+                not bool(re.search(r"(?im)^(?:NOT FOUND|No match|No Data Found)\b", body))
+                if transport_successful
+                else None
+            )
+        else:
+            url = endpoint + "/domain/" + url_quote(arguments.domain, safe="")
+            result = self._backend.execute(
+                arguments.source,
+                [
+                    "curl", "--silent", "--show-error", "--max-time", "30",
+                    "--max-redirs", "0", "--max-filesize", str(_RDDS_RESPONSE_LIMIT),
+                    "--proto", "=http,https", "--write-out",
+                    "\n" + marker + "%{http_code}|%{content_type}", "--url", url,
+                ],
+            )
+            body, separator, metadata = result.stdout.rpartition("\n" + marker)
+            status_text, pipe, content_type = metadata.partition("|") if separator else ("", "", "")
+            http_status = int(status_text) if status_text.isdigit() else None
+            content_type = content_type or None
+            transport_successful = result.exit_code == 0 and http_status is not None
+            successful = transport_successful and 200 <= http_status < 300
+            found = True if successful else False if http_status == 404 else None
+
+        encoded = body.encode("utf-8")
+        truncated = len(encoded) > _RDDS_RESPONSE_LIMIT
+        if truncated:
+            body = encoded[:_RDDS_RESPONSE_LIMIT].decode("utf-8", errors="replace")
+        rdap = None
+        if arguments.protocol == "rdap" and successful and not truncated:
+            try:
+                parsed = json.loads(body)
+                rdap = parsed if isinstance(parsed, dict) else None
+            except json.JSONDecodeError:
+                pass
+        return RddsLookupResult(
+            source=arguments.source,
+            protocol=arguments.protocol,
+            authority=arguments.authority,
+            domain=arguments.domain,
+            endpoint=endpoint,
+            transport_successful=transport_successful,
+            successful=successful,
+            found=found,
+            http_status=http_status,
+            content_type=content_type,
+            body=body,
+            rdap=rdap,
+            truncated=truncated,
+            exit_code=result.exit_code,
+            stderr=result.stderr,
+        )
+
+    def _rdds_endpoint(self, authority: RddsAuthority, protocol: RddsProtocol) -> str:
+        """Resolve one RDDS endpoint exclusively from emulator-owned labels."""
+        endpoint_label = _RDDS_WHOIS_LABEL if protocol == "whois" else _RDDS_RDAP_LABEL
+        try:
+            containers = docker.from_env().containers.list(
+                filters={"label": _RDDS_AUTHORITY_LABEL}
+            )
+        except DockerException as error:
+            raise RegistrarMetadataError("Docker RDDS metadata lookup failed") from error
+        endpoints = {
+            labels[endpoint_label]
+            for container in containers
+            for labels in [container.attrs.get("Config", {}).get("Labels", {}) or {}]
+            if labels.get(_RDDS_AUTHORITY_LABEL) == authority and labels.get(endpoint_label)
+        }
+        if not endpoints:
+            raise RegistrarMetadataError(
+                f"No exposed {authority} {protocol.upper()} endpoint is available"
+            )
+        if len(endpoints) != 1:
+            raise RegistrarMetadataError(
+                f"Conflicting exposed {authority} {protocol.upper()} endpoints"
+            )
+        endpoint = endpoints.pop()
+        if not isinstance(endpoint, str):
+            raise RegistrarMetadataError("Exposed RDDS endpoint is invalid")
+        if protocol == "whois":
+            if not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", endpoint):
+                raise RegistrarMetadataError("Exposed WHOIS endpoint is invalid")
+            return endpoint.lower()
+        parsed = urlparse(endpoint)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise RegistrarMetadataError("Exposed RDAP endpoint must be an HTTP(S) base URL")
+        return endpoint.rstrip("/")
+
     def _source_owned_dns(self, service_id: str) -> DNSServiceLocation:
         """Resolve a paired DNS service exclusively from emulator-owned labels."""
         try:
@@ -296,6 +430,33 @@ class DomainRegistrationTools:
             primary=first[_DNS_PRIMARY_LABEL],
             secondary=first[_DNS_SECONDARY_LABEL],
             credential_ref=first[_DNS_CREDENTIAL_LABEL],
+        )
+
+    def authoritative_find(self, source: str) -> DNSAuthoritativeFindResult:
+        """Discover authoritative DNS services explicitly assigned to a source."""
+        from seedemu_tool_service.tools.dns.domain_registration.models import (
+            DNSAuthoritativeFindArguments,
+        )
+
+        arguments = DNSAuthoritativeFindArguments(source=source)
+        try:
+            container = docker.from_env().containers.get(arguments.source)
+        except DockerException as error:
+            raise RegistrarMetadataError("Docker source metadata lookup failed") from error
+        labels = container.attrs.get("Config", {}).get("Labels", {}) or {}
+        raw_service_ids = labels.get(_DNS_SOURCE_SERVICES_LABEL)
+        if raw_service_ids is None:
+            return DNSAuthoritativeFindResult(source=arguments.source)
+        service_ids = raw_service_ids.split(",")
+        if (
+            any(not item.strip() or any(character.isspace() for character in item)
+                for item in service_ids)
+            or len(service_ids) != len(set(service_ids))
+        ):
+            raise RegistrarMetadataError("source-owned DNS directory is invalid")
+        return DNSAuthoritativeFindResult(
+            source=arguments.source,
+            services=[self._source_owned_dns(service_id) for service_id in sorted(service_ids)],
         )
 
     def configure(
@@ -391,8 +552,3 @@ class DomainRegistrationTools:
             primary_authoritative=values.get("primary_aa") == "1",
             secondary_authoritative=values.get("secondary_aa") == "1",
         )
-
-    def batch_update(self) -> None:
-        """Apply multiple RFC 2136 DNS changes in one transaction."""
-
-        raise NotImplementedError("dns.batch_update is a concept-only tool")

@@ -60,9 +60,9 @@ To focus on the B02a Registrar/Loom source-auth login path:
   -v
 ```
 
-To run the complete Agent workflow (Registrar discovery, source-owned DNS
-configuration, native Loom balance purchase, EPP/Registry delegation, and final
-recursive lookup):
+To run the complete Agent workflow (Registrar discovery, source-owned
+authoritative DNS discovery and configuration, native Loom balance purchase,
+EPP/Registry delegation, and final recursive lookup):
 
 ```bash
 .venv/bin/python -m pytest \
