@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="920" viewBox="0 0 1120 920" font-family="Microsoft YaHei, SimHei, PingFang SC, sans-serif">
+  <rect width="1120" height="920" fill="#f7f9fb"/>
+  <text x="560" y="44" font-size="28" font-weight="bold" fill="#2c3e50" text-anchor="middle">Network 域工具分类</text>
+  <text x="560" y="68" font-size="15" fill="#7f8c8d" text-anchor="middle">按“观察/操作的是仿真器哪个对象”分 6 类 · 工具视角 = 单个容器</text>
+  <rect x="30" y="90" width="520" height="250" rx="10" fill="#ffffff" stroke="#e3e8ee" stroke-width="1.5"/>
+  <path d="M 30 110 Q 30 90 50 90 H 530 Q 550 90 550 110 V 136 H 30 Z" fill="#1abc9c"/>
+  <text x="50" y="121" font-size="20" font-weight="bold" fill="#ffffff">A · 节点状态</text>
+  <text x="50" y="166" font-size="15" fill="#7f8c8d">作用：查/改单个节点容器内部</text>
+  <text x="50" y="200" font-size="15" fill="#34495e">只读  interface_inspect ✅ · neighbor_inspect ✅</text>
+  <text x="50" y="226" font-size="15" fill="#34495e">      listen_sockets 🚧</text>
+  <text x="50" y="252" font-size="15" fill="#34495e">写    interface_update 🚧 · neighbor_update 🚧</text>
+  <text x="50" y="278" font-size="15" fill="#34495e">      sysctl_update 🚧</text>
+  <rect x="580" y="90" width="520" height="250" rx="10" fill="#ffffff" stroke="#e3e8ee" stroke-width="1.5"/>
+  <path d="M 580 110 Q 580 90 600 90 H 1080 Q 1100 90 1100 110 V 136 H 580 Z" fill="#1abc9c"/>
+  <text x="600" y="121" font-size="20" font-weight="bold" fill="#ffffff">B · 路由转发</text>
+  <text x="600" y="166" font-size="15" fill="#7f8c8d">作用：查/改内核路由表</text>
+  <text x="600" y="200" font-size="15" fill="#34495e">只读  route_inspect ✅ · route_lookup ✅</text>
+  <text x="600" y="226" font-size="15" fill="#34495e">写    route_update 🚧</text>
+  <rect x="30" y="370" width="520" height="250" rx="10" fill="#ffffff" stroke="#e3e8ee" stroke-width="1.5"/>
+  <path d="M 30 390 Q 30 370 50 370 H 530 Q 550 370 550 390 V 416 H 30 Z" fill="#1abc9c"/>
+  <text x="50" y="401" font-size="20" font-weight="bold" fill="#ffffff">C · 连通路径</text>
+  <text x="50" y="446" font-size="15" fill="#7f8c8d">作用：节点间端到端关系</text>
+  <text x="50" y="480" font-size="15" fill="#34495e">只读  ping ✅ · path_trace ✅</text>
+  <text x="50" y="506" font-size="15" fill="#34495e">      reachability_map 💡</text>
+  <text x="50" y="532" font-size="15" fill="#34495e">写    —</text>
+  <rect x="580" y="370" width="520" height="250" rx="10" fill="#ffffff" stroke="#e3e8ee" stroke-width="1.5"/>
+  <path d="M 580 390 Q 580 370 600 370 H 1080 Q 1100 370 1100 390 V 416 H 580 Z" fill="#e67e22"/>
+  <text x="600" y="401" font-size="20" font-weight="bold" fill="#ffffff">D · 仿真网络 ★</text>
+  <text x="600" y="446" font-size="15" fill="#7f8c8d">作用：查/改仿真子网与链路属性（本项目特有）</text>
+  <text x="600" y="480" font-size="15" fill="#34495e">只读  link_properties_inspect 🚧</text>
+  <text x="600" y="506" font-size="15" fill="#34495e">      node_networks 🚧</text>
+  <text x="600" y="532" font-size="15" fill="#34495e">写    link_update 🚧 · link_properties_update 🚧</text>
+  <rect x="30" y="650" width="520" height="250" rx="10" fill="#ffffff" stroke="#e3e8ee" stroke-width="1.5"/>
+  <path d="M 30 670 Q 30 650 50 650 H 530 Q 550 650 550 670 V 696 H 30 Z" fill="#1abc9c"/>
+  <text x="50" y="681" font-size="20" font-weight="bold" fill="#ffffff">E · 地址计算</text>
+  <text x="50" y="726" font-size="15" fill="#7f8c8d">作用：纯算 IP/子网（不碰容器）</text>
+  <text x="50" y="760" font-size="15" fill="#34495e">只读  inspect_ip_address ✅ · cidr_inspect 🚧</text>
+  <text x="50" y="786" font-size="15" fill="#34495e">写    —</text>
+  <rect x="580" y="650" width="520" height="250" rx="10" fill="#ffffff" stroke="#e3e8ee" stroke-width="1.5"/>
+  <path d="M 580 670 Q 580 650 600 650 H 1080 Q 1100 650 1100 670 V 696 H 580 Z" fill="#8e44ad"/>
+  <text x="600" y="681" font-size="20" font-weight="bold" fill="#ffffff">F · 兜底诊断</text>
+  <text x="600" y="726" font-size="15" fill="#7f8c8d">作用：抓包/防火墙原始证据</text>
+  <text x="600" y="760" font-size="15" fill="#34495e">只读  packet_capture 💡 · firewall_inspect 💡</text>
+  <text x="600" y="786" font-size="15" fill="#34495e">写    firewall_update 💡</text>
+  <text x="560" y="905" font-size="14" fill="#7f8c8d" text-anchor="middle">✅ 已实装（7）　　🚧 计划　　💡 概念　　当前缺口：D 类（仿真网络）与 F 类（兜底）空白、写操作空白</text>
+</svg>
