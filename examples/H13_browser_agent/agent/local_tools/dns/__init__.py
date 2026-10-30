@@ -1,1 +1,1 @@
-"""独立 Agent 的只读 DNS 查询工具。"""
+"""Read-only DNS tools for the standalone agent."""

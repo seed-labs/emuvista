@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成完整场景的 Docker 部署文件。 / Generate Docker deployment files for the complete environment."""
+"""Generate Docker deployment files for the complete environment."""
 import argparse
 from pathlib import Path
 import sys
@@ -10,83 +10,82 @@ SEED_EMULATOR = HERE.parents[2] / 'seed-emulator'
 sys.path.insert(0, str(SEED_EMULATOR))
 sys.path.insert(0, str(SERVICES))
 
-from DomainService import RegistryService, FossBillingService, DnsHostingService, FakePaymentService
-from seedemu.core import Binding, Filter
+from DomainService import NamingoRegistryService, FossBillingRegistrarService, DnsService, FakePaymentService
+from DomainService import DnsServiceMerger
+from seedemu.core import Binding, Filter, Emulator, Action
 from seedemu.compiler import Docker, Platform
 from examples.internet.B02_mini_internet_with_dns.mini_internet_with_dns import build_emulator as build_b02
 
 def build_emulator():
-    """构建完整域名购买环境。 / Build the complete domain purchase environment."""
+    """Build the complete domain purchase environment."""
 
     emu = build_b02()
+    # Use the native merge API to install the DNS subclass, retaining B02 zones, nodes and bindings.
+    dns_extension = Emulator()
+    dns_extension.addLayer(DnsService())
+    emu = emu.merge(dns_extension, [DnsServiceMerger()])
     # ------------------------------------------------------------------------
-    # 1. Registry：注册局与 DNS 发布授权 / Registry and DNS publication authorization
+    # Registry and DNS publication authorization
     # ------------------------------------------------------------------------
-    registry = RegistryService()
-    server = registry.install('registry')
-    server.setPortForwarding(18081)
-    server.setTlds(['com', 'net'])
-    server.setAdminAccount('admin@example.com', '123456')
-    server.setDatabasePassword('b02a-registry-database')
-    emu.addLayer(registry)
-    emu.addBinding(Binding('registry', filter=Filter(asn=151, nodeName='host_1')))
-    emu.getLayer('DomainNameService').authorizeRegistry(
-        server,
-        zones={'com': ('a-com-server', 'b-com-server'), 'net': ('a-net-server',)},
+    registry_service = NamingoRegistryService()
+    registry_server = registry_service.install('registry')
+    registry_server.setPortForwarding(18081)
+    registry_server.setTlds(['com', 'net'])
+    registry_server.setAdminAccount('admin@example.com', '123456')
+    registry_server.setDatabasePassword('registry-database-password')
+    authorization = emu.getLayer('DomainNameService').authorizeZoneUpdates(
+        ['com', 'net'],
     )
-    server.enableDnsPublication(['com', 'net'])
+    registry_server.setDnsAuthorization(authorization)
+    registry_server.enableDnsPublication(['com', 'net'])
+    emu.addLayer(registry_service)
+    emu.addBinding(Binding('registry', filter=Filter(asn=151, nodeName=r'^host_'), action=Action.FIRST))
 
     # ------------------------------------------------------------------------
-    # 2. FOSSBilling：注册商与域名商品 / Registrar and domain products
+    # Registrar and domain products
     # ------------------------------------------------------------------------
-    registrar_service = FossBillingService()
-    server = registrar_service.install('fossbilling')
-    server.setPortForwarding(18080)
-    server.setRegistry('registry')
-    server.setTlds(['com', 'net'])
-    server.setAdminAccount('admin@example.com', 'Aa123456')
-    server.setClientAccount('user@example.com', 'Aa123456')
-    server.setTldPrice('com', '11.99', '11.99', '11.99')
-    server.setTldPrice('net', '11.99', '11.99', '11.99')
-    # 预留基础 DNS 和托管服务使用的域名，避免再次售出。 / Reserve domains used by base DNS and hosting to prevent resale.
-    server.setReservedDomains(['google.com', 'twitter.com', 'example.com'])
-    server.setBrowserHosts(['localhost:18080', '127.0.0.1:18080'])
+    registrar_service = FossBillingRegistrarService()
+    registrar_server = registrar_service.install('fossbilling')
+    registrar_server.setPortForwarding(18080)
+    registrar_server.setRegistry('registry')
+    registrar_server.setTlds(['com', 'net'])
+    registrar_server.setAdminAccount('admin@example.com', 'Aa123456')
+    registrar_server.setClientAccount('user@example.com', 'Aa123456')
+    registrar_server.setTldPrice('com', '11.99', '11.99', '11.99')
+    registrar_server.setTldPrice('net', '11.99', '11.99', '11.99')
+    # Reserve domains used by base DNS and hosting to prevent resale.
+    registrar_server.setReservedDomains(['google.com', 'twitter.com', 'example.com'])
     emu.addLayer(registrar_service)
-    emu.addBinding(Binding('fossbilling', filter=Filter(asn=150, nodeName='host_1')))
+    emu.addBinding(Binding('fossbilling', filter=Filter(asn=150, nodeName=r'^host_'), action=Action.FIRST))
 
     # ------------------------------------------------------------------------
-    # 3. DNS Hosting：主从 DNS 与托管服务 / Primary-secondary DNS and hosting
+    # Primary-secondary DNS and hosting
     # ------------------------------------------------------------------------
     dns = emu.getLayer('DomainNameService')
     dns.install('hosted-dns-primary').addZone('example.com.').setMaster()
     dns.install('hosted-dns-secondary').addZone('example.com.')
-    emu.addBinding(Binding('hosted-dns-primary', filter=Filter(asn=170, nodeName='host_0')))
-    emu.addBinding(Binding('hosted-dns-secondary', filter=Filter(asn=170, nodeName='host_1')))
-    dns_hosting_service = DnsHostingService()
-    hosting = dns_hosting_service.install('dns-hosting')
-    hosting.setNameServers('hosted-dns-primary', 'hosted-dns-secondary', domain='example.com')
-    hosting.setRegistrar('fossbilling')
-    emu.addLayer(dns_hosting_service)
-    # API 与主 DNS 共用主机；从节点由托管实例关联，无需额外 Host。
-    # The API shares the primary DNS host; the hosting instance references the secondary without creating hosts.
-    emu.addBinding(Binding('dns-hosting', filter=Filter(asn=170, nodeName='host_0', allowBound=True)))
+    dns_hosting = dns.addHosting('hosted-dns-primary', 'hosted-dns-secondary', domain='example.com')
+    dns_hosting.addRegistrarToRateLimitWhitelist('fossbilling')
+    registry_server.addNameServers(dns_hosting, epp_username=registrar_server.getEppUsername())
+    registrar_server.setDnsHostings(dns_hosting)
+    emu.addBinding(Binding('hosted-dns-primary', filter=Filter(asn=170, nodeName=r'^host_'), action=Action.FIRST))
+    emu.addBinding(Binding('hosted-dns-secondary', filter=Filter(asn=170, nodeName=r'^host_'), action=Action.FIRST))
 
     # ------------------------------------------------------------------------
-    # 4. FakePayment：模拟支付收银台 / Simulated payment checkout
+    # Simulated payment checkout
     # ------------------------------------------------------------------------
     fake_payment_service = FakePaymentService()
-    checkout = fake_payment_service.install('fake-payment')
-    checkout.setPortForwarding(18083)
-    checkout.setRegistrar('fossbilling').setPort(8080)
-    checkout.setBrowserUrls({'localhost:18080': 'http://localhost:18083/pay',
-                             '127.0.0.1:18080': 'http://127.0.0.1:18083/pay'})
+    fake_payment_server = fake_payment_service.install('fake-payment')
+    fake_payment_server.setPortForwarding(18083)
+    fake_payment_server.setPort(8080)
+    registrar_server.setPaymentService('fake-payment')
     emu.addLayer(fake_payment_service)
-    emu.addBinding(Binding('fake-payment', filter=Filter(asn=160, nodeName='host_1')))
+    emu.addBinding(Binding('fake-payment', filter=Filter(asn=160, nodeName=r'^host_'), action=Action.FIRST))
     return emu
 
 
 def main(argv=None):
-    """渲染场景并生成部署文件，不构建或启动容器。 / Render and generate deployment files without building or starting containers."""
+    """Render and generate deployment files without building or starting containers."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=HERE / 'output')
     parser.add_argument('--platform', choices=['amd', 'arm'], default='amd')

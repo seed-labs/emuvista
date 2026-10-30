@@ -1,1 +1,1 @@
-"""浏览器工具包：参数定义、会话执行与工具注册。"""
+"""Browser tools: parameter definitions, session execution, and registration."""

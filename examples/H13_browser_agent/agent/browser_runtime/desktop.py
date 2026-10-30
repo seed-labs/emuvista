@@ -12,7 +12,7 @@ from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
 
-# 限定模型可调用的浏览器动作和参数，禁止传入任意脚本。
+# Restrict model-callable browser actions and parameters; reject arbitrary scripts.
 class Command(BaseModel):
     owner: str = Field(min_length=16, max_length=100)
     action: Literal['acquire', 'release', 'heartbeat', 'observe', 'open', 'click', 'fill', 'select',
@@ -25,7 +25,7 @@ class Command(BaseModel):
     tab: int = Field(default=0, ge=0, le=30)
 
 
-# 通过 Playwright 连接本容器浏览器并执行页面操作。 / Connect to the colocated browser through Playwright and perform page actions.
+# Connect to the colocated browser through Playwright and perform page actions.
 class Desktop:
     def __init__(self):
         self.last_seen = 0.0
@@ -37,7 +37,7 @@ class Desktop:
         self.lock = asyncio.Lock()
         self.playwright = None
 
-    # 同一桌面只允许一个对话使用；超时租约在下次连接时回收。
+    # Allow one conversation per desktop; reclaim expired leases on the next connection.
     async def acquire(self, owner):
         if self.owner and time.monotonic() - self.last_seen > 60:
             await self.context.close()
@@ -68,7 +68,7 @@ class Desktop:
         self.page = page
         page.on('dialog', lambda dialog: dialog.dismiss())
 
-    # 每次观察重新分配元素引用，避免沿用旧页面中的点击目标。
+    # Assign fresh element references on every observation to avoid targeting an outdated page.
     async def observe(self):
         if self.page is None or self.page.is_closed():
             self.page = next((p for p in self.context.pages if not p.is_closed()), None)
@@ -119,7 +119,7 @@ class Desktop:
                 'tabs': [{'index': i, 'url': p.url} for i, p in enumerate(self.context.pages)],
                 'observation': prefix}
 
-    # 串行执行动作，操作后返回新观察；付款失败不会自动重试。
+    # Serialize actions and return a fresh observation afterward; never retry failed payments automatically.
     async def command(self, cmd):
         async with self.lock:
             if cmd.action == 'acquire':

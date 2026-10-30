@@ -1,4 +1,4 @@
-"""浏览器工具的动作与参数校验。"""
+"""Validate browser tool actions and parameters."""
 
 from typing import Literal
 

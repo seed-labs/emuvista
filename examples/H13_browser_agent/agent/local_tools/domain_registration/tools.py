@@ -8,7 +8,7 @@ def registrar_find(filter=None):
         "registrar_url": "http://10.150.0.72:8080",
         "hosted_dns_tool": "dns.hosted_find",
         "payment_service_id": "payment",
-        "payment_url": "http://10.160.0.72:8080",
+        "payment_url": "http://10.160.0.71:8080",
         "instructions": "Open the registrar website with browser.action. Use observed links/forms. "
         "Keep the same browser context after login. Verify account identity, cart, "
         "invoice and domain service separately. Do not repeat a paid order.",
@@ -24,7 +24,7 @@ def registrar_find(filter=None):
 
 
 def hosted_dns_find(filter=None):
-    """返回本示例的预配置入口；不扫描网络，也不声明服务在线。 / Return configured example endpoints without scanning or asserting availability."""
+    """Return configured example endpoints without scanning or asserting availability."""
     service = {
         "service_id": "hosted_dns",
         "provider": "fossbilling-servicedns",

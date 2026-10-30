@@ -1,4 +1,4 @@
-"""将浏览器能力注册为模型可调用的工具。"""
+"""Register browser capabilities as model-callable tools."""
 
 from local_tools.browser.models import BrowserArguments
 from local_tools.registry import ToolDefinition

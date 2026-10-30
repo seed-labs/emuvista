@@ -1,4 +1,4 @@
-"""在本容器执行只读 DNS 查询。 / Run read-only DNS queries in this container."""
+"""Run read-only DNS queries in this container."""
 
 import re
 import subprocess
@@ -7,7 +7,7 @@ from local_tools.dns.models import LookupArguments
 
 
 def parse_response(output):
-    """保留 DNS 状态和各响应区，避免把进程成功误当作解析成功。"""
+    """Preserve DNS status and response sections; process success does not imply successful resolution."""
     status = re.search(r'status: ([A-Z0-9]+)', output)
     flags = re.search(r';; flags: ([^;]*);', output)
     result = {'dns_status': status.group(1) if status else None,
@@ -30,7 +30,7 @@ def parse_response(output):
 def lookup(name, record_type='A', server=None, recursive=True, tcp=False):
     args = LookupArguments(name=name, record_type=record_type, server=server,
                            recursive=recursive, tcp=tcp)
-    # 在浏览器所在容器直接查询，不依赖 Docker socket。 / Query inside the browser container without a Docker socket.
+    # Query inside the browser container without a Docker socket.
     command = ['dig']
     if args.server:
         command.append('@' + args.server)

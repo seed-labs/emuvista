@@ -17,7 +17,7 @@ class ToolDefinition:
     input_schema: dict[str, Any] = field(default_factory=dict)
 
 
-# 工具在本目录内注册；参数先经 Pydantic 校验，再调用处理函数。
+# Register tools locally; validate arguments with Pydantic before calling handlers.
 class ToolRegistry:
     def __init__(self):
         self._tools = {}
@@ -40,5 +40,5 @@ class ToolRegistry:
         validated = model.model_validate(arguments).model_dump()
         if inspect.iscoroutinefunction(handler):
             return await handler(**validated)
-        # 同步工具移到工作线程，避免阻塞聊天和浏览器的异步连接。
+        # Run synchronous tools in worker threads to avoid blocking asynchronous chat and browser connections.
         return await asyncio.to_thread(partial(handler, **validated))

@@ -16,7 +16,7 @@ class RegistrarFindArguments(BaseModel):
 
 
 class HostedDNSFindArguments(BaseModel):
-    """静态托管 DNS 目录只支持按提供者或网页地址筛选。"""
+    """The static hosted DNS directory supports filtering by provider or website URL only."""
     model_config = ConfigDict(extra="forbid")
     filter: dict[str, str] = Field(default_factory=dict)
 

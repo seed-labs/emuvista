@@ -1,4 +1,4 @@
-"""准备 browser-agent 的 Docker 构建上下文。 / Prepare the browser-agent Docker build context."""
+"""Prepare the browser-agent Docker build context."""
 from pathlib import Path
 import shutil
 
@@ -6,7 +6,7 @@ HERE = Path(__file__).resolve().parent
 
 
 def prepare_context(output):
-    """复制 agent 源码及模型配置，排除缓存和其他本地文件。 / Copy agent source and model profiles, excluding caches and other local files."""
+    """Copy agent source and model profiles, excluding caches and other local files."""
     source = HERE.parent / 'agent'
     context = Path(output) / 'browser-agent'
     context.mkdir()
@@ -15,7 +15,7 @@ def prepare_context(output):
     shutil.copyfile(HERE.parent / 'egress_urls.txt', context / 'egress_urls.txt')
     target = context / 'agent'
     target.mkdir()
-    # 模型配置随镜像初始化，并由宿主机挂载目录持续保存。 / Seed profiles in the image and persist updates through the host mount.
+    # Seed profiles in the image and persist updates through the host mount.
     profiles = source / 'model_profiles.json'
     if profiles.is_file():
         shutil.copyfile(profiles, target / profiles.name)

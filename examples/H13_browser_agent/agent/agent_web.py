@@ -1,4 +1,4 @@
-"""同容器浏览器的 Agent 网页后端。 / Agent web backend for the colocated browser."""
+"""Agent web backend for the colocated browser."""
 
 import asyncio
 import json
@@ -21,7 +21,7 @@ app = FastAPI(title="SeedEmu Agent Chat")
 PROFILES_FILE = Path("/opt/agent-config/model_profiles.json") if Path("/opt/agent-config").is_dir() else Path(__file__).with_name("model_profiles.json")
 
 
-# 校验前端传来的模型地址与密钥；每轮对话可切换配置。
+# Validate the model URL and key from the frontend; configuration can change each turn.
 class APIConfig(BaseModel):
     api_url: str = Field(min_length=1, max_length=2048)
     api_key: str = Field(default="", max_length=8192, repr=False)
@@ -78,7 +78,7 @@ class ModelConnectionCheck(APIConfig):
 
 @app.post("/api/test-model")
 async def test_model(config: ModelConnectionCheck, x_agent_local: str = Header(default="")):
-    """实际调用一次当前模型，不创建 Agent、不运行工具、不写入聊天历史。"""
+    """Call the current model once without creating an agent, running tools, or writing chat history."""
     if x_agent_local != "1":
         raise HTTPException(403, "仅供本地页面使用")
     try:
@@ -91,7 +91,7 @@ async def test_model(config: ModelConnectionCheck, x_agent_local: str = Header(d
         return {"ok": False, "message": "连接失败或超时，请检查 URL、网络及服务状态。"}
     result = {"ok": False, "status": status, "elapsed_ms": round(elapsed)}
     if not 200 <= status < 300:
-        # 仅返回状态和固定解释，避免上游错误正文回显模型密钥。
+        # Return only a status and fixed explanation to avoid exposing model keys in upstream error bodies.
         reasons = {401: "API Key 无效或未授权", 403: "无访问权限", 404: "接口路径或模型不存在",
                    429: "请求限流或额度不足"}
         result["message"] = reasons.get(status, "模型服务拒绝请求或发生错误")
@@ -137,7 +137,7 @@ async def read_profiles(x_agent_local: str = Header(default="")):
 
 
 @app.put("/api/profiles")
-# 先写临时文件再原子替换，避免保存中断损坏模型配置。
+# Write a temporary file and replace atomically to avoid corrupting model profiles if saving is interrupted.
 async def write_profiles(data: ProfileStore, x_agent_local: str = Header(default="")):
     if x_agent_local != "1":
         raise HTTPException(403, "仅供本地页面使用")
@@ -149,7 +149,7 @@ async def write_profiles(data: ProfileStore, x_agent_local: str = Header(default
             stream.write(data.model_dump_json())
             stream.flush()
             os.fsync(stream.fileno())
-        # 保留宿主机文件归属，确保后续构建仍可读取配置。 / Preserve host ownership so later builds can read the profiles.
+        # Preserve host ownership so later builds can read the profiles.
         if os.geteuid() == 0:
             owner = PROFILES_FILE.stat() if PROFILES_FILE.exists() else PROFILES_FILE.parent.stat()
             os.chown(temporary, owner.st_uid, owner.st_gid)
@@ -191,7 +191,7 @@ async def novnc_asset(asset: str):
 
 
 @app.websocket("/browser/vnc")
-# 将网页 WebSocket 与远端 VNC 连接桥接，传输实时桌面画面。
+# Bridge the web WebSocket to the remote VNC connection to stream the desktop.
 async def browser_vnc(ws: WebSocket):
     session = browser_sessions.get(ws.query_params.get("token"))
     if not same_origin(ws) or not session or not session.connected:
@@ -236,7 +236,7 @@ async def browser_vnc(ws: WebSocket):
 
 
 @app.websocket("/ws")
-# 一个聊天连接拥有独立 Agent 和浏览器会话，断开时统一回收资源。
+# Each chat connection owns an agent and browser session; release all resources on disconnect.
 async def conversation(ws: WebSocket):
     if not same_origin(ws):
         await ws.close(code=1008)

@@ -1,16 +1,16 @@
-"""浏览器工具执行与对话会话管理。"""
+"""Browser tool execution and conversation session management."""
 
 import asyncio
 import uuid
 
 from browser_runtime.control import ensure_running, rpc
 
-# 同一桌面只分配给一个活动对话，避免多个 Agent 同时操作。
+# Allocate the shared desktop to one active conversation to prevent concurrent agent control.
 start_lock = asyncio.Lock()
 current_owner = None
 
 
-# 管理对话持有的浏览器连接、心跳与画面连接的生命周期。
+# Manage the browser connection, heartbeat, and display connection owned by a conversation.
 class BrowserSession:
     def __init__(self):
         self.owner = uuid.uuid4().hex
@@ -33,7 +33,7 @@ class BrowserSession:
             self.heartbeat = asyncio.create_task(self.keep_alive())
             return self.status()
 
-    # 定期续租，防止模型思考期间会话因空闲而被回收。
+    # Renew the lease periodically so it does not expire while the model is thinking.
     async def keep_alive(self):
         while True:
             await asyncio.sleep(10)

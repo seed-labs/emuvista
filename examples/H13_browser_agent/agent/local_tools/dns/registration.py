@@ -1,4 +1,4 @@
-"""注册只读 DNS 查询能力。"""
+"""Register read-only DNS queries."""
 
 from local_tools.dns.models import LookupArguments
 from local_tools.dns.tools import lookup

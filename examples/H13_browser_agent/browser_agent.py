@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""用 A11 自定义容器接口添加浏览器和 agent。 / Add a browser and agent using A11's custom container API."""
+"""Add a browser and agent using A11's custom container API."""
 import argparse
 import json
 from pathlib import Path
@@ -13,7 +13,7 @@ from container.prepare_context import prepare_context
 from seedemu.compiler import Docker, Platform
 
 
-# 缩进须与 Compose 中其他服务一致。 / Match the indentation of other Compose services.
+# Match the indentation of other Compose services.
 DOCKER_COMPOSE_ENTRY = """\
     {name}:
         build: ./browser-agent
@@ -34,7 +34,7 @@ DOCKER_COMPOSE_ENTRY = """\
 
 
 def run(dumpfile=None):
-    """按 A11 入口构建环境；可保存快照或渲染部署。 / Follow A11 to build the environment, then dump or render it."""
+    """Follow A11 to build the environment, then dump or render it."""
     if dumpfile is None:
         parser = argparse.ArgumentParser(description=__doc__)
         parser.add_argument('--output', type=Path, default=HERE / 'output')

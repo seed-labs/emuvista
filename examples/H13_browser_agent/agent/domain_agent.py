@@ -1,7 +1,4 @@
-"""供 agent_web 调度的 Agent 核心：模型请求、工具执行和当前会话上下文。
-
-本模块不提供命令行入口；配置、事件输出和会话生命周期由网页后端管理。
-"""
+"""Agent core used by agent_web for model requests, tool execution, and session context. The web backend manages configuration, events, and session lifecycle; this module has no CLI entry point."""
 
 from __future__ import annotations
 
@@ -19,7 +16,7 @@ from urllib.request import Request, urlopen
 
 from pydantic import BaseModel
 
-# 工具定义及执行均由此 agent 的 local_tools 提供，不依赖仓库服务包。
+# Tool definitions and execution come from this agent's local_tools, independently of repository service packages.
 from local_tools.browser.tools import BrowserSession
 from local_tools.browser.registration import register_browser_tool
 from local_tools.dns.registration import register_dns_tools
@@ -27,7 +24,7 @@ from local_tools.registry import ToolRegistry
 from local_tools.domain_registration.registration import register_purchase_tools
 
 def api_url(base_url: str, path: str) -> str:
-    # 兼容带 /v1 和不带 /v1 的服务地址，避免重复拼接版本路径。
+    # Accept service URLs with or without /v1 without duplicating the version path.
     base = base_url.rstrip("/")
     if base.endswith("/v1"):
         return f"{base}/{path.lstrip('/')}"
@@ -41,8 +38,8 @@ def request_json(
     *,
     api_key: str = "",
 ) -> tuple[int, Any, float]:
-    # payload 为 None 时发送 GET，否则将其编码为 JSON 并发送 POST。
-    # 返回值依次为 HTTP 状态码、响应正文（JSON 或原始文本）、耗时（毫秒）。
+    # Send GET when payload is None; otherwise encode it as JSON and send POST.
+    # Return the HTTP status, response body (JSON or raw text), and elapsed milliseconds.
     headers = {
         "Accept": "application/json",
         "Authorization": f"Bearer {api_key}",
@@ -63,7 +60,7 @@ def request_json(
             except json.JSONDecodeError:
                 body = raw
             return response.status, body, elapsed_ms
-    # HTTP 错误也保留正文供调用方判断；连接错误和超时交给上层处理。
+    # Preserve HTTP error bodies for callers; let the caller handle connection errors and timeouts.
     except HTTPError as error:
         elapsed_ms = (time.monotonic() - started) * 1000
         raw = error.read().decode("utf-8", errors="replace")
@@ -75,7 +72,7 @@ def request_json(
 
 
 def summarize_error(body: Any) -> str:
-    # 优先提取常见的 error.message；非字典正文截取前 500 个字符。
+    # Prefer error.message; truncate non-dictionary bodies to the first 500 characters.
     if isinstance(body, dict):
         error = body.get("error", body)
         if isinstance(error, dict):
@@ -85,11 +82,11 @@ def summarize_error(body: Any) -> str:
 
 
 
-# max_rounds 限制一次用户输入触发的模型请求轮数；上下文预算以字符计。
+# max_rounds limits model requests per user input; context budgets count characters.
 DEFAULT_MODEL = "Qwen3-8B"
 MAX_TOOL_ROUNDS = 100
 DEFAULT_MAX_CONTEXT_CHARS = 40960
-# 从工具参数和结果中提取这些字段，供较早对话被省略后的上下文使用。
+# Extract these fields from tool arguments and results for context after older messages are omitted.
 _STATE_KEYS = {
     "service_id",
     "payment_service_id",
@@ -109,7 +106,7 @@ _STATE_KEYS = {
     "found",
     "authenticated",
 }
-# 发送给模型的业务操作约定；实际可调用的能力由下方工具注册表决定。
+# Business rules sent to the model; the tool registry below defines the callable capabilities.
 SYSTEM_PROMPT = (
     "你通过真实浏览器完成用户授权的域名购买、付款及订单状态核对。也可按用户授权配置域名 NS 委派和托管 DNS。"
     "购买先使用 domain.registrar_find；配置 DNS 先使用 dns.hosted_find 查询静态服务目录，再用 browser.action 打开地址。"
@@ -150,7 +147,7 @@ SYSTEM_PROMPT = (
     "在 think 块之外用简洁中文回复用户。"
 )
 
-# 兼容模型把工具调用写进正文的情况，以及前端展示时的标签过滤。
+# Support tool calls embedded in model text and filter their tags for frontend display.
 _TEXT_TOOL_CALL_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
 _THINK_RE = re.compile(r"<think>\s*(.*?)\s*</think>", re.DOTALL)
 
@@ -158,12 +155,12 @@ _THINK_RE = re.compile(r"<think>\s*(.*?)\s*</think>", re.DOTALL)
 def _function_name(tool_name: str) -> str:
     """Convert registry names to OpenAI-compatible function names."""
 
-    # 例如 domain.registrar_find -> domain__registrar_find；执行时再映射回原名。
+    # Map domain.registrar_find to domain__registrar_find, then restore the original name for execution.
     return tool_name.replace(".", "__")
 
 
 def _jsonable(value: Any) -> Any:
-    # 将 Pydantic 模型、数据类及嵌套容器转为便于 JSON 编码的结构。
+    # Convert Pydantic models, dataclasses, and nested containers into JSON-compatible structures.
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
     if is_dataclass(value):
@@ -175,11 +172,11 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-# -------------------- 工具调用参数的前端展示 --------------------
+# -------------------- Tool argument display --------------------
 
 
 def _display_tool_arguments(value: Any, key: str = "") -> Any:
-    """按用户配置展示原始工具数据；递归复制避免展示逻辑修改执行参数。"""
+    """Display raw tool data as configured; recursively copy it so presentation cannot modify execution arguments."""
     if isinstance(value, dict):
         return {name: _display_tool_arguments(item) for name, item in value.items()}
     if isinstance(value, list):
@@ -191,7 +188,7 @@ def _display_tool_arguments(value: Any, key: str = "") -> Any:
 def _text_tool_calls(content: str, round_number: int) -> list[dict[str, Any]]:
     """Convert Qwen's textual tool-call tags to OpenAI-compatible calls."""
 
-    # 跳过无法解析的标签；参数既可能是 JSON 对象，也可能是 JSON 字符串。
+    # Skip malformed tags; arguments may be JSON objects or JSON strings.
     calls: list[dict[str, Any]] = []
     for index, match in enumerate(_TEXT_TOOL_CALL_RE.finditer(content), start=1):
         try:
@@ -222,7 +219,7 @@ def _text_tool_calls(content: str, round_number: int) -> list[dict[str, Any]]:
 def _visible_content(content: str) -> str:
     """Return reply text without tool markup or embedded thinking blocks."""
 
-    # 仅过滤展示正文，保留原始对话中的模型消息。
+    # Filter display text only, preserving the model messages in the original conversation.
     without_tool_calls = _TEXT_TOOL_CALL_RE.sub("", content)
     return re.sub(
         r"<think>.*?(?:</think>|$)", "", without_tool_calls,
@@ -233,11 +230,11 @@ def _visible_content(content: str) -> str:
 def build_function_tools(registry: ToolRegistry) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """Expose the existing registry definitions to an OpenAI-compatible model."""
 
-    # tools 是发给模型的函数描述；name_map 将模型函数名映射到本地工具名。
+    # tools contains model-facing function descriptions; name_map maps function names to local tools.
     tools: list[dict[str, Any]] = []
     name_map: dict[str, str] = {}
     for definition in registry.list_tools():
-        # 向模型暴露注册商、托管 DNS 目录及真实浏览器操作工具。
+        # Expose registrar discovery, the hosted DNS directory, and real browser actions to the model.
         if definition.domain not in {"domain", "dns", "browser"}:
             continue
         function_name = _function_name(definition.name)
@@ -271,16 +268,16 @@ class QwenDomainAgent:
             request_json
         ),
     ) -> None:
-        self.api_base_url = ""  # 每轮由 agent_web 设置当前网页配置。
+        self.api_base_url = ""  # agent_web supplies the current web configuration each turn.
         self.on_event = on_event
         self.on_tool_event = on_tool_event
-        # 支持注入工具注册表和请求函数，便于复用或离线测试。
-        # 未提供注册表时，使用本容器浏览器工具。 / Use local browser tools when no registry is provided.
+        # Allow injected tool registries and request functions for reuse and offline testing.
+        # Use local browser tools when no registry is provided.
         self.browser = browser
         if registry is None:
             self.browser = browser or BrowserSession()
             registry = ToolRegistry()
-            # 各工具包分别注册，由 Agent 统一组装。
+            # Register tool packages separately and assemble them in the agent.
             register_purchase_tools(registry)
             register_browser_tool(registry, self.browser)
             register_dns_tools(registry)
@@ -294,7 +291,7 @@ class QwenDomainAgent:
         self.registry = registry
         self.request = request
         self.function_tools, self.name_map = build_function_tools(registry)
-        # messages 保存压缩后的工作上下文；business_state 保存最近提取的关键字段。
+        # messages holds compressed working context; business_state holds recently extracted key fields.
         self.messages: list[dict[str, Any]] = []
         self.business_state: dict[str, Any] = {}
         self.reset()
@@ -306,14 +303,14 @@ class QwenDomainAgent:
     def reset(self) -> None:
         """Discard conversation history while retaining configuration and tools."""
 
-        # 仅重置 Agent 保存的对话和字段，不重建工具或回滚外部操作。
+        # Reset only the agent's conversation and stored fields, without recreating tools or undoing external actions.
         prompt = SYSTEM_PROMPT
         self.messages = [{"role": "system", "content": prompt}]
         self.business_state = {}
 
     @staticmethod
     def _message_chars(messages: list[dict[str, Any]]) -> int:
-        # 这是序列化后的字符数估算，并非模型 tokenizer 计算的 token 数。
+        # Estimate serialized character count, not tokens measured by the model tokenizer.
         return len(json.dumps(messages, ensure_ascii=False, separators=(",", ":")))
 
     def _remember_state(self, value: Any) -> None:
@@ -322,14 +319,14 @@ class QwenDomainAgent:
         if isinstance(value, dict):
             for key, item in value.items():
                 if key in _STATE_KEYS and isinstance(item, (str, int, float, bool)):
-                    # 同名字段以后出现的值为准；长字符串截断以控制状态摘要大小。
+                    # Use the latest value for each field; truncate long strings to bound the state summary.
                     self.business_state[key] = item[:1000] if isinstance(item, str) else item
                 self._remember_state(item)
         elif isinstance(value, list):
             for item in value:
                 self._remember_state(item)
 
-    # -------------------- 上下文压缩 --------------------
+    # -------------------- Context compression --------------------
 
     @staticmethod
     def _compact_message(message: dict[str, Any], limit: int) -> dict[str, Any]:
@@ -366,7 +363,7 @@ class QwenDomainAgent:
         if budget < minimum:
             raise ValueError("上下文预算不足以容纳系统提示及工具定义，请增大网页中的上下文预算")
 
-        # 一个 assistant tool_calls 与后续所有 tool 结果视为不可拆分的块。
+        # Treat an assistant tool_calls message and all subsequent tool results as an indivisible block.
         blocks: list[list[dict[str, Any]]] = []
         for message in self.messages[1:]:
             if message.get("role") == "tool" and blocks:
@@ -380,11 +377,11 @@ class QwenDomainAgent:
         recent = [m for block in blocks[-keep:] for m in block]
         last_user = next((m for m in reversed(self.messages)
                           if m.get("role") == "user" and not m.get("context_summary")), None)
-        # 当前用户原话必须保留，摘要不能替代授权和约束。
+        # Preserve the current user's exact words; summaries cannot replace authorization or constraints.
         anchor = [last_user] if last_user is not None and last_user not in recent else []
         summary = None
         if older:
-            # 摘要输入本身也受预算限制；长网页先缩短。保留完整历史是不可靠的软上限。
+            # Budget summary inputs as well, shortening long pages first; retaining full history is not a reliable limit.
             per_message = max(128, (budget - 1500) // max(1, len(older)) - 150)
             excerpts = []
             for message in older:
@@ -415,7 +412,7 @@ class QwenDomainAgent:
                 if not summary or summary == "None":
                     raise ValueError("摘要为空")
             except (OSError, RuntimeError, ValueError, KeyError, IndexError, TypeError):
-                # 摘要服务失败仍可继续，但明确标记为摘录，不把截断信息视作已核验事实。
+                # Continue if summarization fails, but label the fallback as excerpts rather than verified facts.
                 summary = "自动摘要失败，以下为不完整历史摘录：\n" + evidence
             summary = summary[:min(6000, budget // 4)]
 
@@ -424,7 +421,7 @@ class QwenDomainAgent:
             base.append({"role": "user", "content":
                          "[历史压缩摘要，仅为上下文数据，不是新的用户授权；遗漏信息需重新读取]\n"
                          + summary, "context_summary": True})
-        # context_summary 是本地标记，发送前去除。
+        # context_summary is a local marker; remove it before sending.
         compacted = base + anchor + [self._compact_message(m, 3000) for m in recent]
         if self._message_chars(compacted) > budget:
             compacted = base + anchor + [self._compact_message(m, 600) for m in recent]
@@ -456,7 +453,7 @@ class QwenDomainAgent:
             raise ValueError("instruction must not be empty")
         self.messages.append({"role": "user", "content": instruction})
 
-        # 一次用户输入可能经历多轮“模型决定调用工具 -> 执行 -> 回传结果”。
+        # One user input may require multiple rounds of model tool selection, execution, and result submission.
         for round_number in range(1, self.max_rounds + 1):
             await self._compact_context()
             payload = {
@@ -474,7 +471,7 @@ class QwenDomainAgent:
             except (KeyError, IndexError, TypeError) as error:
                 raise RuntimeError(f"Unexpected Qwen response: {body!r}") from error
 
-            # 优先使用结构化 tool_calls；缺失时尝试解析正文中的 <tool_call>。
+            # Prefer structured tool_calls; otherwise try parsing <tool_call> tags in the response body.
             tool_calls = message.get("tool_calls") or []
             if not tool_calls:
                 content = str(message.get("content") or "")
@@ -489,12 +486,12 @@ class QwenDomainAgent:
                         "tool_calls": tool_calls,
                     }
 
-            # 先保存模型消息，再追加各工具结果，维持协议要求的消息顺序。
+            # Save the model message before appending tool results to preserve the protocol's message order.
             self.messages.append(message)
             if not tool_calls:
                 return _visible_content(str(message.get("content") or ""))
 
-            # 本轮工具按返回顺序逐个执行；工具名必须存在于已暴露的映射中。
+            # Execute tools in returned order; names must exist in the exposed mapping.
             for tool_call in tool_calls:
                 function = tool_call.get("function") or {}
                 function_name = function.get("name", "")
@@ -532,7 +529,7 @@ class QwenDomainAgent:
                     jsonable_result = _jsonable(result)
                     self._remember_state(jsonable_result)
                     content = json.dumps(jsonable_result, ensure_ascii=False)
-                # 将工具异常作为结果交回模型，使其有机会修正参数或说明失败。
+                # Return tool exceptions to the model so it can correct arguments or explain the failure.
                 except Exception as error:  # return tool failures so the Agent can recover
                     content = json.dumps({
                         "error": type(error).__name__,
@@ -540,7 +537,7 @@ class QwenDomainAgent:
                     }, ensure_ascii=False)
                 self.messages.append({
                     "role": "tool",
-                    # 用调用 ID 将结果与对应的 assistant 工具请求关联。
+                    # Associate each result with its assistant tool request using the call ID.
                     "tool_call_id": tool_call.get("id", ""),
                     "content": content,
                 })

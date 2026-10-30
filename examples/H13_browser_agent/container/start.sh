@@ -1,7 +1,7 @@
 #!/bin/bash
-# 启动同容器浏览器和 agent，并保留仿真路由。 / Start the colocated browser and agent with simulation routing.
+# Start the colocated browser and agent with simulation routing.
 set -euo pipefail
-# 自动读取出网地址并配置路由及 DNS。 / Automatically configure routes and DNS from egress addresses.
+# Automatically configure routes and DNS from egress addresses.
 python3 - <<'NETWORK_PY'
 """配置仿真路由、模型出网例外和 DNS 分流。 / Configure simulation routes, model egress exceptions, and split DNS."""
 import ipaddress
@@ -40,12 +40,12 @@ def read_hosts(path):
 def main():
     """在服务启动前配置网络，保留 Docker 默认网关。 / Configure networking before services start, retaining Docker's default gateway."""
     subprocess.run(['ip', 'route', 'replace', '10.0.0.0/8', 'via', os.environ['SIM_GATEWAY']], check=True)
-    Path('/run/h13').mkdir(parents=True, exist_ok=True)
+    Path('/run/browser-agent').mkdir(parents=True, exist_ok=True)
     lines = ['no-resolv', 'bind-interfaces', 'listen-address=127.0.0.1', 'server=10.153.0.53']
-    # 优先读取宿主机挂载文件，独立镜像使用构建时副本。 / Prefer the host-mounted file; standalone images use the build-time copy.
+    # Prefer the host-mounted file; standalone images use the build-time copy.
     config = Path('/opt/network-config/egress_urls.txt')
     if not config.exists():
-        config = Path('/opt/h13/egress_urls.txt')
+        config = Path('/opt/browser-agent/egress_urls.txt')
     hosts = read_hosts(config)
     route = json.loads(subprocess.check_output(['ip', '-j', 'route', 'show', 'default']))
     for name in sorted(host for host in hosts if host):
@@ -57,7 +57,6 @@ def main():
         except ValueError:
             address = None
         if address is not None:
-            # 私网模型地址优先走 Docker 出口，避免被仿真汇总路由捕获。
             # Route private model IPs through Docker instead of the simulation aggregate route.
             if address.version == 4 and address in ipaddress.ip_network('10.0.0.0/8') and address not in ipaddress.ip_network('10.154.0.0/24'):
                 subprocess.run(['ip', 'route', 'replace', str(address) + '/32',
@@ -66,15 +65,15 @@ def main():
         if not re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?', name):
             raise ValueError('Invalid hostname in egress_urls.txt')
         lines.append('server=/' + name + '/127.0.0.11')
-    Path('/run/h13/dnsmasq.conf').write_text('\n'.join(lines) + '\n')
+    Path('/run/browser-agent/dnsmasq.conf').write_text('\n'.join(lines) + '\n')
     Path('/etc/resolv.conf').write_text('nameserver 127.0.0.1\n')
 
 
 if __name__ == '__main__':
     main()
 NETWORK_PY
-mkdir -p /run/h13
-# 生成本容器浏览器连接令牌。 / Generate a connection token for the colocated browser.
+mkdir -p /run/browser-agent
+# Generate a connection token for the colocated browser.
 python3 - <<'PY'
 import json
 from pathlib import Path
@@ -83,7 +82,7 @@ import secrets
 config = {'ws_endpoint': 'ws://127.0.0.1:8080/' + secrets.token_urlsafe(32),
           'assets_url': 'http://127.0.0.1:8081', 'vnc_host': '127.0.0.1',
           'view_port': 5900}
-path = Path('/run/h13/browser_connection.json')
+path = Path('/run/browser-agent/browser_connection.json')
 path.write_text(json.dumps(config))
 path.chmod(0o600)
 
@@ -96,9 +95,8 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
-dnsmasq --keep-in-foreground --conf-file=/run/h13/dnsmasq.conf &
+dnsmasq --keep-in-foreground --conf-file=/run/browser-agent/dnsmasq.conf &
 pids+=("$!")
-# 容器重启会保留 /tmp；清理不可用显示服务留下的锁和套接字。
 # Container restarts preserve /tmp; remove stale files when the display is unavailable.
 if ! xdpyinfo -display :99 >/dev/null 2>&1; then
     rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
@@ -112,7 +110,6 @@ done
 xdpyinfo -display :99 >/dev/null
 openbox &
 pids+=("$!")
-# 只读桌面仅由 agent 网页代理，不对宿主机直接暴露 VNC。
 # Proxy the view-only desktop through the agent UI without exposing VNC to the host.
 x11vnc -display :99 -localhost -rfbport 5900 -forever -shared -nopw -viewonly -quiet &
 pids+=("$!")
@@ -120,7 +117,7 @@ pids+=("$!")
 pids+=("$!")
 export PLAYWRIGHT_DRIVER_DIR
 PLAYWRIGHT_DRIVER_DIR=$(/opt/venv/bin/python -c 'import pathlib, playwright; print(pathlib.Path(playwright.__file__).parent / "driver")')
-"$PLAYWRIGHT_DRIVER_DIR/node" /opt/h13/launch_browser.js &
+"$PLAYWRIGHT_DRIVER_DIR/node" /opt/browser-agent/launch_browser.js &
 pids+=("$!")
 /opt/venv/bin/uvicorn agent_web:app --host 0.0.0.0 --port 8089 --ws-max-size 8388608 --no-access-log &
 pids+=("$!")

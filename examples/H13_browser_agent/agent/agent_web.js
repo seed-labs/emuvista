@@ -3,7 +3,7 @@ let busy = false, started = false, revision = 0;
 let browserState = {connected:false}, browserControlPending = false;
 let saved = {config: {}, profiles: [], activeProfile: null};
 let profilesLoaded = false;
-// 配置草稿和聊天仅存在当前页面内存中。 / Keep configuration drafts and chat only in page memory.
+// Keep configuration drafts and chat only in page memory.
 let session = {entries: []};
 function state(text) { $('status').textContent = text; }
 function config() {
@@ -11,7 +11,7 @@ function config() {
     max_context_chars: Number($('contextLimit').value || 40960),
     model: $('model').value.trim()};
 }
-// 仅更新内存草稿，持久化配置必须显式保存到后端。 / Update only the memory draft; persist profiles explicitly through the backend.
+// Update only the memory draft; persist profiles explicitly through the backend.
 function rememberDraft() { saved.config = config(); }
 function profileList() {
   const draft = document.createElement('option'); draft.value = ''; draft.textContent = '未保存的新配置';
@@ -51,7 +51,7 @@ function validContext() {
   if (Number.isInteger(value) && value >= 8192 && value <= 2000000) return true;
   state('上下文预算请输入 8192 至 2000000 之间的整数（字符数）'); return false;
 }
-// 配置只保存到后端文件，聊天不写入文件。 / Save profiles only to the backend file, excluding chat.
+// Save profiles only to the backend file, excluding chat.
 function syncProfiles() {
   if (!profilesLoaded) return Promise.resolve();
   profileEdit++;
@@ -81,7 +81,7 @@ function previewHTML(html) {
   });
   return '<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; form-action \'none\'; base-uri \'none\'"><style>body{font:14px system-ui;padding:12px;overflow-wrap:anywhere}a{pointer-events:none}</style>' + doc.body.innerHTML;
 }
-// 将工具开始和返回事件合并展示，方便查看参数与执行结果。
+// Combine tool start and result events to show arguments alongside execution results.
 function toolCard(event) {
   const card = document.createElement('article'); card.className = 'tool-card';
   const result = event.result || {}, args = event.arguments || {};
@@ -100,7 +100,7 @@ function toolCard(event) {
     summary.textContent = label; pre.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
     el.append(summary, pre); card.append(el);
   };
-  // 动作参数直接展示，无需展开。 / Show action arguments without expanding a disclosure.
+  // Show action arguments without expanding a disclosure.
   const parameters = document.createElement('pre'); parameters.className = 'tool-arguments';
   parameters.textContent = JSON.stringify(args, null, 2);
   card.append(parameters);
@@ -136,7 +136,6 @@ function recordTool(event) {
     entries.push({role: 'tool', event});
     renderEntry(entries[entries.length - 1]);
   }
-  // 插入或更新工具卡片后再滚动，保留其他消息的展开状态。
   // Scroll after updating the tool card and preserve other messages' disclosure state.
   scrollChat();
 }
@@ -156,7 +155,6 @@ function renderEntry(entry) {
 }
 let chatScrollFrame = null;
 function scrollChat() {
-  // 等本轮消息和状态栏布局完成后滚动，避免高度变化覆盖滚动位置。
   // Scroll after message and status layout updates have settled.
   if (chatScrollFrame !== null) cancelAnimationFrame(chatScrollFrame);
   chatScrollFrame = requestAnimationFrame(() => {
@@ -282,7 +280,7 @@ function browserControls() {
   $('browserReconnect').disabled = disconnected || !browserState.connected;
   $('browserClose').disabled = disconnected || browserControlPending || !browserState.connected || busy;
 }
-// 向同源内嵌画面发送连接信息，不把临时会话令牌持久化。
+// Send connection details to the same-origin embedded view without persisting temporary session tokens.
 function notifyViewer() {
   $('browserFrame').contentWindow?.postMessage({type:'browser_view',token:browserState.token}, location.origin);
 }
@@ -314,7 +312,7 @@ if (typeof window !== 'undefined') window.addEventListener('message', event => {
       && event.data.type === 'browser_viewer_ready' && browserState.connected) notifyViewer();
 });
 
-// 独立测试当前模型配置，不改变当前聊天或运行中的 Agent。
+// Test the current model configuration without changing the chat or running agent.
 $('testModel').onclick = async () => {
   const cfg = config(), button = $('testModel'), output = $('testModelStatus');
   if (!cfg.api_url || !cfg.model) { output.textContent = '请先填写 API URL 和模型名称'; return; }

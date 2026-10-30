@@ -1,4 +1,4 @@
-"""限制查询参数；不接受任意 dig 选项或命令。"""
+"""Restrict query parameters; do not accept arbitrary dig options or commands."""
 
 import ipaddress
 import re

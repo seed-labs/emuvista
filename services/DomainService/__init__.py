@@ -1,13 +1,13 @@
-"""导出 Registry、FOSSBilling、DNS 托管及模拟支付服务。
-Export Registry, FOSSBilling, DNS hosting, and simulated payment services.
+"""Export Registry, FOSSBilling, DNS hosting, and simulated payment services.
 """
-from .RegistryService import RegistryService, RegistryServer
-from .FossBillingService import FossBillingService, FossBillingServer
+from .NamingoRegistryService import NamingoRegistryService, NamingoRegistryServer
+from .FossBillingRegistrarService import FossBillingRegistrarService, FossBillingRegistrarServer
 from .FakePaymentService import FakePaymentService, FakePaymentServer
-from .DnsHostingService import DnsHostingService, DnsHostingServer
+from .DnsService import DnsService, DnsServer, DnsServiceMerger, DnsUpdateAuthorization
 
 __all__ = [
+    'DnsUpdateAuthorization', 'DnsServiceMerger',
     'FakePaymentService', 'FakePaymentServer',
-    'RegistryService', 'RegistryServer',
-    'FossBillingService', 'FossBillingServer', 'DnsHostingService', 'DnsHostingServer',
+    'NamingoRegistryService', 'NamingoRegistryServer',
+    'FossBillingRegistrarService', 'FossBillingRegistrarServer', 'DnsService', 'DnsServer',
 ]

@@ -1,4 +1,4 @@
-"""连接 H13 同容器浏览器，不修改 Docker。 / Connect to the colocated H13 browser without Docker mutations."""
+"""Connect to the colocated H13 browser without Docker mutations."""
 
 import base64
 import hashlib
@@ -9,10 +9,10 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG = Path('/run/h13/browser_connection.json')
+DEFAULT_CONFIG = Path('/run/browser-agent/browser_connection.json')
 
 
-# 读取运行时连接配置，不固定连接凭据。 / Read runtime connection settings without hardcoded credentials.
+# Read runtime connection settings without hardcoded credentials.
 def connection_config():
     path = Path(os.environ.get("AGENT_BROWSER_CONFIG", str(DEFAULT_CONFIG)))
     try:
@@ -20,7 +20,7 @@ def connection_config():
         parsed = urlsplit(data["ws_endpoint"])
         if parsed.scheme not in {"ws", "wss"} or not parsed.hostname or not parsed.path.strip("/"):
             raise ValueError("Invalid browser connection settings")
-        # 所有浏览器端点必须位于本容器回环接口。 / Require every browser endpoint to use container loopback.
+        # Require every browser endpoint to use container loopback.
         if (parsed.hostname != '127.0.0.1'
                 or urlsplit(data['assets_url']).hostname != '127.0.0.1'
                 or data['vnc_host'] != '127.0.0.1'):
@@ -48,7 +48,7 @@ def request_sync(method, path, payload=None):
         connection.close()
 
 
-# 将已校验的工具请求交给 Agent 内部的浏览器运行时执行。
+# Pass validated tool requests to the agent's internal browser runtime.
 async def rpc(payload):
     # Lazy import keeps non-browser tools usable without starting Playwright.
     from .desktop import execute
