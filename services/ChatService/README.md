@@ -9,22 +9,26 @@ ChatService is a composite service for SEED Emulator. It deploys a Tinode chat e
 
 ## Basic usage
 
+The following assumes `emulator` already contains AS151, AS152, and AS153,
+each with a physical host named `host_0`. Configure service settings before
+calling `installServer()` or `installClient()`.
+
 ```python
 from seedemu.core import Binding, Filter
 from services.ChatService import ChatService
 
-chat = ChatService(
-    "packages/tinode-mysql.linux-amd64.tar.gz",
-    "packages/tn-cli.tar.gz",
-)
+chat = ChatService()  # Downloads pinned official packages during Docker build.
 
 chat.installServer("chat151")
 emulator.addBinding(
     Binding("chat151", filter=Filter(asn=151, nodeName="host_0"))
 )
 
-for vnode in ("cli152", "cli153"):
+for vnode, asn in (("cli152", 152), ("cli153", 153)):
     chat.installClient(vnode, server_vnode="chat151")
+    emulator.addBinding(
+        Binding(vnode, filter=Filter(asn=asn, nodeName="host_0"))
+    )
 
 emulator.addLayer(chat)
 ```
@@ -35,7 +39,7 @@ Each client vnode needs its own binding. A client may reference a server inside 
 
 A `ChatClient` created with `server_vnode` does not carry an address at build time. During `configure()`, `ChatService` looks up the resolved binding of the server vnode, takes that node's primary local-network address, and sets it on every client that references it. Clients attached with `server_addr` keep the supplied address.
 
-The default ports are HTTP `6060` and gRPC `16060`. Change them on the service with `setHttpPort()` and `setGrpcPort()`; clients inherit the service ports during `configure()`.
+The default ports are HTTP `6060` and gRPC `16060`. Before installing server or client targets, change them on the service with `setHttpPort()` and `setGrpcPort()`; clients inherit the service ports during `configure()`.
 
 ## Credentials
 
@@ -47,19 +51,21 @@ chat.setDbPassword("...")
 chat.setDbName("...")
 ```
 
-The Tinode API key served to clients is `ChatServer.DEFAULT_API_KEY`, the upstream sample key. A setter is not provided yet, so treat this key as a placeholder and do not rely on it for access control.
+The Tinode API key served to clients is `DEFAULT_API_KEY` in `ChatServer.py`, the upstream sample key. A setter is not provided yet, so treat this key as a placeholder and do not rely on it for access control.
 
-Values interpolated into generated shell and `sed` expressions pass through `check_safe()`, which accepts only alphanumerics and `_ - . @`, so a credential cannot break out of the generated commands.
+Values interpolated into generated shell and `sed` expressions pass through `check_safe()`, which accepts only alphanumerics and `_ - . @`, to restrict these interpolated values.
 
 ## Demo topology
 
-The demo topology — a B00 mini-Internet with one chat server on AS151 and four `tn-cli` clients — is not part of this package. It lands separately under `examples/`, which is where this repository keeps topology drivers, so that installing the service never drags a demo topology along with it.
+The demo topology — a B00 mini-Internet with one chat server on AS151 and four `tn-cli` clients — is not part of this package. It lives separately in [H15 Chat](../../examples/H15_chat/), which is where this repository keeps topology drivers, so that installing the service never drags a demo topology along with it.
 
-The Tinode tarballs the topology needs are download artifacts, excluded from version control; see below.
+The Tinode tarballs are downloaded automatically during Docker build and are not committed; see below.
 
 ## Chat packages
 
-`installServer()` and `installClient()` take the paths of two archives and import them into the generated node at build time, so the service package itself never reads them. They are third-party build artifacts and are not committed here. A topology driver looks for them in `services/ChatService/packages/` by default; `packages/` is excluded from version control.
+With `ChatService()`, server and client Docker builds download the two official [Tinode v0.25.3 release assets](https://github.com/tinode/chat/releases/tag/v0.25.3) and verify the SHA-256 values below before extracting. This follows the build-time release download pattern used by CAService, with pinned versions and checksum verification as used in the Monero base-image build. The default server binary targets Linux amd64. Docker builds need network access to GitHub and the Python package index. No local packages directory is required.
+
+For local archive overrides, pass `tinode_pkg` and/or `tncli_pkg` to `ChatService`, or use `setTinodePackage()` / `setTnCliPackage()`. The H15 example always uses build-time downloads and does not discover local archives. For direct service users, each omitted archive path selects its official download. Supplied local archives are imported as-is; the checksum table can be used to verify them manually.
 
 | Archive | Bytes | SHA-256 |
 |---|---:|---|
@@ -71,6 +77,11 @@ Verify a copy before building:
 ```bash
 sha256sum packages/tinode-mysql.linux-amd64.tar.gz packages/tn-cli.tar.gz
 ```
+
+The downloaded client requirements are installed by pip. They contain version ranges,
+so the full Python dependency set is not locked. `setTinodeGrpcVersion(version)`
+can select a specific `tinode-grpc` version before installing clients; H15 exposes
+this through the `TINODE_GRPC_VERSION` environment variable.
 
 ## Security boundaries
 
