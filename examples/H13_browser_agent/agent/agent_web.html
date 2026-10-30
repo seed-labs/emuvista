@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SeedEmu Standalone Agent</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f6fa;color:#192b3d;font:15px system-ui,sans-serif}main{max-width:980px;margin:auto;padding:28px 20px;height:100dvh;display:flex;flex-direction:column;gap:16px}header{display:flex;align-items:center;justify-content:space-between}h1{font-size:23px;margin:0}small{color:#63758a}.settings{display:flex;gap:12px;flex-wrap:wrap}label{display:flex;flex-direction:column;gap:6px;flex:1}input,textarea,button,select{font:inherit;border:1px solid #ccd5e0;border-radius:9px;padding:11px}input,textarea{background:white;color:inherit}button{cursor:pointer;background:#165ddc;color:white;border:0}button:disabled{opacity:.5;cursor:default}#chat{flex:1;overflow:auto;background:white;border:1px solid #e1e7ee;border-radius:14px;padding:20px;min-height:120px}.bubble{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;padding:12px 16px;margin:12px 0;border-radius:10px;background:#f1f5f9}.user{background:#eaf1ff;margin-left:12%}.error{background:#fff0ed;color:#913620}.role{font-size:12px;font-weight:700;color:#64748b;margin-bottom:5px}details{margin:10px 0;color:#526278;font-size:13px}pre{white-space:pre-wrap;overflow-wrap:anywhere}form{display:flex;gap:10px}textarea{flex:1;resize:vertical;min-height:70px;max-height:220px}#status{font-size:13px;color:#526278}button.secondary{background:white;color:#28517e;border:1px solid #ccd5e0}
+.tool-card{border:1px solid #cedced;border-left:4px solid #397ad8;border-radius:10px;padding:16px;margin:14px 0;background:#f9fbfe}.tool-meta{font-size:13px;color:#526278;overflow-wrap:anywhere}.tool-card pre{max-height:360px;overflow:auto}.tool-card iframe{width:100%;height:380px;border:1px solid #dbe3ec;background:white;margin-top:10px}
+
+main{max-width:none;padding:18px 24px;gap:12px;overflow:hidden}
+header{flex-shrink:0;gap:12px}.header-actions{display:flex;gap:8px}
+.workspace{display:flex;flex:1;min-height:0;gap:20px;position:relative}
+#sidebar{flex:0 0 320px;overflow:auto;padding:16px;background:#fff;border:1px solid #e1e7ee;border-radius:14px}
+#sidebar[hidden]{display:none}#sidebar details{margin:0;color:inherit;font-size:14px}
+#sidebar summary{font-weight:600;cursor:pointer;padding-bottom:14px}
+#sidebar .settings{gap:8px;padding:14px 0;border-top:1px solid #e9edf3}
+#sidebar label{flex-basis:100%;min-width:0}#sidebar input,#sidebar select{width:100%;min-width:0}
+#sidebar button{font-size:13px;padding:9px}#sidebar small{display:block;line-height:1.6;margin-top:10px}
+.conversation{display:flex;flex-direction:column;gap:12px;flex:1;min-width:0;min-height:0}
+#chat{min-height:0;padding:24px;overflow-anchor:none}#form{flex-shrink:0}#message{min-width:0}#status{flex-shrink:0}
+@media(min-width:1600px){#chat{padding:28px 5%}}
+@media(max-width:760px){main{padding:12px;gap:10px}h1{font-size:19px}header small{display:none}.header-actions{gap:6px}.header-actions button{font-size:13px;padding:9px}.workspace{gap:0}#sidebar{position:absolute;inset:0 auto 0 0;width:min(340px,100%);z-index:2;box-shadow:8px 0 24px #192b3d26}#chat{padding:12px}.bubble{padding:10px}.user{margin-left:5%}}
+
+#browserPanel{flex:1.2;min-width:0;display:flex;flex-direction:column;border:1px solid #cedced;border-radius:14px;overflow:hidden;background:white}
+.browser-toolbar{display:flex;gap:8px;padding:12px;flex-wrap:wrap;border-bottom:1px solid #e1e7ee;align-items:center}.browser-toolbar strong{flex:1;white-space:nowrap}.browser-toolbar button{padding:8px;font-size:13px}
+#browserInfo{padding:8px 12px;font-size:12px;color:#526278;overflow-wrap:anywhere}#browserFrame{border:0;width:100%;flex:1;min-height:0;background:#17212f}#browserFrame[hidden]{display:none}#browserEmpty{padding:24px;line-height:1.7;color:#63758a}
+.workspace{gap:12px}#sidebar{flex-basis:280px}.conversation{flex:1}
+@media(max-width:1100px){#sidebar{position:absolute;inset:0 auto 0 0;width:280px;z-index:3;box-shadow:8px 0 24px #192b3d26}}
+@media(max-width:760px){.workspace{flex-wrap:wrap;overflow:auto}.conversation{flex:1 0 100%;height:55dvh}#browserPanel{flex:1 0 100%;min-height:65dvh}#sidebar{position:fixed;inset:70px auto 12px 12px}.browser-toolbar{padding:8px}}
+</style>
+<main>
+<header><div><h1>SeedEmu Standalone Agent</h1><small>域名购买与付款 · 连续对话</small></div><div class="header-actions"><button id="focusChat" class="secondary" aria-controls="sidebar" aria-expanded="true">专注聊天</button><button id="reset" class="secondary">新建对话</button></div></header>
+<div class="workspace">
+<aside id="sidebar" aria-label="模型设置和历史对话"><details open><summary>模型设置与历史对话</summary>
+<section class="settings">
+<label>已保存的模型配置<select id="profiles"></select></label>
+<label>配置名称<input id="profileName" placeholder="例如：本地 Qwen / 云端模型" maxlength="80"></label>
+<button id="profileNew" class="secondary">新增配置</button>
+<button id="profileSave">保存配置</button>
+<button id="profileDelete" class="secondary">删除配置</button>
+<small id="configStatus" role="status">正在读取本机配置…</small>
+</section>
+<section class="settings">
+<label>API URL<input id="apiUrl" type="url" placeholder="https://模型服务地址/v1"></label>
+<label>API Key<input id="apiKey" type="password" autocomplete="off" placeholder="无需鉴权可留空"></label>
+</section>
+<section class="settings">
+<label>模型名称<input id="model" placeholder="输入模型名称，例如 Qwen3-8B"></label>
+<button id="testModel" type="button">测试模型连接</button>
+<small id="testModelStatus" role="status">使用当前配置发起一次简短模型请求。</small>
+<label>上下文预算（字符数）<input id="contextLimit" type="number" min="8192" max="2000000" step="1" value="40960"></label>
+<small>包含消息与工具定义，超限时压缩历史；不是模型 token 上限。</small>
+
+</section>
+<section class="settings">
+<button id="clearKey" class="secondary">清除已保存 Key</button>
+</section>
+<small>点击“保存配置”将模型配置写入 H13 的 agent/model_profiles.json，容器重建后仍保留。未保存的输入只存在当前页面内存中。浏览器和工具固定在本容器执行。聊天不保存；新建对话会重置浏览器会话，但不会撤销已执行的业务操作。</small>
+</details></aside>
+<div class="conversation">
+<div id="status" role="status">正在连接…</div>
+<section id="chat" aria-live="polite"><p id="welcome">输入任务开始对话。工具执行过程会显示在回复前。聊天仅在当前页面保留。</p></section>
+<form id="form"><textarea id="message" aria-label="指令" placeholder="输入指令，Enter 发送，Shift + Enter 换行" required maxlength="32000"></textarea><button id="send" disabled>发送</button></form>
+
+</div>
+<section id="browserPanel" aria-label="真实浏览器">
+<div class="browser-toolbar"><strong>实时浏览器</strong><button id="browserConnect">启动浏览器</button><button id="browserReconnect" class="secondary" disabled>重新连接画面</button><button id="browserClose" class="secondary" disabled>关闭会话</button></div>
+<div id="browserInfo" role="status">H13 · 本容器 Chromium 浏览器</div>
+<div id="browserEmpty">点击“启动浏览器”连接本容器中的 Chromium。<br>这里实时显示 agent 的浏览器操作，仅供观看，不接受键盘和鼠标输入。</div>
+<iframe id="browserFrame" title="Agent 实时浏览器桌面" hidden></iframe>
+</section>
+</div>
+</main>
+<script src="/agent_web.js?v=2"></script>
+</html>

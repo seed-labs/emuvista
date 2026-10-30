@@ -31,6 +31,30 @@ RECURSIVE_RESOLVERS = ("10.152.0.53", "10.153.0.53")
 OWNER_DNS = ["11.160.0.53", "11.160.0.54"]
 
 
+class _StepReporter:
+    """Emit readable progress without splitting one stateful E2E transaction."""
+
+    def __init__(self) -> None:
+        self._number = 0
+        self._started_at = 0.0
+        self._label = ""
+
+    def start(self, label: str) -> None:
+        self._number += 1
+        self._label = label
+        self._started_at = time.monotonic()
+        print(f"\n[B02a step {self._number:02d} RUN ] {label}", flush=True)
+
+    def passed(self, detail: str = "") -> None:
+        elapsed = time.monotonic() - self._started_at
+        suffix = f" - {detail}" if detail else ""
+        print(
+            f"[B02a step {self._number:02d} PASS] {self._label} "
+            f"({elapsed:.2f}s){suffix}",
+            flush=True,
+        )
+
+
 class _HiddenFields(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -115,17 +139,51 @@ def _check_availability(
     return domains[0]
 
 
+def _wait_for_availability(
+    registry: ToolRegistry,
+    session_id: str,
+    domain: str,
+    *,
+    attempts: int = 30,
+    interval_seconds: float = 2,
+) -> dict:
+    """Wait for Loom's DNS and EPP path after its web frontend is ready."""
+    last_error: AssertionError | None = None
+    transient_messages = (
+        "Temporary failure in name resolution",
+        "Connection refused",
+        "Connection timed out",
+        "Operation timed out",
+    )
+    for _ in range(attempts):
+        try:
+            return _check_availability(registry, session_id, domain)
+        except AssertionError as error:
+            if not any(message in str(error) for message in transient_messages):
+                raise
+            last_error = error
+            time.sleep(interval_seconds)
+    raise AssertionError(
+        f"Loom's EPP path did not become ready within "
+        f"{attempts * interval_seconds:.0f} seconds"
+    ) from last_error
+
+
 def test_agent_configures_dns_buys_example_com_and_resolves_it() -> None:
     """Exercise availability, purchase, update, delegation, and resolution."""
 
+    steps = _StepReporter()
     registry = ToolRegistry()
     backend = DockerRuntimeBackend()
     register_dns_tools(registry, backend)
 
+    steps.start("discover the Loom Registrar")
     directory = _invoke(registry, "domain.registrar_find", {})
     loom = [item for item in directory.registrars if item.registrar_url == REGISTRAR_URL]
     assert len(loom) == 1, "B02a must expose exactly one Loom frontend"
+    steps.passed(REGISTRAR_URL)
 
+    steps.start("discover and configure source-owned authoritative DNS")
     dns_directory = _invoke(registry, "dns.authoritative_find", {"source": SOURCE})
     assert dns_directory.source == SOURCE
     assert len(dns_directory.services) == 1, dns_directory
@@ -148,13 +206,15 @@ def test_agent_configures_dns_buys_example_com_and_resolves_it() -> None:
     assert configured.successful, configured.stderr
     assert configured.primary_authoritative and configured.secondary_authoritative
     assert configured.primary_soa == configured.secondary_soa
+    steps.passed(f"SOA serial {configured.primary_soa}")
 
     session_id = None
     try:
+        steps.start("authenticate to Loom and validate availability checks")
         ready = _wait_for_registrar(registry)
         session_id = ready.session_id
 
-        available = _check_availability(registry, session_id, AVAILABLE_ZONE)
+        available = _wait_for_availability(registry, session_id, AVAILABLE_ZONE)
         assert available.get("available") is True, available
 
         invalid_check_form = _registrar_request(registry, session_id, "/")
@@ -172,6 +232,29 @@ def test_agent_configures_dns_buys_example_com_and_resolves_it() -> None:
         assert invalid_payload.get("success") is False, invalid_payload
         assert invalid_payload.get("message") == "Exactly one domain is required."
 
+        unsupported_check_form = _registrar_request(registry, session_id, "/")
+        assert unsupported_check_form.http_status == 200, unsupported_check_form.stderr
+        unsupported_check = _registrar_request(
+            registry,
+            session_id,
+            "/spark/domain/check",
+            method="POST",
+            fields=list(_hidden_fields(unsupported_check_form.body).items())
+            + [("domains[]", f"www.{AVAILABLE_ZONE}")],
+        )
+        assert unsupported_check.http_status == 422, unsupported_check
+        unsupported_payload = json.loads(unsupported_check.body)
+        assert unsupported_payload.get("success") is False, unsupported_payload
+        assert (
+            unsupported_payload.get("message")
+            == "Only domains directly under the configured TLD can be registered. "
+            "Register the parent domain and create deeper names as DNS records."
+        )
+        steps.passed(
+            f"{AVAILABLE_ZONE} is available; invalid and deeper names are rejected"
+        )
+
+        steps.start("order example.com and pay the invoice")
         order_form = _registrar_request(
             registry, session_id, f"/orders/register/{ZONE}"
         )
@@ -214,7 +297,9 @@ def test_agent_configures_dns_buys_example_com_and_resolves_it() -> None:
         assert payment.http_status == 200, payment.stderr
         payment_result = json.loads(payment.body)
         assert payment_result.get("success") is True, payment_result
+        steps.passed(f"invoice {invoice_id}")
 
+        steps.start("verify the purchased domain is active and unavailable")
         services = _registrar_request(
             registry, session_id, "/api/records/services?order=id,desc&page=1,10"
         )
@@ -231,7 +316,9 @@ def test_agent_configures_dns_buys_example_com_and_resolves_it() -> None:
         unavailable = _check_availability(registry, session_id, ZONE)
         assert unavailable.get("available") is False, unavailable
         assert unavailable.get("transferable") is not True, unavailable
+        steps.passed(ZONE)
 
+        steps.start("update and persist the domain authInfo")
         service_id = str(purchased[0]["id"])
         edit_form = _registrar_request(
             registry, session_id, f"/services/{service_id}/edit"
@@ -260,6 +347,7 @@ def test_agent_configures_dns_buys_example_com_and_resolves_it() -> None:
         assert len(updated) == 1, updated_records
         updated_config = json.loads(updated[0].get("config") or "{}")
         assert updated_config.get("authcode") == UPDATED_AUTH_INFO, updated_config
+        steps.passed(f"service {service_id}")
     finally:
         if session_id is not None:
             _invoke(registry, "domain.registrar_request", {
@@ -271,6 +359,7 @@ def test_agent_configures_dns_buys_example_com_and_resolves_it() -> None:
                 "authentication": "required",
             })
 
+    steps.start("verify Registrar and Registry WHOIS/RDAP")
     rdds_results = {}
     for _ in range(20):
         for authority in ("registrar", "registry"):
@@ -296,7 +385,9 @@ def test_agent_configures_dns_buys_example_com_and_resolves_it() -> None:
         assert "Domain Name: EXAMPLE.COM" in whois.body, whois.body
         assert rdap.successful and rdap.found, rdap.stderr or rdap.body
         assert rdap.rdap is not None and rdap.rdap.get("ldhName") == ZONE, rdap.body
+    steps.passed("4 authority/protocol combinations")
 
+    steps.start("wait for delegation and glue on every public COM server")
     pending_com_servers = set(COM_SERVERS)
     delegation_results = {}
     for _ in range(30):
@@ -324,7 +415,9 @@ def test_agent_configures_dns_buys_example_com_and_resolves_it() -> None:
         delegation = delegation_results[com_server]
         assert delegation.parent_ns_names == ["ns1.example.com.", "ns2.example.com."]
         assert delegation.missing_glue_names == []
+    steps.passed(", ".join(COM_SERVERS))
 
+    steps.start("update DNS and verify both authoritative servers")
     updated_dns = _invoke(registry, "dns.configure", {
         "source": SOURCE,
         "dns_service_id": dns_service.service_id,
@@ -353,7 +446,9 @@ def test_agent_configures_dns_buys_example_com_and_resolves_it() -> None:
             owner_dns,
             authoritative,
         )
+    steps.passed(f"{NAME} -> {UPDATED_ANSWER}")
 
+    steps.start("verify the updated answer through every recursive resolver")
     pending_resolvers = set(RECURSIVE_RESOLVERS)
     resolver_results = {}
     for _ in range(60):
@@ -385,3 +480,4 @@ def test_agent_configures_dns_buys_example_com_and_resolves_it() -> None:
         assert lookup.command_successful, (resolver, lookup)
         assert lookup.response_status == "NOERROR", (resolver, lookup)
         assert lookup.answers == [UPDATED_ANSWER], (resolver, lookup)
+    steps.passed(", ".join(RECURSIVE_RESOLVERS))
