@@ -9,13 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from seedemu.core import Binding, Emulator, Filter
+from seedemu.core import Emulator
 from seedemu.compiler import Docker, Platform
 from seedemu.layers import Base, Ebgp, Routing
 from seedemu.utilities import Makers
-from services.PaymentService import PaymentService
+from services.PaymentService import PaymentBundle
 from mini_internet import build_emulator
-from initial_state import load_users, prepare_bundle
 
 
 def compact_network():
@@ -38,9 +37,9 @@ def main():
     parser.add_argument('--state', type=Path, help='Optional directory to save and resume payment state')
     parser.add_argument('--images', type=Path, help='JSON mapping of component roles to prebuilt image references')
     initial = parser.add_mutually_exclusive_group()
-    initial.add_argument('--users', type=Path, default=Path(__file__).with_name('users.json'),
-                         help='Initial user configuration (default: users.json)')
-    initial.add_argument('--initial-data', type=Path, help='Advanced: use a Komunitin ZIP instead of users.json')
+    initial.add_argument('--config', type=Path, default=Path(__file__).with_name('groups.json'),
+                         help='Community, currency and user configuration (default: groups.json)')
+    initial.add_argument('--initial-data', type=Path, help='Advanced: use a Komunitin ZIP instead of groups.json')
     parser.add_argument('--host-port', type=int, default=8443, help='Host browser HTTPS port (default: 8443)')
     args = parser.parse_args()
     output = args.output.resolve()
@@ -51,27 +50,30 @@ def main():
     if any(output.glob('payment-*/state')):
         parser.error('output contains runtime data from the old layout; stop its containers and move output aside before recompiling')
     admin_email, admin_password = 'admin@h20.example', 'seed1234'
+    emu = build_emulator() if args.topology == 'mini' else compact_network()
+    emu.render()
+    payment = PaymentBundle(emu, images=json.loads(args.images.read_text()) if args.images else None)
+    asn = 150 if args.topology == 'mini' else 210
+    payment.setDefaultInternalNetwork(
+        name=f'net_{asn}_net0',
+        ip_addresses=[f'10.{asn}.0.{10+index}' for index in range(len(payment.getContainers()))],
+        default_route=f'10.{asn}.0.254')
+    payment.enableHostAccess(args.host_port)
+    payment.setAdminCredentials(admin_email, admin_password)
     try:
-        users = load_users(args.users, admin_email) if not args.initial_data else None
-        initial_data = args.initial_data if args.initial_data else prepare_bundle(users, admin_email, args.state)
+        if args.initial_data:
+            payment.setInitialData(args.initial_data)
+        else:
+            payment.setInitialConfiguration(args.config)
     except (OSError, ValueError) as error:
         parser.error(str(error))
-    emu = build_emulator() if args.topology == 'mini' else compact_network()
-    payment = PaymentService(json.loads(args.images.read_text()) if args.images else None)
-    wallet = payment.install('wallet')
-    wallet.enableHostAccess(args.host_port)
-    wallet.setAdminCredentials(admin_email, admin_password)
-    wallet.setInitialData(initial_data)
     if args.state:
-        wallet.setSavePath(str(args.state))
-    emu.addLayer(payment)
-    emu.addBinding(Binding('wallet', filter=Filter(asn=150 if args.topology == 'mini' else 210, nodeName='host_0')))
-    emu.render()
+        payment.setSavePath(str(args.state))
     compiler = Docker(platform=Platform.AMD64)
-    compiler.addContainerBundle(payment.getContainerBundle(emu))
+    compiler.addContainerBundle(payment)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     emu.compile(compiler, str(args.output.resolve()), override=True)
-    print(f'Compiled PaymentService: {wallet.getURL()}')
+    print(f'Compiled PaymentBundle: {payment.getURL()}')
     print(f'Host browser: https://localhost:{args.host_port}/login-mail')
     print(f'Next: cd {args.output}; docker compose build; docker compose up -d')
 
