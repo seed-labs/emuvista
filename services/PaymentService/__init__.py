@@ -1,5 +1,5 @@
-"""Komunitin payment service for SEED Emulator."""
+"""Komunitin container bundle for SEED Emulator."""
 
-from .PaymentService import PaymentService, PaymentServer
+from .PaymentBundle import PaymentBundle
 
-__all__ = ["PaymentService", "PaymentServer"]
+__all__ = ["PaymentBundle"]

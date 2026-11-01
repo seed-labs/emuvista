@@ -1,0 +1,62 @@
+{
+  "groups": [
+    {
+      "code": "NORT",
+      "name": "North Community",
+      "currency": {
+        "name": "North Credit",
+        "symbol": "NC",
+        "rate": 2
+      },
+      "users": [
+        {
+          "name": "Alice",
+          "email": "alice@north.example",
+          "password": "payment-demo",
+          "balance": 100
+        },
+        {
+          "name": "Bob",
+          "email": "bob@north.example",
+          "password": "payment-demo",
+          "balance": 50
+        }
+      ]
+    },
+    {
+      "code": "SOUT",
+      "name": "South Community",
+      "currency": {
+        "name": "South Credit",
+        "symbol": "SC",
+        "rate": 1
+      },
+      "users": [
+        {
+          "name": "Carol",
+          "email": "carol@south.example",
+          "password": "payment-demo",
+          "balance": 50
+        },
+        {
+          "name": "Dave",
+          "email": "dave@south.example",
+          "password": "payment-demo",
+          "balance": 20
+        }
+      ]
+    }
+  ],
+  "trustlines": [
+    {
+      "from": "NORT",
+      "to": "SOUT",
+      "limit": 1000
+    },
+    {
+      "from": "SOUT",
+      "to": "NORT",
+      "limit": 2000
+    }
+  ]
+}
