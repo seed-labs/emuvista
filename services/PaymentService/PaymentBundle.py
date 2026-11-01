@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -33,7 +34,9 @@ class PaymentBundle(ContainerBundle):
             config = root / 'config'
             config.mkdir(parents=True, mode=0o755)
             key = server._secrets
-            state = server._state_path or (root / 'state')
+            # Fresh state per compilation unless the caller explicitly saves it.
+            # Keep container-owned files outside the replaceable output folder.
+            state = server._state_path or Path(tempfile.mkdtemp(prefix='seedemu-payment-'))
             state.mkdir(parents=True, exist_ok=True, mode=0o700)
             if server._state_path:
                 for name in ('server.crt', 'server.key'):
@@ -179,7 +182,8 @@ class PaymentBundle(ContainerBundle):
                            healthcheck={'test': ['CMD', 'wget', '-q', '--no-check-certificate', '--spider', 'https://127.0.0.1/healthz'], 'interval': '3s', 'timeout': '5s', 'retries': 60})
             value['depends_on'][name('initialize')] = {'condition': 'service_completed_successfully'}
             (root / 'deployment.json').write_text(json.dumps({'vnode': server._vnode, 'url': public,
-                'node_service': node_service, 'images': images, 'initial_data_sha256': fingerprint}, indent=2) + '\n')
+                'node_service': node_service, 'images': images, 'initial_data_sha256': fingerprint,
+                'state_path': str(state), 'persistent': server._state_path is not None}, indent=2) + '\n')
         # The compiler subsequently writes this file without replacing its inode.
         # Restrict it now because the component environments contain credentials.
         Path('docker-compose.yml').touch(mode=0o600, exist_ok=True)

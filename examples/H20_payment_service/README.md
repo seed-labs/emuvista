@@ -34,7 +34,7 @@ Open <https://localhost:8443/login-mail> from the host browser, including Window
 
 Use **Transfers → Create transfer → Send / Receive** to pay or request payment. The default Coffee Shop wallet can receive merchant payments.
 
-Administrator: `admin@h20.example` / `h20-experiment-admin-password`. Community accounts and transactions are available at `/groups/SEED/admin/accounts` and `/groups/SEED/admin/transactions`.
+Administrator: `admin@h20.example` / `seed1234`. Community accounts and transactions are available at `/groups/SEED/admin/accounts` and `/groups/SEED/admin/transactions`.
 
 Emulated clients use `https://10.150.0.71` and API ports 2026 (authentication) and 2025 (accounting).
 
@@ -45,11 +45,13 @@ Emulated clients use `https://10.150.0.71` and API ports 2026 (authentication) a
 | `--users PATH` | Initial users JSON; defaults to `users.json` beside the script |
 | `--topology mini\|compact` | B00 network (default), or three ASes with the wallet at `10.210.0.71` |
 | `--output PATH` | Compilation directory; defaults to `output/` |
-| `--state PATH` | Persistent payment state, including cached initialization data |
+| `--state PATH` | Optional directory to save and resume payment state |
 | `--host-port PORT` | Host browser HTTPS port; defaults to `8443` |
 | `--images PATH` | JSON overrides for prebuilt images |
 | `--initial-data PATH` | Advanced: supply a Komunitin ZIP instead of `users.json` |
 
-Use `python3 payment.py --state .runtime/payment-state` to preserve progress across recompilation. Restarting does not replay initial allocations. Changing `users.json` requires a new state directory; existing passwords and balances are not overwritten.
+Without `--state`, each compilation starts a new experiment using `users.json`. Runtime files use a fresh temporary directory outside `output/`, so container-owned files do not block recompilation.
 
-Without `--state`, overwriting `output/` removes its data. Recreate the complete Compose stack together. Initial user configuration belongs to this example; PaymentService only deploys and imports the supplied bundle.
+To save progress, compile with `python3 payment.py --state .runtime/payment-state`. Use the same parameter and path to resume it later. Restarting does not replay initial allocations. Changing `users.json` requires a new state directory; existing passwords and balances are not overwritten.
+
+Stop the Compose stack before recompiling, and recreate it as a whole. For older deployments with data under `output/payment-*/state/`, move the stopped output directory aside first; the script refuses to overwrite it. Initial user configuration belongs to this example; PaymentService only deploys and imports the supplied bundle.

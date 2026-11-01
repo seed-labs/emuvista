@@ -58,7 +58,7 @@ The archive contains payment images only. SEED prepares its own network node ima
 
 Call `setInitialData(path_or_bytes)` before `emu.render()` to configure an optional Komunitin migration ZIP. Compilation writes it into the output and, when persistence is enabled, saves a copy with the state. The import runs on first startup. `setSavePath(path)` persists all databases, the local ledger, files, credentials, certificates and initialization records together.
 
-Keep state outside the compilation output. Reusing it requires the same server address, administrator and initial data. Without `setSavePath()`, data lives under the output directory and is lost when that directory is overwritten. Recreate the entire Compose stack together because containers share a network namespace.
+Keep saved state outside the compilation output. Reusing it requires the same server address, administrator and initial data. Without `setSavePath()`, each compilation allocates fresh temporary runtime storage outside the output directory. Recreate the entire Compose stack together because containers share a network namespace.
 
 ## Endpoints
 

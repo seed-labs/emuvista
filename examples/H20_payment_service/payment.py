@@ -35,7 +35,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--topology', choices=['mini', 'compact'], default='mini')
     parser.add_argument('--output', type=Path, default=Path('output'))
-    parser.add_argument('--state', type=Path, help='Optional persistent state outside compiled output')
+    parser.add_argument('--state', type=Path, help='Optional directory to save and resume payment state')
     parser.add_argument('--images', type=Path, help='JSON mapping of component roles to prebuilt image references')
     initial = parser.add_mutually_exclusive_group()
     initial.add_argument('--users', type=Path, default=Path(__file__).with_name('users.json'),
@@ -43,6 +43,13 @@ def main():
     initial.add_argument('--initial-data', type=Path, help='Advanced: use a Komunitin ZIP instead of users.json')
     parser.add_argument('--host-port', type=int, default=8443, help='Host browser HTTPS port (default: 8443)')
     args = parser.parse_args()
+    output = args.output.resolve()
+    if args.state:
+        state = args.state.resolve()
+        if state == output or output in state.parents:
+            parser.error('payment state must be outside the compilation output directory')
+    if any(output.glob('payment-*/state')):
+        parser.error('output contains runtime data from the old layout; stop its containers and move output aside before recompiling')
     admin_email, admin_password = 'admin@h20.example', 'seed1234'
     try:
         users = load_users(args.users, admin_email) if not args.initial_data else None
