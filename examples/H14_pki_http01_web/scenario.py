@@ -34,13 +34,17 @@ def build_emulator() -> Emulator:
     routing = Routing()
     as150 = base.createAutonomousSystem(150)
     as150.createNetwork("net0", prefix="10.150.0.0/24")
+    as150.createRouter("router0").joinNetwork("net0")
+    as150.setNameServers(["10.150.0.53"])
+    nodes = {}
     for name, address in (
         ("ca", "10.150.0.10"),
         ("web", "10.150.0.20"),
         ("client", "10.150.0.30"),
         ("dns", "10.150.0.53"),
     ):
-        as150.createHost(name).joinNetwork("net0", address)
+        nodes[name] = as150.createHost(name).joinNetwork("net0", address)
+    nodes["ca"].addSoftware("python3")
 
     dns = DomainNameService()
     dns_server = dns.install("pki-dns").addZone(DOMAIN).setMaster()
@@ -72,7 +76,7 @@ def build_emulator() -> Emulator:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=HERE / "output")
+    parser.add_argument("--output", type=Path, default=HERE / "output-h14")
     parser.add_argument("--platform", choices=["amd", "arm"], default="amd")
     args = parser.parse_args()
 
