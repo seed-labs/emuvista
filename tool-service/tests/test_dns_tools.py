@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from seedemu_tool_service.models.runtime import RuntimeCommandResult, RuntimeStatus
-from seedemu_tool_service.registry import ToolRegistry
+from tests.registry_support import ToolRegistry
 from seedemu_tool_service.tools.dns import register_dns_tools
 
 

@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from seedemu_tool_service.models.runtime import RuntimeCommandResult, RuntimeStatus
-from seedemu_tool_service.registry import ToolRegistry
+from tests.registry_support import ToolRegistry
 from seedemu_tool_service.tools.network import register_network_tools
 
 
@@ -1798,5 +1798,3 @@ def test_link_update_validates_interface_name() -> None:
             "network.link_update",
             {"source": "source", "interface": "bad name!", "state": "up"},
         )
-
-

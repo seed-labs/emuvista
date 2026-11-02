@@ -1,7 +1,7 @@
 """Tests for stateless Benchmark topology facts and operations."""
 
 from seedemu_tool_service.models.runtime import RuntimeCommandResult
-from seedemu_tool_service.registry import ToolRegistry
+from tests.registry_support import ToolRegistry
 from seedemu_tool_service.tools.benchmark.registration import register_benchmark_tools
 from seedemu_tool_service.tools.benchmark.tools import BenchmarkTools
 

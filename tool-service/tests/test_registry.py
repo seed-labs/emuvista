@@ -5,7 +5,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from seedemu_tool_service.models.tool import ToolDefinition
-from seedemu_tool_service.registry import ToolNotFoundError, ToolRegistry
+from tests.registry_support import ToolRegistry
 
 
 class NoArguments(BaseModel):
@@ -63,5 +63,5 @@ def test_registry_invokes_bound_method() -> None:
 def test_registry_rejects_unknown_tool() -> None:
     registry = ToolRegistry()
 
-    with pytest.raises(ToolNotFoundError, match="Tool not found: test.missing"):
+    with pytest.raises(KeyError, match="Tool not found: test.missing"):
         anyio.run(registry.invoke, "test.missing", {})

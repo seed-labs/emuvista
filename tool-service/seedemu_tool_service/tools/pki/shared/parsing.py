@@ -17,15 +17,38 @@ def parse_certificate_fields(output: str) -> CertificateFields:
 
 
 def parse_prefixed_value(output: str, key: str) -> str | None:
-    """Return the value from an OpenSSL key=value line."""
+    """Return the value from an OpenSSL key=value or key: value line."""
 
-    prefix = f"{key}="
-    prefix_lower = prefix.lower()
+    prefixes = (f"{key}=", f"{key}:")
     for line in output.splitlines():
         stripped = line.strip()
-        if stripped.lower().startswith(prefix_lower):
-            return stripped[len(prefix) :].strip()
+        for prefix in prefixes:
+            if stripped.lower().startswith(prefix.lower()):
+                return stripped[len(prefix) :].strip()
     return None
+
+
+def extract_pem_certificates(output: str) -> list[str]:
+    """Extract complete PEM certificate blocks from command output."""
+
+    certificates: list[str] = []
+    current: list[str] = []
+    in_certificate = False
+
+    for line in output.splitlines():
+        if line == "-----BEGIN CERTIFICATE-----":
+            current = [line]
+            in_certificate = True
+            continue
+        if not in_certificate:
+            continue
+        current.append(line)
+        if line == "-----END CERTIFICATE-----":
+            certificates.append("\n".join(current))
+            current = []
+            in_certificate = False
+
+    return certificates
 
 
 def parse_subject_common_name(subject: str | None) -> str | None:
@@ -93,6 +116,14 @@ def parse_public_key_algorithm(output: str) -> str | None:
         stripped = line.strip()
         if stripped.startswith("Public Key Algorithm:"):
             return stripped.split(":", 1)[1].strip()
+        if "Public-Key:" in stripped:
+            algorithm = stripped.split("Public-Key:", 1)[0].strip()
+            if algorithm:
+                return algorithm
+    if "ASN1 OID:" in output or "EC PARAMETERS:" in output:
+        return "EC"
+    if "Modulus:" in output:
+        return "RSA"
     return None
 
 
@@ -112,3 +143,29 @@ def parse_public_key_bits(output: str) -> int | None:
             return None
     return None
 
+
+def parse_openssl_error_category(output: str, stderr: str) -> str:
+    """Map common OpenSSL failures to stable agent-facing categories."""
+
+    text = f"{output}\n{stderr}".lower()
+    if "no such file" in text or "not found" in text:
+        return "file_not_found"
+    if "unable to load certificate" in text or "expecting: trusted certificate" in text:
+        return "invalid_certificate_file"
+    if "certificate has expired" in text or "expired" in text:
+        return "certificate_expired"
+    if "self-signed certificate" in text:
+        return "self_signed_certificate"
+    if "unable to get local issuer certificate" in text:
+        return "incomplete_chain"
+    if "unable to verify the first certificate" in text or "unknown ca" in text:
+        return "unknown_issuer"
+    if "hostname mismatch" in text or "verify error:num=62" in text:
+        return "hostname_mismatch"
+    if "permission denied" in text:
+        return "permission_denied"
+    if "timed out" in text or "timeout" in text:
+        return "timeout"
+    if "key values mismatch" in text or "key mismatch" in text:
+        return "private_key_mismatch"
+    return "unknown_error"

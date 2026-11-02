@@ -1,6 +1,8 @@
 """In-memory tool registry."""
 
 import inspect
+import logging
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
@@ -9,13 +11,12 @@ from typing import Any
 import anyio
 from pydantic import BaseModel
 
+from seedemu_tool_service.auth.authorization import AccessContext, AccessDenied
 from seedemu_tool_service.models.tool import ToolDefinition
 
+logger = logging.getLogger("seedemu.auth.audit")
+
 ToolHandler = Callable[..., Any]
-
-
-class ToolNotFoundError(KeyError):
-    """Raised when an invocation targets a tool that is not registered."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,23 +52,75 @@ class ToolRegistry:
         )
         self._tools[definition.name] = RegisteredTool(definition, handler, arguments_model)
 
-    def list_tools(self) -> list[ToolDefinition]:
+    def list_tools(self, *, access: AccessContext) -> list[ToolDefinition]:
         """Return registered tools sorted by name."""
 
-        return [self._tools[name].definition for name in sorted(self._tools)]
+        return [
+            self._tools[name].definition for name in sorted(self._tools) if access.can_call(name)
+        ]
 
-    async def invoke(self, name: str, arguments: Mapping[str, Any]) -> Any:
-        """Invoke a registered handler with keyword arguments."""
-
+    async def invoke(
+        self,
+        name: str,
+        arguments: Mapping[str, Any],
+        *,
+        access: AccessContext,
+    ) -> Any:
+        """Authorize validated arguments before invoking any tool handler."""
+        invocation_id = uuid.uuid4().hex
         try:
-            registered_tool = self._tools[name]
-        except KeyError as error:
-            raise ToolNotFoundError(f"Tool not found: {name}") from error
+            try:
+                registered_tool = self._tools[name]
+            except KeyError as error:
+                raise KeyError(f"Tool not found: {name}") from error
+            if not access.can_call(name):
+                raise AccessDenied("Tool is not authorized")
+            if set(arguments) - set(registered_tool.arguments_model.model_fields):
+                raise ValueError("Unexpected tool arguments")
+            validated = registered_tool.arguments_model.model_validate(arguments).model_dump()
+            authorized = access.authorize(name, validated, registered_tool.arguments_model)
+        except AccessDenied:
+            self._audit(access, name, invocation_id, "denied")
+            raise
+        except Exception:
+            self._audit(access, name, invocation_id, "invalid")
+            raise
 
-        validated_arguments = registered_tool.arguments_model.model_validate(arguments).model_dump()
+        self._audit(access, name, invocation_id, "allowed", authorized)
+        try:
+            if inspect.iscoroutinefunction(registered_tool.handler):
+                result = await registered_tool.handler(**authorized)
+            else:
+                call = partial(registered_tool.handler, **authorized)
+                result = await anyio.to_thread.run_sync(call)
+        except Exception:
+            self._audit(access, name, invocation_id, "execution_error")
+            raise
+        outcome = "completed"
+        if getattr(result, "successful", None) is False or getattr(result, "exit_code", 0) != 0:
+            outcome = "tool_failure"
+        self._audit(access, name, invocation_id, outcome, authorized)
+        return result
 
-        if inspect.iscoroutinefunction(registered_tool.handler):
-            return await registered_tool.handler(**validated_arguments)
-
-        call = partial(registered_tool.handler, **validated_arguments)
-        return await anyio.to_thread.run_sync(call)
+    @staticmethod
+    def _audit(
+        access: AccessContext,
+        tool: str,
+        invocation_id: str,
+        outcome: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> None:
+        # Never log tokens, raw arguments, certificates or tool output.
+        logger.info(
+            "tool_access",
+            extra={
+                "agent_id": access.identity.agent_id,
+                "world_id": access.identity.world_id,
+                "tool": tool,
+                "invocation_id": invocation_id,
+                "outcome": outcome,
+                "resources": {
+                    k: v for k, v in (arguments or {}).items() if k in {"source", "zone", "name"}
+                },
+            },
+        )

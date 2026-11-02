@@ -5,7 +5,7 @@ from collections.abc import Sequence
 import anyio
 
 from seedemu_tool_service.models.runtime import RuntimeCommandResult, RuntimeStatus
-from seedemu_tool_service.registry import ToolRegistry
+from tests.registry_support import ToolRegistry
 from seedemu_tool_service.tools.bgp import register_bgp_tools
 
 
