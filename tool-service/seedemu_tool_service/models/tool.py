@@ -1,4 +1,4 @@
-"""Models used for tool discovery and invocation."""
+"""Models used for tool discovery."""
 
 from typing import Any
 
@@ -21,11 +21,3 @@ class ToolListResponse(BaseModel):
 
     tools: list[ToolDefinition]
     count: int
-
-
-class ToolInvocationResponse(BaseModel):
-    """Uniform envelope returned after a tool invocation."""
-
-    name: str
-    result: dict[str, Any]
-    duration_ms: float
