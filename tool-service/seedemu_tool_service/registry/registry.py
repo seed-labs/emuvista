@@ -19,6 +19,10 @@ logger = logging.getLogger("seedemu.auth.audit")
 ToolHandler = Callable[..., Any]
 
 
+class ToolNotFoundError(LookupError):
+    """Raised when a requested tool is not registered."""
+
+
 @dataclass(frozen=True, slots=True)
 class RegisteredTool:
     """A tool's agent-visible definition and executable handler."""
@@ -72,7 +76,7 @@ class ToolRegistry:
             try:
                 registered_tool = self._tools[name]
             except KeyError as error:
-                raise KeyError(f"Tool not found: {name}") from error
+                raise ToolNotFoundError(f"Tool not found: {name}") from error
             if not access.can_call(name):
                 raise AccessDenied("Tool is not authorized")
             if set(arguments) - set(registered_tool.arguments_model.model_fields):

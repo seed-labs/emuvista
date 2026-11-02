@@ -24,7 +24,7 @@ export SEEDEMU_ROOT=/path/to/seed-emulator
 python3 examples/H14_pki_http01_web/scenario.py
 ```
 
-The generated Compose project is written to this example's `output/` directory.
+The generated Compose project is written to this example's `output-h14/` directory.
 To use the standard lifecycle runner from the SEED Emulator checkout:
 
 ```sh
@@ -60,9 +60,9 @@ emulated client can fetch the service over trusted HTTPS.
 ## Cleanup
 
 ```sh
-docker compose -f examples/H14_pki_http01_web/output/docker-compose.yml \
+docker compose -f examples/H14_pki_http01_web/output-h14/docker-compose.yml \
   down --remove-orphans --volumes
 ```
 
-Generated CA material and compiled files are local to this example's `output/`
+Generated CA material and compiled files are local to this example's `output-h14/`
 directory. Keep that directory out of source control.

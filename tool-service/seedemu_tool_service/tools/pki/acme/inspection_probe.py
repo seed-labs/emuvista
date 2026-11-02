@@ -244,12 +244,13 @@ def probe(args):
                     root_resolved == credentials_root
                     and resolved_path is not None
                     and resolved_path != root_resolved
-                    and resolved_path.is_relative_to(root_resolved)
+                    and os.path.commonpath((str(root_resolved), str(resolved_path)))
+                    == str(root_resolved)
                     and file_stat is not None
                     and stat.S_ISREG(file_stat.st_mode)
                     and mode in {0o400, 0o600}
                 )
-            except OSError:
+            except (OSError, ValueError):
                 credentials_secure = False
             authenticator_available = (
                 findings["certbot_available"]

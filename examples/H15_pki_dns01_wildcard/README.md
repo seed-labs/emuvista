@@ -61,13 +61,16 @@ its TSIG secret for the local simulation and does not print it.
    `https://ca.pki.test/acme/acme/directory`, and
    `dns_credentials_path=/etc/letsencrypt/credentials/rfc2136.ini`.
 2. Call `pki.request_acme_certificate` with the same CA, directory, domain,
-   authenticator, and credentials path; use `cert_name=wildcard-svc`.
+   authenticator, and credentials path; use `email=admin@pki.test` and
+   `cert_name=wildcard-svc`.
 3. Call `pki.deploy_acme_certificate_to_nginx` on the web node with
    `cert_name=wildcard-svc` and `server_name=api.svc.pki.test`.
 4. Run the TestRunner `test` stage. It checks trusted TLS for
    `api.svc.pki.test` and verifies that the challenge TXT record was cleaned up.
 
-The `dns-rfc2136` authenticator requires owner-only credentials and is required
+The scenario installs `python3` on the CA node because the PKI CA inspection
+tool uses it to read the SEEDEmu CA configuration. The `dns-rfc2136`
+authenticator requires owner-only credentials and is required
 for wildcard identifiers. The BIND update policy grants the TSIG identity only
 the TXT update permission for `_acme-challenge.svc.pki.test`; it does not grant
 general zone updates or permission to change A, AAAA, NS, or SOA records.
@@ -75,9 +78,9 @@ general zone updates or permission to change A, AAAA, NS, or SOA records.
 ## Cleanup
 
 ```sh
-docker compose -f examples/H15_pki_dns01_wildcard/output/docker-compose.yml \
+docker compose -f examples/H15_pki_dns01_wildcard/output-h15/docker-compose.yml \
   down --remove-orphans --volumes
 ```
 
 Generated CA material, TSIG credentials, and compiled files stay in the local
-`output/` directory. Keep that directory out of source control.
+`output-h15/` directory. Keep that directory out of source control.

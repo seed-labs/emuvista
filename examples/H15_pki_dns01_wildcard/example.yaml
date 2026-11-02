@@ -12,11 +12,11 @@ features:
 
 compile:
   enabled: true
-  output: output
+  output: output-h15
   clean:
-    - output
+    - output-h15
   expected:
-    - output/docker-compose.yml
+    - output-h15/docker-compose.yml
   timeout: 300
 
 build:
@@ -24,7 +24,7 @@ build:
   timeout: 1200
 
 runtime:
-  compose: output/docker-compose.yml
+  compose: output-h15/docker-compose.yml
   readiness:
     - name: CA, authoritative DNS, web, and client nodes are running
       type: compose-ps

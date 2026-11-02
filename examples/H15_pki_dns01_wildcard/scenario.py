@@ -40,6 +40,8 @@ def build_emulator() -> Emulator:
     routing = Routing()
     as150 = base.createAutonomousSystem(150)
     as150.createNetwork("net0", prefix="10.150.0.0/24")
+    as150.createRouter("router0").joinNetwork("net0")
+    as150.setNameServers(["10.150.0.53"])
     nodes = {}
     for name, address in (
         ("ca", "10.150.0.10"),
@@ -48,6 +50,7 @@ def build_emulator() -> Emulator:
         ("dns", "10.150.0.53"),
     ):
         nodes[name] = as150.createHost(name).joinNetwork("net0", address)
+    nodes["ca"].addSoftware("python3")
 
     dns = DomainNameService()
     dns_server = dns.install("pki-dns").addZone(DOMAIN).setMaster()
@@ -63,7 +66,7 @@ def build_emulator() -> Emulator:
     nodes["dns"].setFile(ZONE_FILE, "\n".join(zone.getRecords()) + "\n")
     nodes["dns"].setFile(
         KEY_FILE,
-        'key "acme-updater" { algorithm hmac-sha256; secret "{}"; };\n'.format(
+        'key "acme-updater" {{ algorithm hmac-sha256; secret "{}"; }};\n'.format(
             tsig_secret
         ),
     )
@@ -120,7 +123,7 @@ zone "pki.test." {{
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=HERE / "output")
+    parser.add_argument("--output", type=Path, default=HERE / "output-h15")
     parser.add_argument("--platform", choices=["amd", "arm"], default="amd")
     args = parser.parse_args()
 
