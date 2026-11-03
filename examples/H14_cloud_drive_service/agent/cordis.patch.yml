@@ -1,0 +1,10 @@
+- id: agent-preset-registry
+  config:
+    default: emuvista-cloud-agent
+    selectedDefault: emuvista-cloud-agent
+- id: hmr
+  disabled: false
+  config:
+    root:
+      - /opt/emuvista/agent-plugins/cloud-client/dist
+      - /opt/emuvista/agent-plugins/claw/dist

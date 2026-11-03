@@ -1,0 +1,2 @@
+# SEED's wheel omits service templates; editable installation retains the pinned source assets.
+-e git+https://github.com/Z-Vanadium/seed-emulator.git@7c42ab9c5f475a9faced749768efe50bc407cc2a#egg=seedemu

@@ -1,0 +1,11 @@
+- insert:
+    - id: time-context
+      name: '@deepseek-ai/dsh-time-context'
+
+    - id: schedule
+      name: '@deepseek-ai/dsh-schedule'
+
+    - id: emuvista-claw
+      name: '@emuvista/claw'
+      config:
+        cloudPollSeconds: 3

@@ -1,0 +1,16 @@
+{
+  "name": "@emuvista/dsh-claw-bundle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-schedule": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-time-context": "0.2.0-rc.2",
+    "@emuvista/claw": "link:../claw"
+  }
+}

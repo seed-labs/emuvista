@@ -1,0 +1,14 @@
+{
+  "name": "@emuvista/dsh-cloud-bundle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@emuvista/cloud-client": "link:../cloud-client"
+  }
+}
