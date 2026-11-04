@@ -48,7 +48,7 @@ def main():
     if args.state:
         email.setSavePath(args.state/'email')
         bank.setSavePath(args.state/'bank')
-    compiler = Docker(platform=Platform.AMD64, internetMapEnabled=False)
+    compiler = Docker(platform=Platform.AMD64, internetMapEnabled=True)
     compiler.addContainerBundle(email)
     compiler.addContainerBundle(bank)
     emu.compile(compiler, str(args.output.resolve()), override=True)
@@ -56,6 +56,7 @@ def main():
     print('Bank: https://localhost:8444')
     print('Bank administration: https://localhost:8446')
     print('Webmail: https://localhost:8445/webmail/')
+    print('Internet Map: http://localhost:8080')
     print('Next: cd output; docker compose build; docker compose up -d')
 
 

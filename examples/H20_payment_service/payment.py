@@ -69,12 +69,13 @@ def main():
         parser.error(str(error))
     if args.state:
         payment.setSavePath(str(args.state))
-    compiler = Docker(platform=Platform.AMD64)
+    compiler = Docker(platform=Platform.AMD64, internetMapEnabled=True)
     compiler.addContainerBundle(payment)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     emu.compile(compiler, str(args.output.resolve()), override=True)
     print(f'Compiled PaymentBundle: {payment.getURL()}')
     print(f'Host browser: https://localhost:{args.host_port}/login-mail')
+    print('Internet Map: http://localhost:8080')
     print(f'Next: cd {args.output}; docker compose build; docker compose up -d')
 
 

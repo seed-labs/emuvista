@@ -30,6 +30,8 @@ docker compose up -d
 
 Open <https://localhost:8443/login-mail>, accept the self-signed certificate and log in as Alice. This also works from the Windows host with WSL.
 
+Internet Map: <http://localhost:8080>. Run one mini Internet example at a time.
+
 ## Try payments
 
 Use **Transfers → Create transfer → Send**, choose a recipient, enter a description and amount, then send and confirm. The community name above the recipient list switches the recipient's community.

@@ -64,12 +64,13 @@ def main():
     bundle.enableHostAccess(args.host_port)
     if args.state:
         bundle.setSavePath(args.state)
-    compiler = Docker(platform=Platform.AMD64, internetMapEnabled=False)
+    compiler = Docker(platform=Platform.AMD64, internetMapEnabled=True)
     compiler.addContainerBundle(bundle)
     emu.compile(compiler, str(args.output.resolve()), override=True)
     (args.output/'.env').write_text('COMPOSE_PROJECT_NAME=h21-email\n')
     print(f'Webmail: https://localhost:{args.host_port}/webmail/')
     print(f'Administration: https://localhost:{args.host_port}/admin/')
+    print('Internet Map: http://localhost:8080')
     print('Next: cd output; docker compose build; docker compose up -d')
 
 
