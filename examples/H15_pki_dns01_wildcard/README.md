@@ -32,8 +32,12 @@ export SEEDEMU_ROOT=/path/to/seed-emulator
 python3 examples/H15_pki_dns01_wildcard/scenario.py
 ```
 
-Run the lifecycle through `up` first so the Tool Service can be authorized for
-the generated CA, DNS, web, and client containers:
+The scenario includes the SEEDEmu Internet Map; while it is running, open
+`http://localhost:8081` to view the emulated topology. H15 uses port 8081 so it
+can run alongside H14, which uses port 8080.
+
+Run the lifecycle through `up` first so the generated CA, DNS, web, and client
+containers are running:
 
 ```sh
 python3 "$SEEDEMU_ROOT/seedemu/testing/cli.py" clean \
@@ -48,13 +52,11 @@ python3 "$SEEDEMU_ROOT/seedemu/testing/cli.py" up \
 
 ## PKI tool walkthrough
 
-Configure the Tool Service policy for the CA and web nodes. Assign the
-`pki_operator` role to the web-node identity, add exact operation profiles for
-`pki.request_acme_certificate` and `pki.deploy_acme_certificate_to_nginx`, and
-allowlist the CA node in `ca_service_nodes`. Assign the `api.svc.pki.test` domain
-to that identity for the Nginx deployment operation. Use the credentials file already
-installed at `/etc/letsencrypt/credentials/rfc2136.ini`; the example generates
-its TSIG secret for the local simulation and does not print it.
+Invoke the PKI tools directly. Set `source` to the running web container's Docker
+name or ID and `ca_service_source` to the CA container's Docker name or ID; the
+generated `docker compose ps` output lists the container names. Use the credentials
+file already installed at `/etc/letsencrypt/credentials/rfc2136.ini`; the example
+generates its TSIG secret for the local simulation and does not print it.
 
 1. Call `pki.inspect_acme_readiness` on the web node with
    `authenticator=dns-rfc2136`, `domains=["*.svc.pki.test"]`, the CA directory
@@ -67,6 +69,11 @@ its TSIG secret for the local simulation and does not print it.
    `cert_name=wildcard-svc` and `server_name=api.svc.pki.test`.
 4. Run the TestRunner `test` stage. It checks trusted TLS for
    `api.svc.pki.test` and verifies that the challenge TXT record was cleaned up.
+
+```sh
+python3 "$SEEDEMU_ROOT/seedemu/testing/cli.py" test \
+  examples/H15_pki_dns01_wildcard/example.yaml
+```
 
 The scenario installs `python3` on the CA node because the PKI CA inspection
 tool uses it to read the SEEDEmu CA configuration. The `dns-rfc2136`

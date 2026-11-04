@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from seedemu_tool_service.tools.pki.shared.domains import normalize_domain
 from seedemu_tool_service.tools.pki.shared.models import ToolArguments
 
 
@@ -49,8 +50,6 @@ class InspectACMEReadinessArguments(InspectEnvironmentArguments):
     @field_validator("domains")
     @classmethod
     def dns_names(cls, values: list[str]) -> list[str]:
-        from seedemu_tool_service.auth.models import normalize_domain
-
         normalized = []
         for value in values:
             name = value.rstrip(".").lower()

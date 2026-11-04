@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from seedemu_tool_service.auth.models import normalize_domain
+from seedemu_tool_service.tools.pki.shared.domains import normalize_domain
 from seedemu_tool_service.tools.pki.shared.models import ToolArguments
 
 
@@ -14,7 +14,7 @@ class RequestACMECertificateArguments(ToolArguments):
     """Request a certificate from an ACME CA available inside the emulator."""
 
     source: str = Field(description="Container running the ACME client and HTTP service")
-    ca_service_source: str = Field(description="Authorized SEEDEmu CA Service node")
+    ca_service_source: str = Field(description="SEEDEmu CA Service container")
     ca_service_config_path: str = Field(default="/root/.step/config/ca.json")
     directory_url: str = Field(min_length=1, description="ACME directory URL")
     domains: list[str] = Field(min_length=1, max_length=100)
@@ -88,7 +88,7 @@ class RenewACMECertificateArguments(ToolArguments):
     """Renew one Certbot-managed certificate."""
 
     source: str
-    ca_service_source: str = Field(description="Authorized SEEDEmu CA Service node")
+    ca_service_source: str = Field(description="SEEDEmu CA Service container")
     ca_service_config_path: str = Field(default="/root/.step/config/ca.json")
     cert_name: str = Field(min_length=1, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
     force_renewal: bool = False
@@ -106,7 +106,7 @@ class RevokeACMECertificateArguments(ToolArguments):
     """Revoke one certificate through its issuing ACME CA."""
 
     source: str
-    ca_service_source: str = Field(description="Authorized SEEDEmu CA Service node")
+    ca_service_source: str = Field(description="SEEDEmu CA Service container")
     ca_service_config_path: str = Field(default="/root/.step/config/ca.json")
     directory_url: str = Field(min_length=1)
     certificate_path: str = Field(min_length=1)

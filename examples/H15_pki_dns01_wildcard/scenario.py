@@ -132,7 +132,11 @@ def main() -> int:
     platform = Platform.AMD64 if args.platform == "amd" else Platform.ARM64
     output = args.output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    emu.compile(Docker(platform=platform), str(output), override=True)
+    emu.compile(
+        Docker(platform=platform, internetMapEnabled=True, internetMapPort=8081),
+        str(output),
+        override=True,
+    )
     print(f"Generated DNS-01 PKI example in {output}")
     return 0
 
