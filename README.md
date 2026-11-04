@@ -73,7 +73,3 @@ Contribution guidelines and development conventions will be documented as the pr
 ## License
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE).
-
-## Cloud Drive Agent example
-
-[H14 Cloud Drive](examples/H14_cloud_drive_service/README_zh.md) builds a DNS/PKI-backed Cloud Drive topology with two DSH Web Agents, repository-local linked plugins and authenticated file upload, sharing and download verification. The same example has a second demonstration stage that enables Claw in the existing profile for event-driven collaboration.
