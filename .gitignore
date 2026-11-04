@@ -217,9 +217,13 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+output/
 
 .agentseed*
 
 /social_platforms.md
 /examples/H14_socialmedia/
 /services/SocialMediaService/
+
+.runtime/
+*.bin
