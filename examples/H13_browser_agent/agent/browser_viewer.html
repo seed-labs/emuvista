@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>实时浏览器</title>
+<style>html,body,#screen{margin:0;width:100%;height:100%;overflow:hidden;background:#17212f}#hint{position:absolute;top:12px;left:12px;color:white;font:14px system-ui;z-index:1}</style>
+<div id="hint">连接实时画面…</div><div id="screen"></div>
+<script type="module">
+import RFB from '/browser/novnc/core/rfb.js';
+let rfb;
+let generation = 0;
+function connect(token) {
+  const current = ++generation;
+  document.body.dataset.mode = "connecting";
+  document.getElementById("hint").hidden = false;
+  document.getElementById("hint").textContent = "正在连接实时画面…";
+  if(rfb) rfb.disconnect();
+  document.getElementById('screen').replaceChildren();
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  rfb = new RFB(document.getElementById('screen'), `${scheme}://${location.host}/browser/vnc?token=${encodeURIComponent(token)}`);
+  rfb.scaleViewport = true;
+  rfb.viewOnly = true;
+  rfb.addEventListener('connect', () => { if(current===generation){document.getElementById('hint').hidden=true; document.body.dataset.mode = 'view';} });
+  rfb.addEventListener('disconnect', () => {
+    if(current!==generation)return;
+    document.getElementById('hint').hidden=false;
+    document.getElementById('hint').textContent='画面连接已断开，可点击重新连接画面';
+  });
+}
+window.addEventListener('message', event => {
+  if(event.origin!==location.origin || event.source!==parent || event.data.type!=='browser_view')return;
+  connect(event.data.token);
+});
+parent.postMessage({type:'browser_viewer_ready'},location.origin);
+</script>
+</html>
