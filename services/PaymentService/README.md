@@ -1,76 +1,82 @@
-# PaymentService
+# PaymentBundle
 
-Deploys Komunitin from prebuilt images with a web wallet, HTTP APIs and a local Stellar ledger. Payment containers share the bound SEED host's network namespace through `Docker.addContainerBundle()`.
+Deploys Komunitin from prebuilt images. Each component has its own container and SEED network IP. No Service layer or virtual-node binding is required.
 
 ## Usage
 
-Add to a topology containing Base, Routing and a host:
+Create the bundle after rendering the emulator:
 
 ```python
-from seedemu.core import Binding, Filter
 from seedemu.compiler import Docker, Platform
-from services.PaymentService import PaymentService
+from services.PaymentService import PaymentBundle
 
-payment = PaymentService()
-wallet = payment.install('wallet')
-wallet.setAdminCredentials('admin@payment.example', 'replace-with-your-password')
-wallet.setSavePath('./payment-state')
-wallet.enableHostAccess(8443)
-# Optional: wallet.setInitialData('/path/to/user-data.zip')
-
-emu.addLayer(payment)
-emu.addBinding(Binding('wallet', filter=Filter(asn=150, nodeName='host_0')))
 emu.render()
 
+payment = PaymentBundle(emu)
+payment.setDefaultInternalNetwork(
+    name='net_150_net0',
+    ip_addresses=[f'10.150.0.{i}' for i in range(10, 24)],
+    default_route='10.150.0.254',
+)
+payment.setAdminCredentials('admin@payment.example', 'replace-with-your-password')
+payment.enableHostAccess(8443)
+payment.setInitialConfiguration('groups.json')
+# Optional: payment.setSavePath('./payment-state')
+
 compiler = Docker(platform=Platform.AMD64)
-compiler.addContainerBundle(payment.getContainerBundle(emu))
+compiler.addContainerBundle(payment)
 emu.compile(compiler, './output', override=True)
 ```
 
-Run `docker compose build` and `docker compose up -d` in the output directory. Database migrations and administrator setup run automatically. No sample accounts, balances or community rules are included.
+Run `docker compose build` and `docker compose up -d` in `output/`. Compilation creates routing wrappers for the prepared images; building installs `iproute2` when absent. Startup sets each container's default route through the emulated router. No application source checkout is needed.
 
-One payment deployment is allowed per physical host. See the [H20 example](../../examples/H20_payment_service/README.md).
+The network must already exist and its addresses must be free. Without an explicit network, the bundle reserves 14 free addresses on a rendered host network. To place a component elsewhere, call `payment.getContainer(role).joinInternalNetwork(network, hostname, ip_address, default_route)` before compilation. Remaining components use the default network.
+
+Addresses are assigned in this order:
+
+| Offset | Component |
+| --- | --- |
+| 0–5 | `gateway`, `app`, `auth`, `social`, `accounting`, `notifications-ts` |
+| 6–9 | `db-auth`, `db-social`, `db-accounting`, `db-notifications` |
+| 10–13 | `redis`, `stellar`, `files`, `initialize` |
+
+`payment/deployment.json` records the resulting addresses and state directory. Give additional bundles distinct `name` values. See the [H20 example](../../examples/H20_payment_service/README.md) for JSON initialization and payments.
+
+## Access
+
+Only the gateway publishes a host port: `127.0.0.1:8443`. It serves the web app and proxies browser API calls. Other containers have no host port mappings. A Node startup adapter translates browser-provided localhost resource links into the emulated gateway IP before the accounting backend fetches them. Component connections use emulated IPs; loopback is used only for checks and operations within one container.
+
+Emulated clients use the gateway IP over HTTPS: port 443 for the web app, 2026 for authentication, 2028 for communities, 2025 for accounting, 2023 for notifications and 9191 for files. Accept the self-signed certificate. Backend APIs, databases and ledger services also remain reachable at their own emulated IPs.
+
+## Initialization and state
+
+`setInitialConfiguration(path_or_dict)` accepts a JSON file or a Python dictionary with `groups` and `trustlines`. Each group defines `code`, `name`, `currency` (`name`, `symbol`, `rate`) and `users` (`name`, `email`, `password`, `balance`). Trustlines define `from`, `to` and `limit`, measured in the source currency. Use an empty trustline list for a standalone community. See [groups.json](../../examples/H20_payment_service/groups.json) for a complete configuration.
+
+The API validates and copies the configuration. Compilation generates the import data; first startup creates the communities, users, balances and exchange relationships automatically. The bundle includes no sample users, balances or exchange rules. It supports two decimal places for balances and amounts; exchange rates are fixed values relative to a common reference unit. `bcrypt` from the root requirements is needed when generating initial passwords.
+
+For an existing Komunitin migration ZIP, use `setInitialData(path_or_bytes)` instead. Calling either initialization setter replaces the other input. Both initialization and state paths may be set before compilation in either order.
+
+Without `setSavePath()`, every compilation uses fresh temporary runtime storage outside `output/`. With it, all databases, ledger data, credentials and initialization records are saved together. Keep this directory outside `output/`; resume with the same addresses, administrator and initial data. State from the previous shared-network layout requires a new experiment directory.
 
 ## Images
 
-The default `h20-*` tags are locally prepared artifacts, not published public images. Komunitin revision: `124a87b639c37952dc9a029fc7056e523a10de5b`. Tested on Linux AMD64.
+Requires Linux AMD64 and SEED Emulator's ContainerBundle API. Load the prepared payment image archive before building:
 
 ```sh
 docker load -i /path/to/payment-images.tar
 ```
 
-Override references with `PaymentService(images={role: reference})` or `payment.setImage(role, reference)`. Overrides must preserve these image interfaces:
+Override images with `PaymentBundle(emu, images={role: reference})` or `payment.setImage(role, reference)`.
 
-| Role | Required interface |
+| Image role | Required interface |
 | --- | --- |
-| `app` | Built web app on port 80; runtime API URL configuration |
+| `app` | nginx web app and `/docker-entrypoint.sh` with runtime API configuration |
 | `auth`, `social`, `accounting`, `notifications-ts` | `/app/dist/index.mjs` and Prisma migration CLI |
 | `cli` | Node 24 and `/app/shared/cli/index.ts` with dependencies |
 | `database` | PostgreSQL 16, `gosu`, `init-app-db.sh`, PostGIS, pgvector and Social extensions |
-| `stellar` | Local Quickstart with `--local --enable core,horizon` and persistent storage |
-| `files` | S3rver 3.7.1 CLI |
-| `redis` | Redis 7 |
-| `gateway` | nginx with `http_sub_module` for host browser URL rewriting |
+| `stellar` | `/start --local --enable core,horizon` with persistent storage |
+| `files` | `/s3/node_modules/s3rver/bin/s3rver.js` |
+| `redis` | Redis 7 and `docker-entrypoint.sh` |
+| `gateway` | nginx with `http_sub_module` and `/docker-entrypoint.sh` |
 
-The archive contains payment images only. SEED prepares its own network node images.
-
-## State and initialization
-
-Call `setInitialData(path_or_bytes)` before `emu.render()` to configure an optional Komunitin migration ZIP. Compilation writes it into the output and, when persistence is enabled, saves a copy with the state. The import runs on first startup. `setSavePath(path)` persists all databases, the local ledger, files, credentials, certificates and initialization records together.
-
-Keep saved state outside the compilation output. Reusing it requires the same server address, administrator and initial data. Without `setSavePath()`, each compilation allocates fresh temporary runtime storage outside the output directory. Recreate the entire Compose stack together because containers share a network namespace.
-
-## Endpoints
-
-`enableHostAccess(port=8443)` publishes `https://localhost:<port>` for a host browser, including Windows with WSL. This endpoint proxies the web app and APIs together; emulated endpoints remain unchanged. Accept the local self-signed certificate in the browser.
-
-| HTTPS port | Endpoint |
-| --- | --- |
-| 443 | Web wallet |
-| 2026 | Authentication |
-| 2028 | Communities and members |
-| 2025 | Balances and transfers |
-| 2023 | Notifications |
-| 9191 | Uploaded files |
-
-Certificates are self-signed for the bound IP. Internal database and ledger ports are blocked from other SEED nodes. Public domains, external banking, production email and push delivery are not configured.
+Images must support running the routing wrapper as root and provide `ip`, or an Alpine/Debian package manager to install it. Default Komunitin revision: `124a87b639c37952dc9a029fc7056e523a10de5b`.

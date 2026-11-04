@@ -1,4 +1,4 @@
-"""Inspect or transport the prebuilt images used by PaymentService.
+"""Inspect or transport the prebuilt images used by PaymentBundle.
 
 Run from the repository root: python3 -m services.PaymentService.images --help
 """
@@ -8,7 +8,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from .PaymentService import PaymentService
+from .PaymentBundle import PaymentBundle
 
 
 def main():
@@ -22,7 +22,7 @@ def main():
     load = commands.add_parser('load', help='Load an image archive, then check the required images')
     load.add_argument('archive', type=Path)
     args = parser.parse_args()
-    images = PaymentService(json.loads(args.images.read_text()) if args.images else None).getImages()
+    images = PaymentBundle(images=json.loads(args.images.read_text()) if args.images else None).getImages()
     if args.command == 'list':
         print(json.dumps(images, indent=2))
         return
