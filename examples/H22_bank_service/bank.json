@@ -1,0 +1,25 @@
+{
+  "email": {"address": "bank@seed.example", "password": "BankMailDemo123!"},
+  "savingsProducts": [
+    {"id": "USDC", "name": "USD Checking", "currency": "USD", "interestRate": 0},
+    {"id": "USDS", "name": "USD Savings", "currency": "USD", "interestRate": 3},
+    {"id": "EURC", "name": "EUR Checking", "currency": "EUR", "interestRate": 0}
+  ],
+  "customers": [
+    {
+      "id": "alice", "firstName": "Alice", "lastName": "Example",
+      "email": "alice@seed.example", "password": "BankDemoPass123!", "emailPassword": "EmailDemo123!",
+      "accounts": [
+        {"id": "alice-checking", "name": "Alice Checking", "product": "USDC", "balance": 1000},
+        {"id": "alice-savings", "name": "Alice Savings", "product": "USDS", "balance": 200},
+        {"id": "alice-eur", "name": "Alice EUR", "product": "EURC", "balance": 300}
+      ],
+      "loans": [{"id": "alice-loan", "currency": "USD", "principal": 500}]
+    },
+    {
+      "id": "bob", "firstName": "Bob", "lastName": "Example",
+      "email": "bob@seed.example", "password": "BankDemoPass123!", "emailPassword": "EmailDemo123!",
+      "accounts": [{"id": "bob-checking", "name": "Bob Checking", "product": "USDC", "balance": 500}]
+    }
+  ]
+}

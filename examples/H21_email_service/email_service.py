@@ -14,7 +14,7 @@ from seedemu.core import Binding, Filter
 from seedemu.layers import Dnssec
 from seedemu.services import DomainNameService, DomainNameCachingService
 from services.EmailService import EmailBundle
-from mini_internet import build_emulator
+from examples.H21_email_service.mini_internet import build_emulator
 
 
 def configure_dns(emu, configuration, state=None):
