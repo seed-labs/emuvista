@@ -1,0 +1,64 @@
+id: H15-chat
+name: Chat Service
+description: A B00-style mini Internet carrying a Tinode chat server on AS151 and four tn-cli clients.
+runner: internet
+script: chat.py
+platform: amd
+features:
+  - ipv4-default
+  - mini-internet
+  - ebgp-route-server
+  - chat-service
+  - tinode
+
+compile:
+  enabled: true
+  output: output
+  clean:
+    - output
+  expected:
+    - output/docker-compose.yml
+  timeout: 900
+
+build:
+  enabled: true
+  timeout: 2400
+
+runtime:
+  compose: output/docker-compose.yml
+  readiness:
+    - name: chat server and its clients are running
+      type: compose-ps
+      services:
+        - hnode_151_host_0
+        - hnode_152_host_0
+        - hnode_153_host_0
+        - hnode_154_host_0
+        - hnode_160_host_0
+      retries: 40
+      interval: 3
+
+probes:
+  - name: AS152 client reaches the AS151 chat server
+    type: ping
+    service: hnode_152_host_0
+    target: 10.151.0.71
+    count: 3
+    retries: 40
+    interval: 5
+
+  - name: AS153 client reaches the AS151 chat server
+    type: ping
+    service: hnode_153_host_0
+    target: 10.151.0.71
+    count: 3
+    retries: 40
+    interval: 5
+
+  - name: AS160 client reaches the AS151 chat server through AS3
+    type: ping
+    service: hnode_160_host_0
+    target: 10.151.0.71
+    count: 3
+    retries: 40
+    interval: 5
