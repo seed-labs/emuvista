@@ -45,6 +45,7 @@ def build_emulator() -> Emulator:
     ):
         nodes[name] = as150.createHost(name).joinNetwork("net0", address)
     nodes["ca"].addSoftware("python3")
+    nodes["web"].addSoftware("certbot python3-certbot-nginx")
 
     dns = DomainNameService()
     dns_server = dns.install("pki-dns").addZone(DOMAIN).setMaster()
@@ -61,7 +62,7 @@ def build_emulator() -> Emulator:
 
     web_service = WebService()
     web_server = web_service.install("pki-web")
-    web_server.setServerNames(["web.pki.test"]).setCAServer(ca_server).enableHTTPS()
+    web_server.setServerNames(["web.pki.test"])
 
     emu.addLayer(base)
     emu.addLayer(routing)
@@ -85,7 +86,7 @@ def main() -> int:
     platform = Platform.AMD64 if args.platform == "amd" else Platform.ARM64
     output = args.output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    emu.compile(Docker(platform=platform), str(output), override=True)
+    emu.compile(Docker(platform=platform, internetMapEnabled=True), str(output), override=True)
     print(f"Generated HTTP-01 PKI example in {output}")
     return 0
 

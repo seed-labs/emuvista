@@ -118,9 +118,8 @@ Current tools:
 | `pki.check_tls_protocols` | Implemented | Check which TLS protocol versions are accepted by a service. |
 | `pki.check_tls_cipher` | Implemented | Check whether a service accepts or negotiates expected ciphers. |
 
-Remote network probes, including certificate-expiration checks, require an explicit
-task profile that pins the source node and target arguments. They are not general
-purpose network-scanning permissions for observer/member roles.
+Remote network probes run from the source node selected in the call and use the
+target arguments supplied by the caller.
 
 ### 3. Certificate Chain And Trust Verification
 
@@ -188,10 +187,10 @@ Current tools:
 ### 6. ACME Certificate Lifecycle
 
 ACME tools operate a real Certbot client inside the selected emulated service node.
-`pki.inspect_ca_service` reads a specifically authorized SEEDemu CA node and reports
-the ACME directory URL for each configured ACME provisioner. The agent passes that
-URL to the request tool. This discovery is scoped to the assigned CA node; the Tool
-Service does not scan the Docker host for CA processes or alter CA configuration.
+`pki.inspect_ca_service` reads a selected SEEDemu CA node and reports the ACME
+directory URL for each configured ACME provisioner. The agent passes that URL to the
+request tool. The Tool Service does not scan the Docker host for CA processes or
+alter CA configuration.
 The client communicates with the HTTPS directory exposed by SEEDemu `CAService`,
 and the CA validates the ACME challenge. CA private keys remain inside step-ca and
 are never supplied to the requesting node, Tool Service, or agent.
@@ -215,14 +214,9 @@ ACME request, readiness, renewal, and revocation operations verify the selected
 directory against the configured SEEDEmu CA Service provisioners. DNS credentials
 must be regular files with mode `0400` or `0600`.
 
-An agent may request or renew through SEEDEmu CA Service only when an exact PKI
-operation profile authorizes the client node, CA node, configuration path, directory,
-and operation arguments. The Tool Service verifies the directory against the selected
-service's configured provisioners; the CA's issuance policy and challenge validation
-decide whether to issue the certificate. CA private keys remain inside the CAService.
-The trusted access policy must list CA Service node IDs in `ca_service_nodes`; calls
-resolve those IDs only within the caller's world, without granting shell access to
-the CA node.
+The Tool Service verifies the directory against the selected service's configured
+provisioners; the CA's issuance policy and challenge validation decide whether to
+issue the certificate. CA private keys remain inside the CAService.
 
 Current tools:
 
@@ -298,9 +292,8 @@ Current tools:
 | `pki.remove_ca_certificate` | Implemented | Remove an installed CA only when its expected SHA-256 fingerprint matches, then update system trust. |
 | `pki.update_trust_store` | Implemented | Run the fixed `update-ca-certificates` command. |
 
-Trust-store removal and update are explicitly authorized operations. CA root
-installation is exclusively handled by SEEDEmu `CAService` and its configured node
-filters.
+Trust-store removal requires the expected SHA-256 fingerprint. CA root installation
+is exclusively handled by SEEDEmu `CAService` and its configured node filters.
 
 ## Tool Response Envelope
 
@@ -331,16 +324,11 @@ Example successful read-only response:
     }
   },
   "raw_output": "openssl output, if useful for debugging",
-  "error": null,
-  "policy": {
-    "task_id": "tls-diagnosis-001",
-    "decision": "allowed",
-    "matched_rule": "read-only-pki-diagnostics"
-  }
+  "error": null
 }
 ```
 
-Example denied response:
+Example unsuccessful response:
 
 ```json
 {
@@ -350,14 +338,10 @@ Example denied response:
   "data": null,
   "raw_output": null,
   "error": {
-    "category": "policy_denied",
-    "message": "This task does not allow trust-store modification."
+    "category": "connection_failed",
+    "message": "The target could not be reached."
   },
-  "policy": {
-    "task_id": "tls-diagnosis-001",
-    "decision": "denied",
-    "matched_rule": "diagnosis-tools-only"
-  }
+  "exit_code": 1
 }
 ```
 
@@ -378,37 +362,20 @@ fields only when they are relevant:
     "created_paths": ["/etc/letsencrypt/live/web1.example.test/fullchain.pem"]
   },
   "raw_output": null,
-  "error": null,
-  "policy": {
-    "task_id": "tls-repair-001",
-    "decision": "allowed",
-    "matched_rule": "ca-service-acme"
-  }
+  "error": null
 }
 ```
 
-Initial task-level policy support can be expressed through the envelope and enforced
-before a tool handler runs:
-
-- `tool`: the fully qualified tool name used for allow/deny checks;
-- `source`: the emulated node or container used for source restrictions;
-- `policy.task_id`: the task whose policy was applied;
-- `policy.decision`: whether the call was allowed or denied;
-- `policy.matched_rule`: the policy rule that explained the decision;
-- `error.category`: a stable error category such as `policy_denied`,
-  `file_not_found`, `certificate_expired`, or `unknown_error`;
-- `data.created_paths`, `data.modified_paths`, `data.backup_paths`: optional fields
-  returned only by tools that create or modify artifacts.
-
-The benchmark or Tool Service can keep a more complete audit log internally. The
-agent-facing response should stay compact and include only the policy and side-effect
-fields that are useful for the current call.
+`error.category` can identify a stable tool error such as `file_not_found`,
+`certificate_expired`, or `unknown_error`. For state-changing tools,
+`data.created_paths`, `data.modified_paths`, and `data.backup_paths` are optional fields
+returned only by tools that create or modify artifacts.
 
 ## SEEDemu Runtime Observation And Verification
 
 Nine additional tools observe CAService/WebService state that SEEDemu has
-already installed. No identity tool is added. Only `ca_service/` is a new tool
-category; the other tools extend existing categories.
+already installed. Only `ca_service/` is a new tool category; the other tools extend
+existing categories.
 
 | Tool | Directory | Purpose |
 | --- | --- | --- |
@@ -422,19 +389,17 @@ category; the other tools extend existing categories.
 | `pki.test_mtls_connection` | `remote_tls/` | Compare HTTPS HEAD requests with and without a local client identity. |
 | `pki.check_certificate_status` | `trust_verification/` | Verify leaf revocation against an explicitly supplied CRL. |
 
-### Execution And Authorization
+### Execution Boundaries
 
-Python probes run **inside the assigned node**, requiring `python3` and GNU
+Python probes run **inside the selected node**, requiring `python3` and GNU
 `timeout`. They have a 45-second overall execution bound; individual subprocesses
 and network operations also use timeouts. OpenSSL is required for certificate/CRL
 inspection. Probes do not install dependencies. A missing interpreter, timeout,
 malformed result or execution failure produces an unsuccessful observation.
 
-State-changing PKI tools and remote network probes require an exact operation profile.
-CA inspection and event inspection additionally require `ca_operator`. Other
-inspection tools use the existing profile-read permissions, including mTLS because a
-client private-key path must be explicitly authorized. No tool executes commands in
-a remote target: remote TLS connections originate from the authorized source node.
+Tool calls name the source node and pass their operation arguments directly. No tool
+executes commands in a remote target: remote TLS connections originate from the
+selected source node.
 
 Most new tools return `source`, `successful`, `data`, `exit_code` and `error`.
 `successful` means the observation ran successfully;
@@ -488,6 +453,5 @@ return raw CA configuration, private keys, hook commands or unrestricted log tex
 
 `tests/test_pki_runtime_workflows.py` exercises actual probe subprocesses, temporary
 CA configs/logs, real OpenSSL certificates and CRLs, and loopback TLS/mTLS servers.
-It also tests profile/node/role denials. These tests do not constitute a live
-SEEDemu step-ca/Certbot integration test; that requires a running emulation with
-CA, DNS, Web and Client nodes and separately provisioned access profiles.
+These tests do not constitute a live SEEDemu step-ca/Certbot integration test; that
+requires a running emulation with CA, DNS, Web and Client nodes.

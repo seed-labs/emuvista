@@ -10,10 +10,8 @@ services:
       - "${TOOL_SERVICE_PORT:-8000}:8000"
     environment:
       DOCKER_HOST: unix:///var/run/docker.sock
-      SEEDEMU_AUTH_POLICY: /etc/seedemu-access/policy.json
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${SEEDEMU_AUTH_POLICY_DIR:?Set SEEDEMU_AUTH_POLICY_DIR}:/etc/seedemu-access:ro
     group_add:
       - "${DOCKER_GID:-0}"
     read_only: true

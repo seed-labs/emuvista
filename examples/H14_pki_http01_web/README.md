@@ -1,9 +1,10 @@
 # H14: HTTPS WebService with the SEEDEmu CA Service (HTTP-01)
 
-This example shows the built-in SEED Emulator `CAService` issuing a certificate
-for a `WebService` through ACME HTTP-01. The web server uses the emulator's
-Nginx integration, and the client trusts the root certificate installed by the
-CA service. No public CA or manually created signing CA is used.
+This example demonstrates the PKI tools requesting and deploying an HTTPS
+certificate from the built-in SEED Emulator `CAService` through ACME HTTP-01.
+The WebService starts as HTTP-only; the PKI tool performs the Certbot Nginx
+challenge and installs the resulting TLS site. The client trusts the root
+certificate installed by the CA service. No public or manually created CA is used.
 
 ## Topology and files
 
@@ -25,37 +26,55 @@ python3 examples/H14_pki_http01_web/scenario.py
 ```
 
 The generated Compose project is written to this example's `output-h14/` directory.
-To use the standard lifecycle runner from the SEED Emulator checkout:
+The scenario includes the SEEDEmu Internet Map; while it is running, open
+`http://localhost:8080` to view the emulated topology. Start the environment
+through `up` and leave it running while invoking the PKI tools:
 
 ```sh
-python3 "$SEEDEMU_ROOT/seedemu/testing/cli.py" all \
-  examples/H14_pki_http01_web/example.yaml \
-  --artifact-dir /tmp/h14-pki-http01
+python3 "$SEEDEMU_ROOT/seedemu/testing/cli.py" clean examples/H14_pki_http01_web/example.yaml
+python3 "$SEEDEMU_ROOT/seedemu/testing/cli.py" compile examples/H14_pki_http01_web/example.yaml
+python3 "$SEEDEMU_ROOT/seedemu/testing/cli.py" build examples/H14_pki_http01_web/example.yaml
+python3 "$SEEDEMU_ROOT/seedemu/testing/cli.py" up examples/H14_pki_http01_web/example.yaml
 ```
 
-Certificate issuance happens during the WebService startup. SEEDEmu's HTTPS
-integration invokes Certbot with the Nginx authenticator, which performs
-HTTP-01 validation on port 80. The CA must be able to resolve and reach
-`web.pki.test` over the emulation network.
+Before certificate issuance, `http://web.pki.test/` works and
+`https://web.pki.test/` does not. This makes the change caused by the PKI tools
+visible. The CA must be able to resolve and reach `web.pki.test` over the
+emulation network.
 
 ## PKI tool walkthrough
 
-After the scenario is running and the Tool Service policy authorizes its CA,
-web, and client nodes, use the PKI tools to inspect the CA and verify the
-service. Replace the `source` values with node IDs from the policy:
+After the scenario is running, invoke the PKI tools directly. Set `source` to
+the running web container's Docker name or ID and `ca_service_source` to the CA
+container's Docker name or ID. The `docker compose ps` command in the generated
+example output lists these containers. Then call:
 
-1. Call `pki.inspect_ca_service` on the CA node with
-   `config_path=/root/.step/config/ca.json`.
-2. Call `pki.inspect_remote_tls_chain` from the client for
-   `target=web.pki.test`, `port=443`, and `server_name=web.pki.test`.
-3. Call `pki.check_tls_hostname` from the client for
-   `expected_hostname=web.pki.test`.
-4. Call `pki.check_remote_certificate_expiration` from the client for the same
-   endpoint.
+1. `pki.inspect_acme_readiness` on the web node with
+   `source=<web container name or ID>`,
+   `ca_service_source=<CA container name or ID>`,
+   `directory_url=https://ca.pki.test/acme/acme/directory`,
+   `domains=["web.pki.test"]`, and `authenticator=nginx`.
+2. `pki.request_acme_certificate` on the web node with
+   `source=<web container name or ID>`,
+   `ca_service_source=<CA container name or ID>`, the same directory URL and domain,
+   `email=admin@pki.test`, `authenticator=nginx`, and
+   `cert_name=web-pki-test`.
+3. `pki.deploy_acme_certificate_to_nginx` on the web node with
+   `source=<web container name or ID>`,
+   `cert_name=web-pki-test` and `server_name=web.pki.test`.
+4. Run the TestRunner `test` stage. It verifies the HTTPS connection from the
+   emulated client, hostname validation, and the Nginx-authenticator renewal
+   configuration created by the certificate request tool.
 
-The hostname check should pass for `web.pki.test`. A check using an unrelated
-hostname should report a mismatch. The test runner separately confirms that the
-emulated client can fetch the service over trusted HTTPS.
+```sh
+python3 "$SEEDEMU_ROOT/seedemu/testing/cli.py" test \
+  examples/H14_pki_http01_web/example.yaml
+```
+
+The Tool Service calls above perform the actual issuance and deployment; the
+TestRunner `test` stage verifies their result. Do not use the `all` command for
+this walkthrough because it runs `test` before you can make the tool calls and
+then shuts the environment down.
 
 ## Cleanup
 

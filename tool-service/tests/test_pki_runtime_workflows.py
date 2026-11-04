@@ -1,4 +1,4 @@
-"""Test node probes with real files and TLS, plus authorization boundaries."""
+"""Test node probes with real files and TLS."""
 
 import hashlib
 import json
@@ -7,19 +7,15 @@ import ssl
 import subprocess
 import sys
 import threading
-from functools import partial
 from pathlib import Path
 
 import anyio
 import pytest
 
-from seedemu_tool_service.auth.authorization import AccessContext, AccessDenied
-from seedemu_tool_service.auth.models import AccessPolicy
 from seedemu_tool_service.models.runtime import RuntimeCommandResult
 from seedemu_tool_service.registry import ToolRegistry as ProductionRegistry
 from seedemu_tool_service.tools.pki import register_pki_tools
 from seedemu_tool_service.tools.pki.acme.inspection import ACMEInspectionTools
-from seedemu_tool_service.tools.pki.ca_service.models import InspectCAServiceArguments
 from seedemu_tool_service.tools.pki.ca_service.tools import CAServiceTools
 from seedemu_tool_service.tools.pki.remote_tls.verification import TLSVerificationTools
 from seedemu_tool_service.tools.pki.trust_verification.status import CertificateStatusTools
@@ -302,58 +298,6 @@ def test_new_tools_reject_invalid_input_before_execution():
                 "expected_fingerprint_sha256": "not-a-fingerprint",
             },
         )
-    assert not backend.calls
-
-
-def test_ca_observation_tools_require_ca_role_exact_profile_and_assigned_node():
-    backend = LocalProbeBackend()
-    registry = ProductionRegistry()
-    register_pki_tools(registry, backend)
-    arguments = {
-        "source": "ca",
-        "config_path": "/root/.step/config/ca.json",
-    }
-    policy = AccessPolicy.model_validate(
-        {
-            "agents": [
-                {
-                    "agent_id": "operator",
-                    "world_id": "world",
-                    "role": "ca_operator",
-                    "token_sha256": "a" * 64,
-                    "nodes": ["ca"],
-                    "profiles": ["inspect"],
-                }
-            ],
-            "nodes": [{"node_id": "ca", "world_id": "world", "container_id": "b" * 64}],
-            "profiles": [
-                {
-                    "profile_id": "inspect",
-                    "world_id": "world",
-                    "tool": "pki.inspect_ca_service",
-                    "arguments": arguments,
-                }
-            ],
-        }
-    )
-    access = AccessContext(policy.agents[0], policy)
-    authorized = access.authorize(
-        "pki.inspect_ca_service", arguments, InspectCAServiceArguments
-    )
-    assert authorized["source"] == "b" * 64
-    for changed in ({"source": "other"}, {"config_path": "/tmp/other.json"}):
-        with pytest.raises(AccessDenied):
-            anyio.run(
-                partial(
-                    registry.invoke,
-                    "pki.inspect_ca_service",
-                    {**arguments, **changed},
-                    access=access,
-                )
-            )
-    member = access.identity.model_copy(update={"role": "pki_operator"})
-    assert not AccessContext(member, policy).can_call("pki.inspect_ca_service")
-    assert not AccessContext(member, policy).can_call("pki.inspect_ca_events")
     assert not backend.calls
 
 

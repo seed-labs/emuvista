@@ -14,14 +14,15 @@ def main() -> int:
 
     if web:
         test.exec_check(
-            "Certbot renewal configuration uses the Nginx HTTP-01 authenticator",
+            "PKI tool created a Certbot renewal configuration for HTTP-01",
             web,
-            "grep -q '^authenticator = nginx$' /etc/letsencrypt/renewal/*.conf",
+            "grep -q '^authenticator = nginx$' "
+            "/etc/letsencrypt/renewal/web-pki-test.conf",
         )
 
     if client and web:
         test.exec_check(
-            "CA-issued HTTPS certificate is trusted by the emulated client",
+            "PKI-tool-issued HTTPS certificate is trusted by the emulated client",
             client,
             "curl -fsS https://web.pki.test/",
         )
