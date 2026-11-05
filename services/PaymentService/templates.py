@@ -23,6 +23,9 @@ exec postgres -D "$PGDATA" -p "$PGPORT" -h 0.0.0.0
 BACKEND_START = r'''#!/bin/sh
 set -eu
 cd /app
+if [ -n "${APPLICATION_CA_FILES:-}" ]; then
+  cat /payment-config/server.crt $APPLICATION_CA_FILES > /tmp/application-ca.pem
+fi
 attempt=0
 until node node_modules/prisma/build/index.js migrate deploy; do
   attempt=$((attempt + 1))

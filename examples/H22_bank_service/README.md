@@ -1,6 +1,6 @@
 # Bank service
 
-Apache Fineract banking on `mini_internet.py`, using H21's EmailBundle and DNSSEC configuration for real verification emails.
+Apache Fineract banking on the shared [H00 mini Internet](../H00_mini_internet/), using H21 email records and H00 DNSSEC for real verification emails.
 
 ```sh
 python3 bank.py
@@ -16,6 +16,7 @@ The [prepared bank images](../../services/BankService/README.md) must be availab
 | Customer bank | https://localhost:8444 | `alice@seed.example` / `BankDemoPass123!` |
 | Bank administration | https://localhost:8446 | `mifos` / `password` (tenant `default`) |
 | Webmail | https://localhost:8445/webmail/ | `alice@seed.example` / `EmailDemo123!` |
+| Internet Map | http://localhost:8080 | — |
 
 Accept the laboratory certificates. Bob uses `bob@seed.example` with the same respective passwords. Bank login and transfers require codes from the user's mailbox.
 
@@ -38,7 +39,7 @@ Use the administration website for staff operations:
 
 The two bank websites share the same Fineract accounts and loans. Customer access uses email codes; staff access uses the separate administrator credentials above. See [API examples](api.md) for agent access.
 
-Agents use the internal bank gateway `10.151.0.10` and mailbox front `10.150.0.10`. The staff website uses `10.151.0.18`. Only the three browser entrances publish localhost ports. H22 includes its own full mini Internet and mailbox deployment; run it separately from H21 to avoid duplicate node container names.
+Agents use the internal bank gateway `10.151.0.10` and mailbox front `10.150.0.10`. The staff website uses `10.151.0.18`. Application browser ports bind to localhost; Internet Map uses port 8080. H22 includes its own full mini Internet and mailbox deployment; run it separately from the other examples to avoid duplicate node container names and ports.
 
 Without `--state`, compiling starts fresh. From the example directory, use `python3 bank.py --state ./bank-state` to save and resume bank, email and DNS keys with the same configuration and addresses. Keep this directory outside `output` and stop containers before recompiling.
 

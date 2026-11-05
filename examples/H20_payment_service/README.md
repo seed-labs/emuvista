@@ -1,6 +1,6 @@
 # Payment Bundle
 
-Deploys Komunitin on the B00 mini Internet using [prebuilt images](../../services/PaymentService/README.md#images). Requires Linux AMD64, SEED Emulator's ContainerBundle API and the root [requirements.txt](../../requirements.txt). `bcrypt` hashes initial passwords.
+Deploys Komunitin on the shared [H00 mini Internet](../H00_mini_internet/) using [prebuilt images](../../services/PaymentService/README.md#images). Requires Linux AMD64, SEED Emulator's ContainerBundle API and the root [requirements.txt](../../requirements.txt). `bcrypt` hashes initial passwords.
 
 ## Configure
 
@@ -30,6 +30,8 @@ docker compose up -d
 
 Open <https://localhost:8443/login-mail>, accept the self-signed certificate and log in as Alice. This also works from the Windows host with WSL.
 
+Internet Map: <http://localhost:8080>. Run one mini Internet example at a time.
+
 ## Try payments
 
 Use **Transfers → Create transfer → Send**, choose a recipient, enter a description and amount, then send and confirm. The community name above the recipient list switches the recipient's community.
@@ -56,7 +58,6 @@ The example passes `groups.json` to `payment.setInitialConfiguration(...)`. Paym
 | Argument | Description |
 | --- | --- |
 | `--config PATH` | Community configuration; defaults to `groups.json` beside the script |
-| `--topology mini\|compact` | B00 network (default), or three ASes with gateway `10.210.0.10` |
 | `--output PATH` | Compilation directory; defaults to `output/` |
 | `--state PATH` | Optional directory to save and resume payment state |
 | `--host-port PORT` | Host browser HTTPS port; defaults to `8443` |

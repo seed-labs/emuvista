@@ -14,7 +14,6 @@ from pathlib import Path
 
 from seedemu.containerBundle import ContainerBundle
 from seedemu.containerBundle.ContainerBundle import PreparedContainer
-from seedemu.core.enums import NetworkType
 
 from .templates import INITIALIZE
 
@@ -27,14 +26,7 @@ DEFAULT_IMAGES['redis'] = 'redis:7-alpine'
 ROLES = ('front', 'admin', 'smtp', 'imap', 'redis', 'webmail', 'antispam', 'initialize')
 
 
-class RoutedContainer(PreparedContainer):
-    def _computeDockerfile(self):
-        image = self.service.pop('image')
-        self.service['build'] = './'+self.getHostname()
-        lines = [f'FROM {image}', 'USER root',
-            'RUN if ! command -v ip >/dev/null 2>&1; then apk add --no-cache iproute2; fi']
-        lines.extend(self._addFile(path, content) for path, content in self._files.items())
-        return '\n'.join(lines)+'\n'
+
 
 
 class EmailBundle(ContainerBundle):
@@ -53,8 +45,8 @@ class EmailBundle(ContainerBundle):
         if resolver is None:
             raise ValueError('EmailBundle requires an external DNSSEC-validating resolver')
         self._resolver = str(IPv4Address(resolver))
-        self._containers = {r: RoutedContainer(name=name+'-'+r) for r in ROLES}
-        self._required_emu_network_address_number = len(ROLES)
+        self._containers = {r: PreparedContainer(name=name+'-'+r, emulator=self._emulator) for r in ROLES}
+        self._required_internal_address_count = len(ROLES)
         self._configuration = None
         self._state_path = None
         self._host_port = None
@@ -128,52 +120,19 @@ class EmailBundle(ContainerBundle):
         if self._configuration is None:
             raise ValueError('EmailBundle requires an explicit initial configuration')
         if self._emulator is None or not self._emulator.rendered():
-            raise RuntimeError('render the emulator before configuring EmailBundle')
+            raise RuntimeError('Render the emulator before configuring EmailBundle')
         super().configure()
-        missing = [c for c in self._containers.values() if not c._internal_networks]
-        allocated = set()
-        if missing:
-            self._required_emu_network_address_number = len(missing)
-            if not self._default_internal_network:
-                self.allocateEmuNetworkAddress()
-                allocated.update(self._default_internal_network['ip_addresses'])
-            net = self._default_internal_network
-            if not net or len(net['ip_addresses']) < len(missing):
-                raise ValueError(f'EmailBundle requires {len(missing)} free emulated IP addresses')
-            for c, address in zip(missing, net['ip_addresses']):
-                c.joinInternalNetwork(net['network'], c.getHostname(), address, net['default_route'])
-        networks, occupied, assignments = {}, set(), []
-        for (scope, kind, _), obj in self._emulator.getRegistry().getAll().items():
-            if kind == 'net':
-                key = obj.getName() if obj.getType() == NetworkType.Bridge else f'net_{scope}_{obj.getName()}'
-                networks[key] = obj
-            elif kind in ('hnode', 'rnode', 'brdnode'):
-                occupied.update(str(i.getAddress()) for i in obj.getInterfaces())
-        for role, c in self._containers.items():
-            if len(c._internal_networks) != 1:
-                raise ValueError('each email component requires one emulated network')
-            name, _, address, route = c._internal_networks[0]
-            net, ip = networks.get(name), IPv4Address(address)
-            if net is None or ip not in net.getPrefix():
-                raise ValueError(f'{role}: address must belong to a rendered SEED network')
-            reserved = net.getAttribute('container_bundle_reserved_addresses', set())
-            if (address in occupied or address == str(net.getDefaultRouter())
-                    or ip in {net.getPrefix().network_address, net.getPrefix().broadcast_address}
-                    or (ip in reserved and address not in allocated)):
-                raise ValueError(f'{role}: IP address is occupied or reserved')
-            if route != str(net.getDefaultRouter()):
-                raise ValueError(f'{role}: use the emulated router as the default route')
-            occupied.add(address)
+        networks = self.getInternalNetworks()
+        if len(networks) != 1:
+            raise ValueError('Configure one emulated network with addInternalNetwork()')
+        net = networks[0]
+        for (role, container), address in zip(self._containers.items(), net['ip_addresses']):
+            container.joinInternalNetwork(net['asn'], net['network_name'], address,
+                                          container.getHostname(), net['default_route'])
             self._addresses[role] = address
-            assignments.append((net, ip))
-        backend_networks = {self.getContainer(r)._internal_networks[0][0]
-            for r in ('front', 'admin', 'smtp', 'imap', 'redis', 'webmail', 'antispam')}
-        if len(backend_networks) != 1:
-            raise ValueError('Mailu application components require one shared emulated subnet')
-        self._subnet = networks[self.getContainer('front')._internal_networks[0][0]].getPrefix()
-        for net, ip in assignments:
-            net.setAttribute('container_bundle_reserved_addresses', net.getAttribute('container_bundle_reserved_addresses', set()) | {ip})
+        self._subnet = self._emulator.getLayer('Base').getAutonomousSystem(int(net['asn'])).getNetwork(net['network_name']).getPrefix()
         self._configured = True
+
 
     def install(self):
         if not self._configured:
@@ -235,7 +194,7 @@ class EmailBundle(ContainerBundle):
             'smtp': {'queue': '/queue'}, 'redis': {'redis': '/data'}, 'webmail': {'webmail': '/data'},
             'antispam': {'filter': '/var/lib/rspamd', 'dkim': '/dkim'}, 'initialize': {'initialization': '/mailu-state'}}
         for role, c in self._containers.items():
-            value = {'image': self._images[role], 'entrypoint': ['/bin/sh', '/email-route.sh'], 'command': commands[role],
+            value = {'image': self._images[role], 'command': commands[role],
                 'cap_add': ['NET_ADMIN'], 'restart': 'on-failure:3' if role == 'initialize' else 'unless-stopped',
                 'dns': [self._resolver], 'volumes': [f'./{self._name}/config:/mailu-config:ro'],
                 'environment': {k: str(v).replace('$', '$$') for k, v in env.items()},
@@ -255,18 +214,12 @@ class EmailBundle(ContainerBundle):
                 directory = state/name
                 directory.mkdir(exist_ok=True, mode=0o755)
                 value['volumes'].append(f'{directory}:{target}')
-            c.setContentAttribute(value)
-            c._start_script_name = '/email-route.sh'
-            c._start_commands = ['#!/bin/sh', 'set -eu', 'exec "$@"']
+            c.updateServiceConfig(value)
+            c.setFile('/application-start.sh', '#!/bin/sh\nexec "$@"\n')
+            c.setEntrypointWrapper('/application-start.sh', [])
         (root/'deployment.json').write_text(json.dumps({'addresses': self._addresses, 'resolver': self._resolver,
             'images': self._images, 'state_path': str(state), 'persistent': self._state_path is not None,
             'hostname': self._configuration['hostname'], 'browser': f'https://localhost:{self._host_port}/webmail/' if self._host_port else None}, indent=2)+'\n')
         Path('docker-compose.yml').touch(mode=0o600, exist_ok=True)
         Path('docker-compose.yml').chmod(0o600)
-        containers = self._containers
-        self._containers = {c.getHostname(): c for c in containers.values()}
-        try:
-            return super().install()
-        finally:
-            self._containers = containers
-
+        return super().install()

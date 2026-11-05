@@ -10,38 +10,25 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from seedemu.compiler import Docker, Platform
-from seedemu.core import Binding, Filter
-from seedemu.layers import Dnssec
-from seedemu.services import DomainNameService, DomainNameCachingService
 from services.EmailService import EmailBundle
-from examples.H21_email_service.mini_internet import build_emulator
+from examples.H00_mini_internet import DNS_AUTHORITY, DNS_RESOLVER, build_emulator
 
 
-def configure_dns(emu, configuration, state=None):
-    """Use SEED's authority, signing layer and validating caching resolver."""
-    base = emu.getLayer('Base')
-    network = base.getAutonomousSystem(150)
-    network.createHost('dns_authority').joinNetwork('net0', address='10.150.0.53')
-    network.createHost('dns_resolver').joinNetwork('net0', address='10.150.0.54')
-    authority = DomainNameService()
-    authority.install('email-dns-authority').addZone('.').setMaster()
-    root = authority.getRootZone()
-    root.addRecord(f'{configuration["hostname"]}. A 10.150.0.10')
+def add_mail_records(emu, configuration, address='10.150.0.10'):
+    """Add application records to H00's existing DNS infrastructure."""
+    dns = emu.getLayer('DomainNameService')
+    zones = {zone for server in dns.getPendingTargets().values() for zone in server.getZones()}
+
+    def add(name, value):
+        name = name.lower().rstrip('.')+'.'
+        zone = max((zone for zone in zones if zone == '.' or name == zone or name.endswith('.'+zone)), key=len)
+        dns.getZone(zone).addRecord(f'{name} {value}')
+
+    add(configuration['hostname'], 'A '+address)
     for domain in configuration['domains']:
-        root.addRecord(f'{domain}. MX 10 {configuration["hostname"]}.')
+        add(domain, f'MX 10 {configuration["hostname"]}.')
     # Mailu checks this signed name at startup in the private simulation namespace.
-    root.addRecord('example.org. A 10.150.0.53')
-    signing = Dnssec().enableOn('.')
-    if state:
-        signing.setKeyStore(state/'dnssec')
-    caching = DomainNameCachingService()
-    resolver = caching.install('email-dns-resolver')
-    resolver.addDnssecTrustAnchor('.', signing.getTrustAnchor('.'))
-    resolver.setDnssecValidation()
-    for layer in (authority, caching, signing):
-        emu.addLayer(layer)
-    emu.addBinding(Binding('email-dns-authority', filter=Filter(asn=150, nodeName='dns_authority')))
-    emu.addBinding(Binding('email-dns-resolver', filter=Filter(asn=150, nodeName='dns_resolver')))
+    add('example.org', 'A '+DNS_AUTHORITY)
 
 
 def main():
@@ -53,23 +40,24 @@ def main():
     args = parser.parse_args()
     if args.state and (args.state.resolve() == args.output.resolve() or args.output.resolve() in args.state.resolve().parents):
         parser.error('email state must be outside output')
-    emu = build_emulator()
+    emu = build_emulator(dnssec=True, dnssec_key_store=args.state.resolve()/'dnssec' if args.state else None)
     configuration = json.loads(args.config.read_text())
-    bundle = EmailBundle(emu, resolver='10.150.0.54')
+    bundle = EmailBundle(emu, resolver=DNS_RESOLVER)
     bundle.setInitialConfiguration(configuration)
-    configure_dns(emu, configuration, args.state.resolve() if args.state else None)
+    add_mail_records(emu, configuration)
     emu.render()
-    bundle.setDefaultInternalNetwork('net_150_net0',
+    bundle.addInternalNetwork('150', 'net0',
         [f'10.150.0.{i}' for i in range(10, 10+len(bundle.getContainers()))], '10.150.0.254')
     bundle.enableHostAccess(args.host_port)
     if args.state:
         bundle.setSavePath(args.state)
-    compiler = Docker(platform=Platform.AMD64, internetMapEnabled=False)
+    compiler = Docker(platform=Platform.AMD64, internetMapEnabled=True)
     compiler.addContainerBundle(bundle)
     emu.compile(compiler, str(args.output.resolve()), override=True)
     (args.output/'.env').write_text('COMPOSE_PROJECT_NAME=h21-email\n')
     print(f'Webmail: https://localhost:{args.host_port}/webmail/')
     print(f'Administration: https://localhost:{args.host_port}/admin/')
+    print('Internet Map: http://localhost:8080')
     print('Next: cd output; docker compose build; docker compose up -d')
 
 
