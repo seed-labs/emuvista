@@ -4,9 +4,7 @@ import hashlib
 
 from seedemu_tool_service.backends import RuntimeBackend
 from seedemu_tool_service.tools.pki.private_key_csr.models import (
-    CSRGenerationResult,
     CSRInspectionResult,
-    PrivateKeyGenerationResult,
     PrivateKeyInspectionResult,
     PrivateKeyMatchResult,
 )
@@ -69,104 +67,6 @@ class PrivateKeyCSRTools:
             certificate_public_hash=cert_hash,
             exit_code=cert_result.exit_code if key_result.exit_code == 0 else key_result.exit_code,
             stderr=f"{key_result.stderr}\n{cert_result.stderr}".strip(),
-        )
-
-    def generate_private_key(
-        self,
-        source: str,
-        output_path: str,
-        algorithm: str = "RSA",
-        bits: int = 2048,
-        curve: str = "prime256v1",
-        overwrite: bool = False,
-    ) -> PrivateKeyGenerationResult:
-        """Generate a private key at an explicit output path."""
-
-        if not overwrite:
-            preflight = self._backend.execute(source, ["test", "!", "-e", output_path])
-            if preflight.exit_code != 0:
-                return PrivateKeyGenerationResult(
-                    source=source,
-                    output_path=output_path,
-                    algorithm=algorithm,
-                    bits=bits if algorithm == "RSA" else None,
-                    curve=curve if algorithm == "EC" else None,
-                    created_paths=[],
-                    overwritten_paths=[],
-                    successful=False,
-                    exit_code=preflight.exit_code,
-                    stderr=preflight.stderr or "output path already exists",
-                )
-
-        command = ["openssl", "genpkey", "-out", output_path]
-        if algorithm == "RSA":
-            command.extend(["-algorithm", "RSA", "-pkeyopt", f"rsa_keygen_bits:{bits}"])
-        else:
-            command.extend(["-algorithm", "EC", "-pkeyopt", f"ec_paramgen_curve:{curve}"])
-        result = self._backend.execute(source, command)
-        chmod_result = self._backend.execute(source, ["chmod", "600", output_path])
-        exit_code = result.exit_code if result.exit_code != 0 else chmod_result.exit_code
-        return PrivateKeyGenerationResult(
-            source=source,
-            output_path=output_path,
-            algorithm=algorithm,
-            bits=bits if algorithm == "RSA" else None,
-            curve=curve if algorithm == "EC" else None,
-            created_paths=[output_path] if exit_code == 0 and not overwrite else [],
-            overwritten_paths=[output_path] if exit_code == 0 and overwrite else [],
-            successful=exit_code == 0,
-            exit_code=exit_code,
-            stderr=f"{result.stderr}\n{chmod_result.stderr}".strip(),
-        )
-
-    def generate_csr(
-        self,
-        source: str,
-        key_path: str,
-        output_path: str,
-        subject: str,
-        subject_alt_names: list[str] | None = None,
-        overwrite: bool = False,
-    ) -> CSRGenerationResult:
-        """Generate a CSR from a private key and requested identity."""
-
-        if not overwrite:
-            preflight = self._backend.execute(source, ["test", "!", "-e", output_path])
-            if preflight.exit_code != 0:
-                return CSRGenerationResult(
-                    source=source,
-                    key_path=key_path,
-                    output_path=output_path,
-                    created_paths=[],
-                    overwritten_paths=[],
-                    successful=False,
-                    exit_code=preflight.exit_code,
-                    stderr=preflight.stderr or "output path already exists",
-                )
-
-        command = [
-            "openssl",
-            "req",
-            "-new",
-            "-key",
-            key_path,
-            "-out",
-            output_path,
-            "-subj",
-            subject,
-        ]
-        if subject_alt_names:
-            command.extend(["-addext", f"subjectAltName={','.join(subject_alt_names)}"])
-        result = self._backend.execute(source, command)
-        return CSRGenerationResult(
-            source=source,
-            key_path=key_path,
-            output_path=output_path,
-            created_paths=[output_path] if result.exit_code == 0 and not overwrite else [],
-            overwritten_paths=[output_path] if result.exit_code == 0 and overwrite else [],
-            successful=result.exit_code == 0,
-            exit_code=result.exit_code,
-            stderr=result.stderr,
         )
 
     def inspect_csr(self, source: str, csr_path: str) -> CSRInspectionResult:

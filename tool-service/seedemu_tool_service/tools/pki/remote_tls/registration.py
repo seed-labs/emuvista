@@ -12,32 +12,35 @@ from seedemu_tool_service.tools.pki.remote_tls.models import (
     InspectTLSHandshakeArguments,
 )
 from seedemu_tool_service.tools.pki.remote_tls.tools import RemoteTLSTools
+from seedemu_tool_service.tools.pki.remote_tls.verification import TLSVerificationTools
+from seedemu_tool_service.tools.pki.remote_tls.verification_models import (
+    TestMTLSConnectionArguments,
+    VerifyTLSDeploymentArguments,
+)
 
 
 def register_remote_tls_tools(registry: ToolRegistry, backend: RuntimeBackend) -> None:
     """Register remote TLS inspection tools."""
 
-    from .verification import TLSVerificationTools
-    from .verification_models import TestMTLSConnectionArguments, VerifyTLSDeploymentArguments
-
     verification = TLSVerificationTools(backend)
-    for name, description, model in (
-        (
-            "verify_tls_deployment",
-            "Verify remote TLS trust, hostname and expected SHA-256 fingerprint.",
-            VerifyTLSDeploymentArguments,
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.verify_tls_deployment",
+            domain="pki",
+            description="Verify remote TLS trust, hostname and expected SHA-256 fingerprint.",
         ),
-        (
-            "test_mtls_connection",
-            "Compare HTTPS HEAD requests with and without a client certificate.",
-            TestMTLSConnectionArguments,
+        handler=verification.verify_tls_deployment,
+        arguments_model=VerifyTLSDeploymentArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.test_mtls_connection",
+            domain="pki",
+            description="Compare HTTPS HEAD requests with and without a client certificate.",
         ),
-    ):
-        registry.register(
-            ToolDefinition(name="pki." + name, domain="pki", description=description),
-            getattr(verification, name),
-            model,
-        )
+        handler=verification.test_mtls_connection,
+        arguments_model=TestMTLSConnectionArguments,
+    )
     tools = RemoteTLSTools(backend)
     registry.register(
         definition=ToolDefinition(

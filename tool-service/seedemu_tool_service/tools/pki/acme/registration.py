@@ -3,6 +3,13 @@
 from seedemu_tool_service.backends import RuntimeBackend
 from seedemu_tool_service.models.tool import ToolDefinition
 from seedemu_tool_service.registry import ToolRegistry
+from seedemu_tool_service.tools.pki.acme.inspection import ACMEInspectionTools
+from seedemu_tool_service.tools.pki.acme.inspection_models import (
+    InspectACMEReadinessArguments,
+    InspectEnvironmentArguments,
+    InspectRenewalStatusArguments,
+    ListManagedCertificatesArguments,
+)
 from seedemu_tool_service.tools.pki.acme.models import (
     DeployACMECertificateToNginxArguments,
     RenewACMECertificateArguments,
@@ -14,72 +21,85 @@ from seedemu_tool_service.tools.pki.acme.tools import ACMETools
 
 def register_acme_tools(registry: ToolRegistry, backend: RuntimeBackend) -> None:
     """Register real ACME operations backed by Certbot in emulator nodes."""
-    from .inspection import ACMEInspectionTools
-    from .inspection_models import (
-        InspectACMEReadinessArguments,
-        InspectEnvironmentArguments,
-        InspectRenewalStatusArguments,
-        ListManagedCertificatesArguments,
-    )
-
     inspections = ACMEInspectionTools(backend)
-    for name, description, model in (
-        (
-            "inspect_environment",
-            "Inspect node PKI executables and CA bundle availability.",
-            InspectEnvironmentArguments,
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.inspect_environment",
+            domain="pki",
+            description="Inspect node PKI executables and CA bundle availability.",
         ),
-        (
-            "list_managed_certificates",
-            "List existing Certbot certificate lineages without changes.",
-            ListManagedCertificatesArguments,
+        handler=inspections.inspect_environment,
+        arguments_model=InspectEnvironmentArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.list_managed_certificates",
+            domain="pki",
+            description="List existing Certbot certificate lineages without changes.",
         ),
-        (
-            "inspect_acme_readiness",
-            "Check the selected ACME authenticator and local prerequisites; CA-side challenge success remains unverified.",
-            InspectACMEReadinessArguments,
+        handler=inspections.list_managed_certificates,
+        arguments_model=ListManagedCertificatesArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.inspect_acme_readiness",
+            domain="pki",
+            description=(
+                "Check the selected ACME authenticator and local prerequisites; "
+                "CA-side challenge success remains unverified."
+            ),
         ),
-        (
-            "inspect_renewal_status",
-            "Inspect saved renewal configuration and scheduler observations.",
-            InspectRenewalStatusArguments,
+        handler=inspections.inspect_acme_readiness,
+        arguments_model=InspectACMEReadinessArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.inspect_renewal_status",
+            domain="pki",
+            description="Inspect saved renewal configuration and scheduler observations.",
         ),
-    ):
-        registry.register(
-            ToolDefinition(name="pki." + name, domain="pki", description=description),
-            getattr(inspections, name),
-            model,
-        )
+        handler=inspections.inspect_renewal_status,
+        arguments_model=InspectRenewalStatusArguments,
+    )
     tools = ACMETools(backend)
-    registrations = [
-        (
-            "pki.request_acme_certificate",
-            "Request a certificate using HTTP-01 or the configured RFC 2136 DNS-01 plugin.",
-            tools.request_acme_certificate,
-            RequestACMECertificateArguments,
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.request_acme_certificate",
+            domain="pki",
+            description=(
+                "Request a certificate using HTTP-01 or the configured RFC 2136 DNS-01 plugin."
+            ),
         ),
-        (
-            "pki.deploy_acme_certificate_to_nginx",
-            "Add an isolated nginx TLS site without replacing the default site or duplicating an existing TLS name.",
-            tools.deploy_acme_certificate_to_nginx,
-            DeployACMECertificateToNginxArguments,
+        handler=tools.request_acme_certificate,
+        arguments_model=RequestACMECertificateArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.deploy_acme_certificate_to_nginx",
+            domain="pki",
+            description=(
+                "Add an isolated nginx TLS site without replacing the default site "
+                "or duplicating an existing TLS name."
+            ),
         ),
-        (
-            "pki.renew_acme_certificate",
-            "Renew a Certbot-managed ACME certificate.",
-            tools.renew_acme_certificate,
-            RenewACMECertificateArguments,
+        handler=tools.deploy_acme_certificate_to_nginx,
+        arguments_model=DeployACMECertificateToNginxArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.renew_acme_certificate",
+            domain="pki",
+            description="Renew a Certbot-managed ACME certificate.",
         ),
-        (
-            "pki.revoke_acme_certificate",
-            "Revoke a certificate through its ACME CA.",
-            tools.revoke_acme_certificate,
-            RevokeACMECertificateArguments,
+        handler=tools.renew_acme_certificate,
+        arguments_model=RenewACMECertificateArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.revoke_acme_certificate",
+            domain="pki",
+            description="Revoke a certificate through its ACME CA.",
         ),
-    ]
-    for name, description, handler, arguments_model in registrations:
-        registry.register(
-            ToolDefinition(name=name, domain="pki", description=description),
-            handler,
-            arguments_model,
-        )
+        handler=tools.revoke_acme_certificate,
+        arguments_model=RevokeACMECertificateArguments,
+    )

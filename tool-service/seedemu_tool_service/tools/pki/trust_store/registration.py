@@ -16,35 +16,42 @@ def register_trust_store_tools(registry: ToolRegistry, backend: RuntimeBackend) 
     """Register trust-store tools."""
 
     tools = TrustStoreTools(backend)
-    registrations = [
-        (
-            "pki.inspect_trust_store",
-            "Inspect trust-store material.",
-            tools.inspect_trust_store,
-            InspectTrustStoreArguments,
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.inspect_trust_store",
+            domain="pki",
+            description="Inspect trust-store material.",
         ),
-        (
-            "pki.check_ca_installed",
-            "Check whether a CA certificate is trusted.",
-            tools.check_ca_installed,
-            CheckCAInstalledArguments,
+        handler=tools.inspect_trust_store,
+        arguments_model=InspectTrustStoreArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.check_ca_installed",
+            domain="pki",
+            description="Check whether a CA certificate is trusted.",
         ),
-        (
-            "pki.remove_ca_certificate",
-            "Remove a fingerprint-pinned CA certificate from the SEEDEmu trust-store directory, then refresh trust.",
-            tools.remove_ca_certificate,
-            RemoveCACertificateArguments,
+        handler=tools.check_ca_installed,
+        arguments_model=CheckCAInstalledArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.remove_ca_certificate",
+            domain="pki",
+            description=(
+                "Remove a fingerprint-pinned CA certificate from the SEEDEmu trust-store "
+                "directory, then refresh trust."
+            ),
         ),
-        (
-            "pki.update_trust_store",
-            "Run the fixed update-ca-certificates command.",
-            tools.update_trust_store,
-            UpdateTrustStoreArguments,
+        handler=tools.remove_ca_certificate,
+        arguments_model=RemoveCACertificateArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.update_trust_store",
+            domain="pki",
+            description="Run the fixed update-ca-certificates command.",
         ),
-    ]
-    for name, description, handler, arguments_model in registrations:
-        registry.register(
-            definition=ToolDefinition(name=name, domain="pki", description=description),
-            handler=handler,
-            arguments_model=arguments_model,
-        )
+        handler=tools.update_trust_store,
+        arguments_model=UpdateTrustStoreArguments,
+    )

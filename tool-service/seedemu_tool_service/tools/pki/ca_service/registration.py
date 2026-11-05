@@ -12,20 +12,21 @@ from seedemu_tool_service.tools.pki.ca_service.tools import CAServiceTools
 
 def register_ca_service_tools(registry: ToolRegistry, backend: RuntimeBackend) -> None:
     tools = CAServiceTools(backend)
-    for name, description, model in (
-        (
-            "inspect_ca_service",
-            "Inspect SEEDemu step-ca configuration and process state.",
-            InspectCAServiceArguments,
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.inspect_ca_service",
+            domain="pki",
+            description="Inspect SEEDemu step-ca configuration and process state.",
         ),
-        (
-            "inspect_ca_events",
-            "Read bounded, sanitized step-ca log events.",
-            InspectCAEventsArguments,
+        handler=tools.inspect_ca_service,
+        arguments_model=InspectCAServiceArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.inspect_ca_events",
+            domain="pki",
+            description="Read bounded, sanitized step-ca log events.",
         ),
-    ):
-        registry.register(
-            ToolDefinition(name="pki." + name, domain="pki", description=description),
-            getattr(tools, name),
-            model,
-        )
+        handler=tools.inspect_ca_events,
+        arguments_model=InspectCAEventsArguments,
+    )

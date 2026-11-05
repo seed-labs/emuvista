@@ -24,28 +24,36 @@ def register_installation_tools(registry: ToolRegistry, backend: RuntimeBackend)
         handler=tools.backup_certificate_material,
         arguments_model=BackupCertificateMaterialArguments,
     )
-    for name, description, handler in [
-        (
-            "pki.install_certificate",
-            "Install a certificate outside Certbot-managed paths.",
-            tools.install_certificate,
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.install_certificate",
+            domain="pki",
+            description="Install a certificate outside Certbot-managed paths.",
         ),
-        (
-            "pki.install_private_key",
-            "Install an application private key outside Certbot-managed paths with restrictive permissions.",
-            tools.install_private_key,
+        handler=tools.install_certificate,
+        arguments_model=PathPairArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.install_private_key",
+            domain="pki",
+            description=(
+                "Install an application private key outside Certbot-managed paths "
+                "with restrictive permissions."
+            ),
         ),
-        (
-            "pki.install_certificate_chain",
-            "Install a certificate chain bundle outside Certbot-managed paths.",
-            tools.install_certificate_chain,
+        handler=tools.install_private_key,
+        arguments_model=PathPairArguments,
+    )
+    registry.register(
+        definition=ToolDefinition(
+            name="pki.install_certificate_chain",
+            domain="pki",
+            description="Install a certificate chain bundle outside Certbot-managed paths.",
         ),
-    ]:
-        registry.register(
-            definition=ToolDefinition(name=name, domain="pki", description=description),
-            handler=handler,
-            arguments_model=PathPairArguments,
-        )
+        handler=tools.install_certificate_chain,
+        arguments_model=PathPairArguments,
+    )
     registry.register(
         definition=ToolDefinition(
             name="pki.restore_certificate_material",
