@@ -12,12 +12,13 @@ import tempfile
 from decimal import Decimal
 from pathlib import Path
 
-from .containers import RoutedBundle, RoutedContainer
+from seedemu.containerBundle import ContainerBundle
+from seedemu.containerBundle.ContainerBundle import PreparedContainer
 
 DEFAULT_IMAGES = {
     'core': 'apache/fineract:4a61d7c218413eca8310d30b098722047e891bb7',
-    'bff': 'emuvista/bank-consumer:ce2621c0fe76',
-    'frontend': 'emuvista/bank-frontend:ce2621c0fe76',
+    'bff': 'handsonsecurity/emuvista-bank-consumer:1.0',
+    'frontend': 'handsonsecurity/emuvista-bank-frontend:1.0',
     'staff': 'openmf/web-app@sha256:55ddd97b705766e3910e15f2cc260f25b5055d1c1465a668cdbed89946256f1c',
     'database': 'postgres:15.2-alpine',
     'redis': 'redis:7-alpine',
@@ -28,7 +29,7 @@ ROLES = ('gateway', 'core', 'core-db', 'bff', 'bff-db', 'frontend',
          'redis', 'initialize', 'staff')
 
 
-class BankBundle(RoutedBundle):
+class BankBundle(ContainerBundle):
     """Fineract banking with customer/staff access and external SMTP/IMAP."""
 
     def __init__(self, emulator=None, images=None, name='bank', resolver=None):
@@ -40,15 +41,60 @@ class BankBundle(RoutedBundle):
             if role not in DEFAULT_IMAGES or not isinstance(image, str) or not image or any(c.isspace() for c in image):
                 raise ValueError('invalid bank image role or reference')
             self._images[role] = image
-        self._containers = {r: RoutedContainer(name=name+'-'+r) for r in ROLES}
-        self._required_emu_network_address_number = len(ROLES)
+        self._containers = {r: PreparedContainer(name=name+'-'+r, emulator=self._emulator) for r in ROLES}
+        self._required_internal_address_count = len(ROLES)
         self._configured = False
+        self._addresses = {}
         self._initial = None
         self._state_path = None
         self._host_port = None
         self._staff_host_port = None
         self._mail = None
         self._resolver = resolver
+        self._api_client = None
+        self._secrets = None
+
+    def registerAPIClient(self, client_id, redirect_uris, settlement_account):
+        """Register a third-party API client, without linking any customer.
+
+        Customers authorize account access in the bank website. The settlement
+        account is the only permitted destination for this client's debits.
+        """
+        if self._configured:
+            raise RuntimeError('register API clients before compilation')
+        if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', client_id):
+            raise ValueError('invalid API client identifier')
+        from urllib.parse import urlsplit
+        uris = list(redirect_uris)
+        if not uris or any(urlsplit(uri).scheme != 'https' or not urlsplit(uri).hostname
+                           or any(c in uri for c in ',\n\r') for uri in uris):
+            raise ValueError('API callbacks require HTTPS URLs')
+        self.getInitialAccount(settlement_account)
+        self._api_client = {'clientId': client_id, 'redirectURIs': uris,
+                            'settlementAccount': settlement_account}
+        return self
+
+    def _credentials(self):
+        if self._secrets is None:
+            saved = self._state_path/'credentials.json' if self._state_path else None
+            if saved and saved.exists():
+                self._secrets = json.loads(saved.read_text())
+            else:
+                self._secrets = {'database': secrets.token_hex(24)}
+        return self._secrets
+
+    def getOpenBankingConnection(self):
+        """Export server-side OAuth settings, API addresses and TLS trust."""
+        if self._api_client is None:
+            raise ValueError('register an API client before exporting its connection')
+        client = self._api_client
+        secret = hashlib.sha256((self._credentials()['database']+':'+client['clientId']).encode()).hexdigest()
+        return {'apiURL': 'https://'+self.getAddress()+'/api/v1',
+                'browserURL': 'https://localhost:'+str(self._host_port) if self._host_port else 'https://'+self.getAddress(),
+                'clientId': client['clientId'], 'clientSecret': secret,
+                'redirectURIs': list(client['redirectURIs']),
+                'certificate': str(Path(self._name)/'config/server.crt'),
+                'readyServices': [self.getContainer('gateway').getHostname()]}
 
     def setInitialConfiguration(self, configuration):
         if self._configured:
@@ -124,12 +170,54 @@ class BankBundle(RoutedBundle):
     def getAPIURL(self):
         return 'https://'+self.getAddress()+'/fineract-provider/api/v1'
 
+    def getAPIConnection(self):
+        """Export server-side API access, TLS trust and readiness information.
+
+        The certificate path is relative to compiler output. Consumers can mount
+        it at startup, so bundle registration order does not affect TLS setup.
+        """
+        if not self._configured:
+            self.configure()
+        return {'url': self.getAPIURL(), 'username': 'mifos', 'password': 'password',
+                'certificate': str(Path(self._name)/'config/server.crt'),
+                'readyServices': [self.getContainer('gateway').getHostname()]}
+
+    def getInitialAccount(self, external_id):
+        """Return account ownership and currency metadata without user secrets."""
+        if self._initial is None:
+            raise ValueError('set bank initial configuration before resolving accounts')
+        products = {product['id']: product for product in self._initial['savingsProducts']}
+        for customer in self._initial['customers']:
+            for account in customer['accounts']:
+                if account['id'] == external_id:
+                    return {'id': external_id, 'customerId': customer['id'],
+                            'email': customer.get('email', '').lower(),
+                            'currency': products[account['product']]['currency']}
+        raise ValueError('bank account is not defined in the initial configuration')
+
     def configure(self):
+        if self._configured:
+            return
         if self._initial is None:
             raise ValueError('BankBundle requires an explicit initial configuration')
         if self._mail is None:
             raise ValueError('BankBundle requires an external email server')
         super().configure()
+        networks = self.getInternalNetworks()
+        if len(networks) != 1:
+            raise ValueError('Configure one emulated network with addInternalNetwork()')
+        net = networks[0]
+        for (role, container), address in zip(self._containers.items(), net['ip_addresses']):
+            container.joinInternalNetwork(net['asn'], net['network_name'], address,
+                                          container.getHostname(), net['default_route'])
+            self._addresses[role] = address
+        self._configured = True
+
+    def getAddress(self, role='gateway'):
+        if not self._configured:
+            self.configure()
+        return self._addresses[role]
+
 
     def install(self):
         if not self._configured:
@@ -145,10 +233,8 @@ class BankBundle(RoutedBundle):
             raise ValueError('bank state must be outside compiler output')
         state.mkdir(parents=True, exist_ok=True, mode=0o700)
         credentials = state/'credentials.json'
-        if credentials.exists():
-            key = json.loads(credentials.read_text())
-        else:
-            key = {'database': secrets.token_hex(24)}
+        key = self._credentials()
+        if not credentials.exists():
             credentials.write_text(json.dumps(key)+'\n')
             credentials.chmod(0o600)
         identity = {'addresses': self._addresses, 'initial': self._initial, 'email': {k:v for k,v in self._mail.items() if k!='certificate'}, 'resolver': self._resolver}
@@ -180,8 +266,9 @@ class BankBundle(RoutedBundle):
             (cfg/f).chmod(0o600)
             shutil.copy2(cfg/f, state/f)
         url = lambda role, port: f'http://{self.getAddress(role)}:{port}'
+        api = self.getAPIConnection()
         configuration = {'initial': self._initial, 'coreURL': url('core', 8080)+'/fineract-provider/api/v1',
-            'coreUsername': 'mifos', 'corePassword': 'password', 'bffURL': url('bff', 8080),
+            'coreUsername': api['username'], 'corePassword': api['password'], 'bffURL': url('bff', 8080),
             'mail': {k:v for k,v in self._mail.items() if k!='certificate'}}
         (cfg/'config.json').write_text(json.dumps(configuration, indent=2)+'\n')
         (cfg/'config.json').chmod(0o600)
@@ -231,9 +318,11 @@ http {{
         images = self._images
         mount = f'./{self._name}/config:/bank:ro'
 
+        services = {}
+
         def create(role, image, command, env=None, deps=(), **extra):
             c = self.getContainer(role)
-            value = {'image': image, 'entrypoint': ['/bin/sh', '/bank-route.sh'], 'command': command,
+            value = {'image': image, 'command': command,
                 'cap_add': ['NET_ADMIN'], 'restart': 'unless-stopped', 'volumes': [mount],
                 'labels': {'org.emuvista.bundle': 'BankBundle', 'org.emuvista.component': role}}
             if self._resolver:
@@ -243,10 +332,10 @@ http {{
             if deps:
                 value['depends_on'] = {self.getContainer(d).getHostname(): {'condition': 'service_healthy'} for d in deps}
             value.update(extra)
-            c.setContentAttribute(value)
-            c._start_script_name = '/bank-route.sh'
-            c._start_commands = ['#!/bin/sh', 'set -eu', 'exec "$@"']
-            return c.service
+            c.setFile('/application-start.sh', '#!/bin/sh\nexec "$@"\n')
+            c.setEntrypointWrapper('/application-start.sh', [])
+            services[role] = value
+            return value
 
         def volume(service, name, target):
             p = state/name
@@ -272,7 +361,7 @@ http {{
              'FINERACT_SERVER_SSL_ENABLED': 'false', 'FINERACT_SERVER_PORT': 8080,
              'JAVA_TOOL_OPTIONS': '-Xmx1536m -Duser.timezone=UTC'}, ['core-db'],
             healthcheck=health('wget -q --spider http://127.0.0.1:8080/fineract-provider/actuator/health'))
-        create('bff', images['bff'], ['/bin/bash', '-ec',
+        bff = create('bff', images['bff'], ['/bin/bash', '-ec',
             'rm -f /tmp/mail-trust.p12; '
             'keytool -importcert -noprompt -alias seed-mail -file /bank/mail-ca.pem '
             '-keystore /tmp/mail-trust.p12 -storetype PKCS12 -storepass changeit; '
@@ -293,6 +382,15 @@ http {{
              'AUTH_COOKIE_SECURE': 'true', 'SERVER_FORWARD_HEADERS_STRATEGY': 'framework',
              'JAVA_TOOL_OPTIONS': '-Xmx768m -Duser.timezone=UTC'}, ['core', 'bff-db', 'redis'],
             healthcheck=health("bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"))
+        if self._api_client:
+            connection = self.getOpenBankingConnection()
+            bff['environment'].update({
+                'CONSUMER_PAYMENTS_CLIENT_ID': connection['clientId'],
+                'CONSUMER_PAYMENTS_CLIENT_SECRET': connection['clientSecret'],
+                'CONSUMER_PAYMENTS_REDIRECT_URIS': ','.join(connection['redirectURIs']),
+                'CONSUMER_PAYMENTS_SETTLEMENT_ACCOUNT': self._api_client['settlementAccount'],
+                'OB_FRONTEND_BASE_URL': connection['browserURL'],
+            })
         frontend = create('frontend', images['frontend'], ['/docker-entrypoint.sh', 'nginx', '-g', 'daemon off;'],
             healthcheck=health('wget -q --spider http://127.0.0.1/'))
         frontend['volumes'].append(f'./{self._name}/config/frontend.conf:/etc/nginx/conf.d/default.conf:ro')
@@ -315,4 +413,6 @@ http {{
             'persistent': self._state_path is not None}, indent=2)+'\n')
         Path('docker-compose.yml').touch(mode=0o600, exist_ok=True)
         Path('docker-compose.yml').chmod(0o600)
+        for role, value in services.items():
+            self.getContainer(role).updateServiceConfig(value)
         return super().install()

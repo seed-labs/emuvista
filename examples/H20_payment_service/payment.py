@@ -9,30 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from seedemu.core import Emulator
 from seedemu.compiler import Docker, Platform
-from seedemu.layers import Base, Ebgp, Routing
-from seedemu.utilities import Makers
 from services.PaymentService import PaymentBundle
-from mini_internet import build_emulator
-
-
-def compact_network():
-    """Three real BGP-connected ASes; can run beside the old manual demo."""
-    emu = Emulator()
-    base, bgp = Base(), Ebgp()
-    base.createInternetExchange(219)
-    for asn in (210, 211, 212):
-        Makers.makeStubAsWithHosts(emu, base, asn, 219, 1)
-    bgp.addRsPeers(219, [210, 211, 212])
-    for layer in (base, Routing(), bgp):
-        emu.addLayer(layer)
-    return emu
+from examples.H00_mini_internet import build_emulator
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--topology', choices=['mini', 'compact'], default='mini')
     parser.add_argument('--output', type=Path, default=Path('output'))
     parser.add_argument('--state', type=Path, help='Optional directory to save and resume payment state')
     parser.add_argument('--images', type=Path, help='JSON mapping of component roles to prebuilt image references')
@@ -50,14 +33,13 @@ def main():
     if any(output.glob('payment-*/state')):
         parser.error('output contains runtime data from the old layout; stop its containers and move output aside before recompiling')
     admin_email, admin_password = 'admin@h20.example', 'seed1234'
-    emu = build_emulator() if args.topology == 'mini' else compact_network()
+    emu = build_emulator()
     emu.render()
     payment = PaymentBundle(emu, images=json.loads(args.images.read_text()) if args.images else None)
-    asn = 150 if args.topology == 'mini' else 210
-    payment.setDefaultInternalNetwork(
-        name=f'net_{asn}_net0',
-        ip_addresses=[f'10.{asn}.0.{10+index}' for index in range(len(payment.getContainers()))],
-        default_route=f'10.{asn}.0.254')
+    payment.addInternalNetwork(
+        asn='150', network_name='net0',
+        ip_addresses=[f'10.150.0.{10+index}' for index in range(len(payment.getContainers()))],
+        default_route='10.150.0.254')
     payment.enableHostAccess(args.host_port)
     payment.setAdminCredentials(admin_email, admin_password)
     try:

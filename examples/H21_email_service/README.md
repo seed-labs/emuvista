@@ -1,6 +1,6 @@
 # Email service
 
-Mailu provides SMTP, IMAP, Roundcube Webmail and mailbox administration on the mini Internet.
+Mailu provides SMTP, IMAP, Roundcube Webmail and mailbox administration on the shared [H00 mini Internet](../H00_mini_internet/).
 
 ```sh
 python3 email_service.py
@@ -27,6 +27,6 @@ Agents inside the emulator use `10.150.0.10`: SMTP submission on 587 with STARTT
 
 Without `--state`, recompilation creates fresh mail storage outside `output`. Stop the current stack before recompiling. To save and resume mailboxes, use `python3 email_service.py --state ./email-state` with the same configuration and network. Keep the state directory outside `output`.
 
-SEED provides authoritative DNS at `10.150.0.53`, signs the private root with its `Dnssec` layer, and validates queries at `10.150.0.54`. EmailBundle uses this resolver. The private zone contains mail-domain A/MX records and the `example.org` record required by Mailu's startup check. Public Internet mail delivery is not configured.
+H00 provides authoritative DNS at `10.150.0.53`, signs the private root with its `Dnssec` layer, and validates queries at `10.150.0.54`. EmailBundle uses this resolver. The private zone contains mail-domain A/MX records and the `example.org` record required by Mailu's startup check. Public Internet mail delivery is not configured.
 
 See [the bundle API](../../services/EmailService/README.md).

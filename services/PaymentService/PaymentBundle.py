@@ -11,21 +11,21 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
-from ipaddress import IPv4Address
 from pathlib import Path
 
 from seedemu.containerBundle import ContainerBundle
 from seedemu.containerBundle.ContainerBundle import PreparedContainer
-from seedemu.core.enums import NetworkType
 
-from .initialization import load_configuration, prepare_bundle
+from .initialization import _identifier, load_configuration, prepare_bundle
 from .templates import BACKEND_START, BROWSER_LINKS, DATABASE_START, INITIALIZE, nginx_config
 
 
 REVISION = "124a87b639c37952dc9a029fc7056e523a10de5b"
 DEFAULT_IMAGES = {
     **{role: f"h20-komunitin-{role}:{REVISION[:12]}" for role in
-       ("app", "auth", "social", "accounting", "notifications-ts", "cli")},
+       ("auth", "social", "notifications-ts", "cli")},
+    "app": "handsonsecurity/emuvista-payment-app:1.0",
+    "accounting": "handsonsecurity/emuvista-payment-accounting:1.0",
     "database": f"h20-komunitin-db-auth:{REVISION[:12]}",
     "redis": "redis:7-alpine",
     "stellar": "h20-stellar-quickstart:core-horizon-beb4f2f",
@@ -39,19 +39,7 @@ ROLES = ('gateway', 'app', 'auth', 'social', 'accounting', 'notifications-ts',
          'redis', 'stellar', 'files', 'initialize')
 
 
-class RoutedContainer(PreparedContainer):
-    """Add routing tools to Debian or Alpine images without changing app code."""
 
-    def _computeDockerfile(self):
-        image = self.service.pop('image')
-        self.service['build'] = './' + self.getHostname()
-        lines = [f'FROM {image}', 'USER root',
-                 'RUN if ! command -v ip >/dev/null 2>&1; then '
-                 'if command -v apk >/dev/null 2>&1; then apk add --no-cache iproute2; '
-                 'else apt-get update && apt-get install -y --no-install-recommends iproute2 '
-                 '&& rm -rf /var/lib/apt/lists/*; fi; fi']
-        lines.extend(self._addFile(path, content) for path, content in self._files.items())
-        return '\n'.join(lines) + '\n'
 
 
 class PaymentBundle(ContainerBundle):
@@ -74,9 +62,10 @@ class PaymentBundle(ContainerBundle):
         self._host_port = None
         self._addresses = {}
         self._configured = False
-        self._required_emu_network_address_number = len(ROLES)
+        self._application_options = {}
+        self._required_internal_address_count = len(ROLES)
         for role in ROLES:
-            container = RoutedContainer(name=name+'-'+role)
+            container = PreparedContainer(name=name+'-'+role, emulator=self._emulator)
             self._containers[role] = container
 
     def setAdminCredentials(self, email, password):
@@ -147,67 +136,62 @@ class PaymentBundle(ContainerBundle):
     def getAdminCredentials(self):
         return {'email':self._admin_email,'password':self._admin_password}
 
+    def getInitialAccountId(self, group, email):
+        """Resolve a wallet defined by setInitialConfiguration, before compilation."""
+        for community in (self._initial_configuration or {}).get('groups', []):
+            if community['code'] == group:
+                for user in community['users']:
+                    if user['email'] == email.lower():
+                        return _identifier('account', user['email'], group)
+        raise ValueError('wallet is not defined in the initial payment configuration')
+
+    def configureApplication(self, role, *, environment=None, files=None,
+                             trusted_certificates=(), dependencies=()):
+        """Configure an application without depending on another bundle's type.
+
+        Files contain text and are mounted read-only under /payment-config.
+        Certificate paths are relative to compiler output or absolute paths.
+        Dependencies are Compose service names that must become healthy first.
+        """
+        if self._configured:
+            raise RuntimeError('configure applications before compilation')
+        if role not in ('app', 'auth', 'social', 'accounting', 'notifications-ts', 'initialize'):
+            raise ValueError('unknown payment application role')
+        content = dict(files or {})
+        for name, value in content.items():
+            if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]*', name) or not isinstance(value, str):
+                raise ValueError('application files require a simple filename and text content')
+        env = dict(environment or {})
+        if any(not re.fullmatch(r'[A-Z][A-Z0-9_]*', name) for name in env):
+            raise ValueError('application environment names must use uppercase letters, digits or underscores')
+        self._application_options[role] = {
+            'environment': env, 'files': content,
+            'certificates': [str(path) for path in trusted_certificates],
+            'dependencies': list(dependencies),
+        }
+        return self
+
     def configure(self):
         if self._configured:
             return
-        super().configure()
         if self._emulator is None or not self._emulator.rendered():
-            raise RuntimeError('render the emulator before configuring PaymentBundle')
-        missing = [c for c in self._containers.values() if not c._internal_networks]
-        allocated = set()
-        if missing:
-            self._required_emu_network_address_number = len(missing)
-            if not self._default_internal_network:
-                self.allocateEmuNetworkAddress()
-                if self._default_internal_network:
-                    allocated.update(self._default_internal_network['ip_addresses'])
-            network = self._default_internal_network
-            if network is None or len(network['ip_addresses']) < len(missing):
-                raise ValueError(f'PaymentBundle requires {len(missing)} free emulated IP addresses')
-            for container, address in zip(missing, network['ip_addresses']):
-                container.joinInternalNetwork(network['network'],container.getHostname(),address,network['default_route'])
-        self._validate_networks(allocated)
+            raise RuntimeError('Render the emulator before configuring PaymentBundle')
+        super().configure()
+        networks = self.getInternalNetworks()
+        if len(networks) != 1:
+            raise ValueError('Configure one emulated network with addInternalNetwork()')
+        net = networks[0]
+        for (role, container), address in zip(self._containers.items(), net['ip_addresses']):
+            container.joinInternalNetwork(net['asn'], net['network_name'], address,
+                                          container.getHostname(), net['default_route'])
+            self._addresses[role] = address
         if self._initial_configuration is not None:
-            self._initial_data = prepare_bundle(
-                self._initial_configuration, self._admin_email, self._state_path)
+            self._initial_data = prepare_bundle(self._initial_configuration, self._admin_email, self._state_path)
         self._secrets = self._credentials()
         self._configured = True
 
-    def _validate_networks(self, allocated):
-        networks, occupied = {}, set()
-        for (scope, kind, _), obj in self._emulator.getRegistry().getAll().items():
-            if kind == 'net':
-                key = obj.getName() if obj.getType()==NetworkType.Bridge else f'net_{scope}_{obj.getName()}'
-                networks[key] = obj
-            elif kind in ('hnode','rnode','brdnode'):
-                occupied.update(str(i.getAddress()) for i in obj.getInterfaces())
-        selected = set()
-        for role, container in self._containers.items():
-            if len(container._internal_networks) != 1:
-                raise ValueError('each payment component requires exactly one emulated network')
-            network_name, _, address, route = container._internal_networks[0]
-            network = networks.get(network_name)
-            ip = IPv4Address(address)
-            if network is None or ip not in network.getPrefix():
-                raise ValueError(f'{role}: address must belong to its rendered SEED network')
-            if (address in occupied or address in selected or ip in
-                    {network.getPrefix().network_address,network.getPrefix().broadcast_address}
-                    or address == str(network.getDefaultRouter())):
-                raise ValueError(f'{role}: emulated IP address is already occupied or reserved')
-            reserved = network.getAttribute('container_bundle_reserved_addresses',set())
-            if ip in reserved and address not in allocated:
-                raise ValueError(f'{role}: address was reserved by another container bundle')
-            if route != str(network.getDefaultRouter()):
-                raise ValueError(f'{role}: default route must use the emulated network router')
-            selected.add(address)
-            self._addresses[role] = address
-        # Reserve explicit assignments for other bundles as well.
-        for container in self._containers.values():
-            name, _, address, _ = container._internal_networks[0]
-            network = networks[name]
-            reserved = set(network.getAttribute('container_bundle_reserved_addresses',set()))
-            reserved.add(IPv4Address(address))
-            network.setAttribute('container_bundle_reserved_addresses',reserved)
+
+
 
     def _credentials(self):
         identity = {'layout':'independent-containers-v1','addresses':self._addresses,'admin_email':self._admin_email}
@@ -317,9 +301,11 @@ class PaymentBundle(ContainerBundle):
         url = lambda role,port: f'http://{self.getAddress(role)}:{port}'
         name = lambda role: self.getContainer(role).getHostname()
 
+        services = {}
+
         def create(role,image,command,environment=None,dependencies=(),**kwargs):
             container = self.getContainer(role)
-            value = {'image':image,'entrypoint':['/bin/sh','/payment-route.sh'],'command':command,
+            value = {'image':image,'command':command,
                      'cap_add':['NET_ADMIN'],'restart':'unless-stopped','volumes':[mount],
                      'labels':{'org.emuvista.bundle':'PaymentBundle','org.emuvista.component':role}}
             if dependencies:
@@ -327,10 +313,10 @@ class PaymentBundle(ContainerBundle):
             if environment:
                 value['environment'] = {k:str(v).replace('$','$$') for k,v in environment.items()}
             value.update(kwargs)
-            container.setContentAttribute(value)
-            container._start_script_name = '/payment-route.sh'
-            container._start_commands = ['#!/bin/sh','set -eu','exec "$@"']
-            return container.service
+            container.setFile('/application-start.sh', '#!/bin/sh\nexec "$@"\n')
+            container.setEntrypointWrapper('/application-start.sh', [])
+            services[role] = value
+            return value
 
         def volume(value,role,target):
             directory = state/role
@@ -376,6 +362,7 @@ class PaymentBundle(ContainerBundle):
             'API_BASE_URL':public+':2025','APP_URL':public,'SPONSOR_PRIVATE_KEY':'','DOCKER':'false',
             'NODE_OPTIONS':'--import=/payment-config/browser-links.mjs',
             'PAYMENT_GATEWAY_ADDRESS':self.getAddress(),'PAYMENT_BROWSER_PORT':self._host_port or '',
+            'PAYMENT_ACCOUNTING_INTERNAL_URL':url('accounting',3025),
             'NODE_EXTRA_CA_CERTS':'/payment-config/server.crt'},['db-accounting','auth','stellar'],3025,'/')
         value = backend('notifications-ts',{**common,'PORT':3023,'DATABASE_URL':db('notifications','db-notifications'),
             'REDIS_URL':'redis://'+self.getAddress('redis')+':6379','KOMUNITIN_AUTH_URL':url('auth',3026),
@@ -413,10 +400,27 @@ class PaymentBundle(ContainerBundle):
             'initial_data_sha256':fingerprint,'state_path':str(state),'persistent':self._state_path is not None},indent=2)+'\n')
         Path('docker-compose.yml').touch(mode=0o600,exist_ok=True)
         Path('docker-compose.yml').chmod(0o600)
-        # ContainerBundle uses registration keys as Compose service names.
-        containers = self._containers
-        self._containers = {container.getHostname():container for container in containers.values()}
-        try:
-            return super().install()
-        finally:
-            self._containers = containers
+        written = set()
+        for role, options in self._application_options.items():
+            value = services[role]
+            value.setdefault('environment', {}).update({
+                key: str(item).replace('$', '$$') for key, item in options['environment'].items()})
+            for filename, content in options['files'].items():
+                if filename in written or (config/filename).exists():
+                    raise ValueError('duplicate application configuration filename: '+filename)
+                written.add(filename)
+                (config/filename).write_text(content)
+                (config/filename).chmod(0o600)
+            for index, certificate in enumerate(options['certificates']):
+                value['volumes'].append(f'{certificate}:/application-ca/{index}.pem:ro')
+            if options['certificates']:
+                if role in ('app', 'initialize'):
+                    raise ValueError('additional certificate trust requires a backend application')
+                value['environment']['APPLICATION_CA_FILES'] = ' '.join(
+                    f'/application-ca/{index}.pem' for index in range(len(options['certificates'])))
+                value['environment']['NODE_EXTRA_CA_CERTS'] = '/tmp/application-ca.pem'
+            for dependency in options['dependencies']:
+                value.setdefault('depends_on', {})[dependency] = {'condition': 'service_healthy'}
+        for role, value in services.items():
+            self.getContainer(role).updateServiceConfig(value)
+        return super().install()

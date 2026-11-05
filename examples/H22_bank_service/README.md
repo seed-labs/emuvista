@@ -1,6 +1,6 @@
 # Bank service
 
-Apache Fineract banking on `mini_internet.py`, using H21's EmailBundle and DNSSEC configuration for real verification emails.
+Apache Fineract banking on the shared [H00 mini Internet](../H00_mini_internet/), using H21 email records and H00 DNSSEC for real verification emails.
 
 ```sh
 python3 bank.py

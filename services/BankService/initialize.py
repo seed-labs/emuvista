@@ -35,7 +35,7 @@ def request(url, body=None, headers=None, method=None):
             data = response.read()
             return json.loads(data) if data else {}
     except urllib.error.HTTPError as error:
-        raise RuntimeError(f'Bank API rejected {req.method} {req.selector} (HTTP {error.code})') from None
+        raise RuntimeError(f'Bank API rejected {req.get_method()} {req.selector} (HTTP {error.code})') from None
 
 
 def core(path, body=None, operation=None, method=None):

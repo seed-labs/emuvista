@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from seedemu.compiler import Docker, Platform
-from examples.H21_email_service.email_service import configure_dns
-from examples.H22_bank_service.mini_internet import build_emulator
+from examples.H21_email_service.email_service import add_mail_records
+from examples.H00_mini_internet import DNS_RESOLVER, build_emulator
 from services.BankService import BankBundle
 from services.EmailService import EmailBundle
 
@@ -35,14 +35,14 @@ def main():
     mailbox['users'] = list(users.values())
     mailbox['domains'] = sorted(set(mailbox['domains']) | {user['email'].split('@')[1] for user in mailbox['users']})
 
-    emu = build_emulator()
-    configure_dns(emu, mailbox, args.state.resolve() if args.state else None)
+    emu = build_emulator(dnssec=True, dnssec_key_store=args.state.resolve()/'dnssec' if args.state else None)
+    add_mail_records(emu, mailbox)
     emu.getLayer('DomainNameService').getRootZone().addRecord('bank.seed.example. A 10.151.0.10')
     emu.render()
-    email = EmailBundle(emu, resolver='10.150.0.54').setInitialConfiguration(mailbox).enableHostAccess(8445)
-    email.setDefaultInternalNetwork('net_150_net0', [f'10.150.0.{i}' for i in range(10, 18)], '10.150.0.254')
-    bank = BankBundle(emu, resolver='10.150.0.54').setInitialConfiguration(initial).enableHostAccess(8444)
-    bank.setDefaultInternalNetwork('net_151_net0',
+    email = EmailBundle(emu, resolver=DNS_RESOLVER).setInitialConfiguration(mailbox).enableHostAccess(8445)
+    email.addInternalNetwork('150', 'net0', [f'10.150.0.{i}' for i in range(10, 18)], '10.150.0.254')
+    bank = BankBundle(emu, resolver=DNS_RESOLVER).setInitialConfiguration(initial).enableHostAccess(8444)
+    bank.addInternalNetwork('151', 'net0',
         [f'10.151.0.{i}' for i in range(10, 10+len(bank.getContainers()))], '10.151.0.254')
     bank.setEmailServer(mailbox['hostname'], sender['address'], sender['password'], 'email/config/cert.pem')
     if args.state:

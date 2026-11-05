@@ -1,0 +1,36 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+databaseChangeLog:
+  - include:
+      file: db/changelog/user/001-create-users-table.yaml
+  - include:
+      file: db/changelog/authentication/002-create-refresh-tokens.yaml
+  - include:
+      file: db/changelog/beneficiaries/003-create-beneficiaries.yaml
+  - include:
+      file: db/changelog/audit/004-create-audit-events.yaml
+  - include:
+      file: db/changelog/infrastructure/005-create-event-publication.yaml
+  - include:
+      file: db/changelog/openbanking/006-create-open-banking-consents.yaml
+  - include:
+      file: db/changelog/infrastructure/007-create-oauth2-authorization.yaml
+  - include:
+      file: db/changelog/infrastructure/008-create-registered-tpps.yaml
+  - include:
+      file: db/changelog/openbanking/009-create-open-banking-payments.yaml

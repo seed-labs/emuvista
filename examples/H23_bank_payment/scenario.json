@@ -1,0 +1,109 @@
+{
+  "bank": {
+    "email": {
+      "address": "bank@seed.example",
+      "password": "BankMailDemo123!"
+    },
+    "savingsProducts": [
+      {
+        "id": "USDC",
+        "name": "USD Checking",
+        "currency": "USD",
+        "interestRate": 0
+      }
+    ],
+    "customers": [
+      {
+        "id": "alice",
+        "firstName": "Alice",
+        "lastName": "Example",
+        "email": "alice@seed.example",
+        "password": "BankDemoPass123!",
+        "emailPassword": "EmailDemo123!",
+        "accounts": [
+          {
+            "id": "alice-checking",
+            "name": "Alice Checking",
+            "product": "USDC",
+            "balance": 1000
+          }
+        ]
+      },
+      {
+        "id": "bob",
+        "firstName": "Bob",
+        "lastName": "Example",
+        "email": "bob@seed.example",
+        "password": "BankDemoPass123!",
+        "emailPassword": "EmailDemo123!",
+        "accounts": [
+          {
+            "id": "bob-checking",
+            "name": "Bob Checking",
+            "product": "USDC",
+            "balance": 500
+          }
+        ]
+      },
+      {
+        "id": "settlement",
+        "firstName": "Settlement",
+        "lastName": "Reserve",
+        "accounts": [
+          {
+            "id": "settlement-usd",
+            "name": "Settlement USD",
+            "product": "USDC",
+            "balance": 10000
+          }
+        ]
+      }
+    ]
+  },
+  "payment": {
+    "groups": [
+      {
+        "code": "SEED",
+        "name": "SEED Payments",
+        "currency": {
+          "name": "US Dollar",
+          "symbol": "USD",
+          "rate": 1
+        },
+        "users": [
+          {
+            "name": "Alice",
+            "email": "alice@seed.example",
+            "password": "PaymentDemo123!",
+            "balance": 100
+          },
+          {
+            "name": "Bob",
+            "email": "bob@seed.example",
+            "password": "PaymentDemo123!",
+            "balance": 50
+          },
+          {
+            "name": "SEED Shop",
+            "email": "shop@seed.example",
+            "password": "PaymentDemo123!",
+            "balance": 0
+          },
+          {
+            "name": "Bank settlement",
+            "email": "settlement@seed.example",
+            "password": "PaymentDemo123!",
+            "balance": 10000
+          }
+        ]
+      }
+    ],
+    "trustlines": []
+  },
+  "connection": {
+    "group": "SEED",
+    "currency": "USD",
+    "settlementEmail": "settlement@seed.example",
+    "settlementBankAccount": "settlement-usd"
+  }
+}

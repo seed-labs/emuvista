@@ -54,13 +54,22 @@ Emulated clients use the gateway IP over HTTPS: port 443 for the web app, 2026 f
 
 The API validates and copies the configuration. Compilation generates the import data; first startup creates the communities, users, balances and exchange relationships automatically. The bundle includes no sample users, balances or exchange rules. It supports two decimal places for balances and amounts; exchange rates are fixed values relative to a common reference unit. `bcrypt` from the root requirements is needed when generating initial passwords.
 
+`getInitialAccountId(group, email)` resolves an initialized wallet before compilation.
+
 For an existing Komunitin migration ZIP, use `setInitialData(path_or_bytes)` instead. Calling either initialization setter replaces the other input. Both initialization and state paths may be set before compilation in either order.
 
 Without `setSavePath()`, every compilation uses fresh temporary runtime storage outside `output/`. With it, all databases, ledger data, credentials and initialization records are saved together. Keep this directory outside `output/`; resume with the same addresses, administrator and initial data. State from the previous shared-network layout requires a new experiment directory.
 
+## Application configuration
+
+`configureApplication(role, environment=..., files=..., trusted_certificates=..., dependencies=...)`
+passes settings to a deployed application. Text files are mounted read-only under
+`/payment-config`; dependencies are healthy Compose service names. Certificate paths
+resolve from compiler output. No other bundle type is required.
+
 ## Images
 
-Requires Linux AMD64 and SEED Emulator's ContainerBundle API. Load the prepared payment image archive before building:
+Requires Linux AMD64 and SEED Emulator's ContainerBundle API. Build the customized `app` and `accounting` images using [docker_images](../../docker_images/README.md). The remaining payment components use the existing prepared images. To load their archive:
 
 ```sh
 docker load -i /path/to/payment-images.tar
@@ -79,4 +88,4 @@ Override images with `PaymentBundle(emu, images={role: reference})` or `payment.
 | `redis` | Redis 7 and `docker-entrypoint.sh` |
 | `gateway` | nginx with `http_sub_module` and `/docker-entrypoint.sh` |
 
-Images must support running the routing wrapper as root and provide `ip`, or an Alpine/Debian package manager to install it. Default Komunitin revision: `124a87b639c37952dc9a029fc7056e523a10de5b`.
+Images must support running the routing wrapper as root and provide `ip`, or an Alpine/Debian package manager to install it. Original prepared components use revision `124a87b639c37952dc9a029fc7056e523a10de5b`; customized image sources and pinned upstream bases are recorded in [sources.json](../../docker_images/sources.json).
