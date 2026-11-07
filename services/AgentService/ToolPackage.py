@@ -6,11 +6,13 @@ from pathlib import Path
 
 
 class ToolPackage:
-    def __init__(self, name, source):
+    def __init__(self, name, source, *, requirements=(), software=()):
         if not re.fullmatch(r'[a-z][a-z0-9_]*', name):
             raise ValueError('invalid tool package name')
         self.name = name
         self.source = Path(source).resolve()
+        self.requirements = tuple(requirements)
+        self.software = tuple(software)
         self.manifest = json.loads((self.source/'tools.json').read_text())
         names = set()
         for tool in self.manifest:

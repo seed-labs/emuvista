@@ -9,6 +9,7 @@ from services.AgentService import AgentService, ToolPackage
 from seedemu.core import Binding, Filter
 
 agents = AgentService().addNetworkTools()
+# Optional: agents.addPkiTools()  # container-local certificate and TLS tools
 # Optional: agents.addToolsFrom(application)  # application.getAgentTools() -> ToolPackage
 agent = agents.install('alice')
 agent.allowTools('network.identity', 'network.resolve')
@@ -30,6 +31,8 @@ or `addToolPackage(package)` selects packages for the installed services. Packag
 are copied to every agent; each agent's allowlist narrows what it may call.
 Payment, bank and email components export tool packages
 through `getAgentTools()`.
+The optional [PKI package](tools/pki/) includes certificate and TLS tools migrated
+from the former tool server. It executes as the agent user in the agent's own node.
 
 Tool definitions contain `name`, `description`, `handler` (`module:function`) and
 `input_schema`. The initial validator supports object/array/primitive types,

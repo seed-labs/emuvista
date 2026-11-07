@@ -92,13 +92,18 @@ class AgentServer(Server):
         for path in source.glob('*.py'):
             node.importFile(str(path.resolve()), ROOT+'/emuvista_agent/'+path.name)
         packages = []
+        requirements = []
         for package in self._packages.values():
+            if package.software:
+                node.addSoftware(' '.join(package.software))
+            requirements.extend(package.requirements)
             for path, relative in package.files():
                 node.importFile(str(path), ROOT+'/packages/'+package.name+'/'+relative.as_posix())
             packages.append(package.name)
         framework = None
         if self._framework:
-            source, framework, requirements = self._framework
+            source, framework, framework_requirements = self._framework
+            requirements.extend(framework_requirements)
             for path in source.rglob('*'):
                 if any(p in {'__pycache__', '.git', '.venv'} for p in path.relative_to(source).parts):
                     continue
@@ -106,8 +111,8 @@ class AgentServer(Server):
                     raise ValueError('adapter source must not contain symlinks')
                 if path.is_file() and not any(p in {'__pycache__', '.git', '.venv'} for p in path.relative_to(source).parts):
                     node.importFile(str(path), ROOT+'/adapter/'+path.relative_to(source).as_posix())
-            if requirements:
-                node.addBuildCommand(ROOT+'/venv/bin/pip install '+shlex.join(requirements))
+        if requirements:
+            node.addBuildCommand(ROOT+'/venv/bin/pip install '+shlex.join(dict.fromkeys(requirements)))
         config = {'identity': self._identity, 'uid': 10001, 'root': ROOT,
                   'packages': packages, 'allowed_tools': self._allowed,
                   'services': self._services, 'steps': self._steps, 'framework': framework}

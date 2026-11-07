@@ -33,6 +33,13 @@ class AgentService(Service):
     def addNetworkTools(self):
         return self.addToolPackage(ToolPackage('network', Path(__file__).parent/'tools/network'))
 
+    def addPkiTools(self):
+        """Copy PKI tools into agents; allowTools still grants access per agent."""
+        return self.addToolPackage(ToolPackage(
+            'pki', Path(__file__).parent/'tools/pki',
+            requirements=('pydantic>=2,<3',), software=('openssl', 'coreutils'),
+        ))
+
     def install(self, vnode):
         server = super().install(vnode)
         if server._identity is None:
