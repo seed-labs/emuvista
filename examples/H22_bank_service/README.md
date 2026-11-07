@@ -9,7 +9,7 @@ docker compose build
 docker compose up -d
 ```
 
-The [prepared bank images](../../services/BankService/README.md) must be available. First startup creates products, customers, accounts and loans, then verifies customer registration through SMTP/IMAP. The gateway starts after initialization completes.
+The [prepared bank images](../../bundles/BankBundle/README.md) must be available. First startup creates products, customers, accounts and loans, then verifies customer registration through SMTP/IMAP. The gateway starts after initialization completes.
 
 | Website | Address | Login |
 | --- | --- | --- |

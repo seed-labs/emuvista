@@ -26,7 +26,7 @@
       :to="`/groups/${groupCode}/members/${myMember.attributes.code}/transactions`"
     />
     
-    <menu-item v-if="bankEnabled" icon="account_balance" title="Bank accounts" to="/bank-accounts" />
+    <menu-item v-if="bankEnabled" icon="account_balance" title="Bank cards" to="/bank-accounts" />
 
     <q-separator />
     

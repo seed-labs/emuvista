@@ -12,8 +12,8 @@ sys.path.insert(0, str(ROOT))
 from seedemu.compiler import Docker, Platform
 from examples.H21_email_service.email_service import add_mail_records
 from examples.H00_mini_internet import DNS_RESOLVER, build_emulator
-from services.BankService import BankBundle
-from services.EmailService import EmailBundle
+from bundles.BankBundle import BankBundle
+from bundles.EmailBundle import EmailBundle
 
 
 def main():

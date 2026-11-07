@@ -1,0 +1,47 @@
+[
+  {
+    "name": "payment.balance",
+    "handler": "handlers:balance",
+    "description": "Read your own wallet balance in USD cents.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "payment.transfer",
+    "handler": "handlers:transfer",
+    "description": "Pay a world-directory recipient from your own wallet. Generate a UUID and reuse it for retries; amounts are USD cents.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "recipient": {
+          "type": "string"
+        },
+        "amountMinor": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "id",
+        "recipient",
+        "amountMinor",
+        "description"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

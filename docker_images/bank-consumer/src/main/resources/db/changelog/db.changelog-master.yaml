@@ -34,3 +34,5 @@ databaseChangeLog:
       file: db/changelog/infrastructure/008-create-registered-tpps.yaml
   - include:
       file: db/changelog/openbanking/009-create-open-banking-payments.yaml
+  - include:
+      file: db/changelog/openbanking/010-create-bank-cards.yaml

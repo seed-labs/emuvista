@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>E99 · Agent Observatory</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="/"><span class="brand-mark">ev</span><span>EmuVista<span class="brand-sub">VIRTUAL WORLD LAB</span></span></a>
+      <div class="nav-caption">OBSERVATION</div>
+      <div class="nav-item"><span class="nav-symbol">◉</span><span>Agent activity</span><span class="nav-count" id="nav-count">—</span></div>
+      <div class="world-note"><span class="world-dot"></span><div>E99 virtual world<small>Email · Payment · Banking</small></div></div>
+      <div class="sidebar-bottom"><span class="read-only">READ ONLY</span><p>Observe agent execution.<br>Your world keeps running when you close this page.</p></div>
+    </aside>
+    <main>
+      <header>
+        <div><div class="eyebrow">E99 / OBSERVATORY</div><h1>Agent activity</h1><p class="subtitle">See what your agents are doing, one tool call at a time.</p></div>
+        <div class="connection"><span class="live-indicator" id="live-indicator"></span><div><strong id="connection">Connecting</strong><small id="updated">Waiting for an observation</small></div></div>
+      </header>
+      <div id="error-banner" class="banner error hidden" role="alert"></div>
+      <div id="legacy-banner" class="banner hidden">Legacy logs detected. Completed calls are visible; live tool starts and durations require updated agent images.</div>
+      <section class="stats" aria-label="Run overview">
+        <div class="stat"><span>Working now</span><strong id="stat-working">0</strong><small>Thinking or calling tools</small></div>
+        <div class="stat"><span>Waiting</span><strong id="stat-waiting">0</strong><small>Startup, services or next round</small></div>
+        <div class="stat"><span>Completed</span><strong id="stat-completed">0</strong><small>Agent process finished its run</small></div>
+        <div class="stat"><span>Tool failures</span><strong id="stat-failures">0</strong><small>Errors, denials or interruptions</small></div>
+      </section>
+      <div class="section-heading"><h2>Your agents</h2><span>Choose an agent to inspect its task and permissions</span></div>
+      <section id="agents" class="agents" aria-label="Agents"></section>
+      <div class="workspace">
+        <section class="panel activity">
+          <div class="panel-heading"><div><h2>Tool activity</h2><p>Calls from the current run of each agent</p></div><span id="call-count" class="count-badge">0 calls</span></div>
+          <div class="filters"><label class="filter-label" for="agent-filter">Agent<select id="agent-filter"><option value="">All agents</option></select></label><label class="check-label"><input type="checkbox" id="errors-only"> Failures only</label></div>
+          <div class="table-scroll"><table><thead><tr><th>Started</th><th>Agent</th><th>Tool</th><th>Status</th><th class="number">Duration</th></tr></thead><tbody id="calls"></tbody></table></div>
+          <div id="empty-calls" class="empty"><div class="empty-icon">↗</div><strong>No tool calls yet</strong><p>Calls appear automatically when an agent uses a tool.</p></div>
+          <div class="call-inspector"><div class="inspector-label">CALL DETAILS <span>select a row above</span></div><pre id="call-detail">Arguments, outcome summaries and errors appear here. Mail bodies and credentials are omitted.</pre></div>
+        </section>
+        <aside class="panel detail">
+          <div class="panel-heading"><div><div class="eyebrow">AGENT INSPECTOR</div><h2 id="detail-name">Select an agent</h2></div><span id="detail-status" class="status"></span></div>
+          <div class="detail-body"><div class="detail-meta" id="detail-meta"></div><h3>Task</h3><p id="detail-task" class="task"></p><h3>Available tools <span id="permission-count"></span></h3><div id="permissions" class="permissions"></div><h3>Latest model reply</h3><pre id="reply" class="reply">No model reply yet.</pre><div id="agent-error" class="agent-error hidden"></div><h3>Execution events</h3><div id="events" class="events"></div></div>
+        </aside>
+      </div>
+      <footer><span>Local observation · refreshes every 2 seconds · times use your browser's timezone</span><span>Completion records execution, not business success. Check tool outcomes.</span></footer>
+    </main>
+  </div>
+</body>
+</html>

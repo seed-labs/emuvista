@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from seedemu.compiler import Docker, Platform
-from services.PaymentService import PaymentBundle
+from bundles.PaymentBundle import PaymentBundle
 from examples.H00_mini_internet import build_emulator
 
 

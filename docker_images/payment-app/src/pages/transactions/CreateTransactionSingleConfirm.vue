@@ -4,7 +4,7 @@
     <transaction-card :key="receipt?.status || 'confirmation'" :transfer="displayTransfer">
       <q-card-section v-if="bankEnabled">
         <q-select id="payment-source" v-model="source" :options="options" emit-value map-options label="Pay with" :disable="busy || !!receipt" />
-        <q-btn flat label="Bank accounts" to="/bank-accounts" class="q-mt-sm" />
+        <q-btn flat label="Bank cards" to="/bank-accounts" class="q-mt-sm" />
         <p v-if="source !== 'balance'" class="text-caption q-mt-sm">Your bank account will be debited. Your payment balance will stay unchanged.</p>
         <p v-if="error" role="alert" class="text-negative">{{ error }}</p>
       </q-card-section>
@@ -52,8 +52,8 @@ const displayTransfer = computed(() => receipt.value ? {
     state: receipt.value.status === 'completed' ? 'committed' : receipt.value.status === 'failed' ? 'failed' : 'pending' },
 } : props.transfer)
 const bankEnabled = computed(() => config.BANK_FUNDING_ENABLED && props.transfer.relationships?.payer?.data?.id === store.getters.myAccount?.id)
-const options = computed(() => [{ label: 'Payment balance', value: 'balance' }, ...sources.value.map(s => ({
-  label: `Bank: ${s.label} ····${s.maskedAccount} — ${(s.balanceMinor / 100).toFixed(2)} ${s.currency}`, value: s.id,
+const options = computed(() => [{ label: 'Payment balance', value: 'balance' }, ...sources.value.filter(s => s.available).map(s => ({
+  label: `Bank: ${s.label} ····${s.maskedCard} — ${(s.balanceMinor / 100).toFixed(2)} ${s.currency}`, value: s.id,
 }))])
 async function onSubmit() {
   if (busy.value || receipt.value) return

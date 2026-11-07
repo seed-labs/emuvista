@@ -1,6 +1,6 @@
 # Payment Bundle
 
-Deploys Komunitin on the shared [H00 mini Internet](../H00_mini_internet/) using [prebuilt images](../../services/PaymentService/README.md#images). Requires Linux AMD64, SEED Emulator's ContainerBundle API and the root [requirements.txt](../../requirements.txt). `bcrypt` hashes initial passwords.
+Deploys Komunitin on the shared [H00 mini Internet](../H00_mini_internet/) using [prebuilt images](../../bundles/PaymentBundle/README.md#images). Requires Linux AMD64, SEED Emulator's ContainerBundle API and the root [requirements.txt](../../requirements.txt). `bcrypt` hashes initial passwords.
 
 ## Configure
 

@@ -11,3 +11,6 @@ from examples.H00_mini_internet import build_emulator
 emu = build_emulator()
 # Add services and DNS records, then render and compile.
 ```
+
+[H99_virtual_world](H99_virtual_world/) combines email, payment and banks.
+[E99](../experiments/E99_virtual_world/) adds five agents to H99.

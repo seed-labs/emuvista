@@ -36,7 +36,7 @@ public class PaymentProviderBootstrap implements ApplicationRunner {
         } else {
             repository.save(RegisteredTpp.onboard(UUID.randomUUID(), clientId, passwordEncoder.encode(clientSecret),
                     "Payment wallet", redirectUris,
-                    "openbanking:consents,openbanking:accounts.read,openbanking:payments"));
+                    "openbanking:consents,openbanking:accounts.read,openbanking:cards.read,openbanking:payments"));
         }
     }
 }

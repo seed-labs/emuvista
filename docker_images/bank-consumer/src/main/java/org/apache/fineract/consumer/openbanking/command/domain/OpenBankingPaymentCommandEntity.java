@@ -20,18 +20,20 @@ public class OpenBankingPaymentCommandEntity {
     @Column(nullable = false) private UUID consentId;
     @Column(nullable = false, length = 100) private String tppClientId;
     @Column(nullable = false) private Long fromAccountId;
+    private UUID bankCardId;
     @Column(nullable = false, precision = 19, scale = 2) private BigDecimal amount;
     @Column(nullable = false, length = 3) private String currency;
     @Column(nullable = false, length = 31) private String status;
     private Long transferId;
 
     public static OpenBankingPaymentCommandEntity requested(UUID id, UUID consentId, String tppClientId,
-            Long fromAccountId, BigDecimal amount, String currency) {
+            Long fromAccountId, UUID bankCardId, BigDecimal amount, String currency) {
         OpenBankingPaymentCommandEntity payment = new OpenBankingPaymentCommandEntity();
         payment.id = id;
         payment.consentId = consentId;
         payment.tppClientId = tppClientId;
         payment.fromAccountId = fromAccountId;
+        payment.bankCardId = bankCardId;
         payment.amount = amount;
         payment.currency = currency;
         payment.status = "pending";
