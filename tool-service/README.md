@@ -212,31 +212,24 @@ container must provide `vtysh` and a compatible routing daemon.
 
 ### PKI Domain
 
-The PKI-domain skeleton lives under `tools/pki/`. It is organized by tool category so certificate
-inspection, remote TLS inspection, trust verification, and expiration checks can evolve separately.
-The source container must provide `openssl`, and supplied paths are interpreted inside that
-container.
+The PKI toolset is organized by category under `seedemu_tool_service/tools/pki/`:
 
-The initial PKI tools are read-only diagnostics for certificate and TLS service state:
+- Certificate-file inspection and remote TLS inspection.
+- Certificate-chain, trust, and revocation verification.
+- Certificate expiration and version comparison.
+- Read-only private-key and CSR inspection. Certbot creates and manages key and CSR material for ACME requests.
+- ACME readiness, issuance, Nginx deployment, renewal, and revocation through the SEEDEmu CA Service.
+- Certificate backup, installation, and restoration outside Certbot-managed paths.
+- Trust-store inspection and fingerprint-checked CA removal.
+- SEEDEmu CA Service state and sanitized event inspection.
 
-- `pki.inspect_certificate_file`: inspect an X.509 certificate file inside an emulated node and
-  return both OpenSSL output and parsed subject, issuer, validity, serial, and SHA-256 fingerprint
-  fields when present.
-- `pki.inspect_certificate_names`: inspect a certificate subject and subjectAltName extension.
-- `pki.inspect_certificate_extensions`: inspect common X.509 extensions such as key usage,
-  extended key usage, basic constraints, and subjectAltName.
-- `pki.inspect_certificate_public_key`: inspect the public-key algorithm and key size embedded in
-  a certificate.
-- `pki.get_certificate_fingerprint`: return a certificate fingerprint using SHA-1, SHA-256, or
-  SHA-512.
-- `pki.inspect_remote_tls_certificate`: connect from an emulated node to a TLS service with
-  `openssl s_client`, optionally using SNI, and inspect the certificate presented by the service.
-  The source container must provide `timeout` and `openssl`.
-- `pki.verify_certificate_chain`: run `openssl verify` inside an emulated node to check whether a
-  certificate chains to supplied CA material.
-- `pki.check_certificate_expiration`: run `openssl x509 -checkend` inside an emulated node to
-  determine whether a certificate is expired or will expire within a warning window.
+The SEEDEmu `CAService` remains the only CA. The tools do not create a separate CA, sign
+certificates locally, or install arbitrary CA roots. ACME operations validate the selected
+directory against the provisioners configured on the explicitly selected CA Service node.
+CA root distribution remains controlled by the emulator's `installCACert` filters. See
+[the complete PKI design](../docs/tool-service/pki-tools-design.md).
 
-These tools support service-diagnosis and security-response tasks where network connectivity is
-available but HTTPS/TLS trust, certificate deployment, or certificate expiration may be the root
-cause of failure.
+The PKI examples demonstrate end-to-end use of these tools with the emulator's CA Service:
+[H14 HTTP-01](../examples/H14_pki_http01_web/README.md) uses Certbot's Nginx authenticator;
+[H15 DNS-01](../examples/H15_pki_dns01_wildcard/README.md) requests a wildcard certificate using
+a TSIG-restricted RFC 2136 update policy.
