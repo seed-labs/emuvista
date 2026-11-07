@@ -1,5 +1,5 @@
 ARG BASE_IMAGE=komunitin/komunitin-app@sha256:399b77d967aeaf8e0d7f4de8134f4fc6c52fdcdf033b2d4a9d6a2cd4d3472255
-FROM node:24 AS build
+FROM node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 AS build
 ARG SOURCE_REVISION=124a87b639c37952dc9a029fc7056e523a10de5b
 WORKDIR /app
 ADD https://codeload.github.com/community-exchange-network/komunitin/tar.gz/${SOURCE_REVISION} /tmp/source.tar.gz

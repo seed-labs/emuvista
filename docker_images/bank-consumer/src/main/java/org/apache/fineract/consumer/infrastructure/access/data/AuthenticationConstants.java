@@ -24,8 +24,9 @@ public final class AuthenticationConstants {
     private AuthenticationConstants() {
     }
 
-    public static final String ACCESS_TOKEN_COOKIE_NAME = "access_token";
-    public static final String REFRESH_TOKEN_COOKIE_NAME = "refresh_token";
+    private static final String COOKIE_PREFIX = System.getenv().getOrDefault("AUTH_COOKIE_PREFIX", "");
+    public static final String ACCESS_TOKEN_COOKIE_NAME = COOKIE_PREFIX + "access_token";
+    public static final String REFRESH_TOKEN_COOKIE_NAME = COOKIE_PREFIX + "refresh_token";
     public static final String CHALLENGE_PURPOSE_VALUE = "2fa_challenge";
     public static final String SCOPE_CONSUMER_FULL = "consumer:full";
     public static final String SCOPE_OPENBANKING_ACCOUNTS_READ = "openbanking:accounts.read";

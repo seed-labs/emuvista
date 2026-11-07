@@ -1,0 +1,32 @@
+[
+  {
+    "name": "bank.accounts",
+    "handler": "handlers:accounts",
+    "description": "Read your own bank savings accounts; login uses your email OTP.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "bank.cards",
+    "handler": "handlers:cards",
+    "description": "Read your own bank cards.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "bank.loans",
+    "handler": "handlers:loans",
+    "description": "Read your own bank loans.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  }
+]

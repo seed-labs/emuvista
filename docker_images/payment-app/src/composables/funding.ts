@@ -7,7 +7,9 @@ export interface BankSource {
   label: string
   currency: string
   balanceMinor: number
-  maskedAccount: string
+  maskedCard: string
+  bank: string
+  available: boolean
 }
 export interface BankReceipt {
   id: string

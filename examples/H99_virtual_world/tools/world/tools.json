@@ -1,0 +1,29 @@
+[
+  {
+    "name": "world.catalog",
+    "handler": "handlers:catalog",
+    "description": "Read the public world service directory and simulated contacts.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "world.probe",
+    "handler": "handlers:probe",
+    "description": "Check one public world service; this does not grant its business permissions.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "service"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

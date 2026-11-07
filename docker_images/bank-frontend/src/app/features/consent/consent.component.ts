@@ -18,7 +18,8 @@
  */
 
 import { NgOptimizedImage } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute } from '@angular/router';
 import {
   IonButton,
@@ -30,6 +31,7 @@ import {
 import { TranslatePipe } from '../../core/adapters';
 
 const SCOPE_LABEL_KEYS: Record<string, string> = {
+  'openbanking:cards.read': 'View this card and its balance',
   'openbanking:accounts.read': 'consent.scope.accountsRead',
   'openbanking:payments': 'consent.scope.payments',
 };
@@ -68,6 +70,13 @@ function csrfTokenFromCookie(): string {
       <ion-card-content>
         @if (valid) {
           <p>{{ 'consent.intro' | appTranslate: { tppClientId: tppClientId } }}</p>
+          @if (card(); as selected) {
+            <p><strong>{{ selected.name }} · {{ selected.maskedCard }} ({{ selected.currency }})</strong></p>
+            <p>This authorization applies only to this card.</p>
+          }
+          @if (cardError()) {
+            <p role="alert">This card cannot be authorized by the signed-in bank customer.</p>
+          }
           <p>{{ 'consent.permissionsTitle' | appTranslate }}</p>
           <ul class="permissions">
             @for (scope of scopes; track scope) {
@@ -90,7 +99,7 @@ function csrfTokenFromCookie(): string {
               @for (scope of scopes; track scope) {
                 <input type="hidden" name="scope" [value]="scope" />
               }
-              <ion-button type="submit">{{ 'consent.allowCta' | appTranslate }}</ion-button>
+              <ion-button type="submit" [disabled]="cardRequired && !card()">{{ 'consent.allowCta' | appTranslate }}</ion-button>
             </form>
           </div>
         } @else {
@@ -129,6 +138,18 @@ export class ConsentComponent {
     .filter((scope) => scope.length > 0);
   protected readonly csrfToken = csrfTokenFromCookie();
   protected readonly valid = this.tppClientId !== '' && this.state !== '';
+
+  protected readonly cardRequired = this.scopes.includes('openbanking:cards.read');
+  protected readonly card = signal<{name: string; maskedCard: string; currency: string} | null>(null);
+  protected readonly cardError = signal(false);
+
+  constructor() {
+    if (this.valid && this.cardRequired) {
+      inject(HttpClient).get<{name: string; maskedCard: string; currency: string}>(
+        '/api/v1/cards/authorization', {params: {state: this.state}},
+      ).subscribe({next: card => this.card.set(card), error: () => this.cardError.set(true)});
+    }
+  }
 
   protected scopeLabelKey(scope: string): string {
     return SCOPE_LABEL_KEYS[scope] ?? scope;

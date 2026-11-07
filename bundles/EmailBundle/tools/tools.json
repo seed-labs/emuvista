@@ -1,0 +1,39 @@
+[
+  {
+    "name": "email.inbox",
+    "handler": "handlers:inbox",
+    "description": "Read your five latest mailbox messages.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "email.send",
+    "handler": "handlers:send",
+    "description": "Send a message from your own mailbox to a world-directory recipient.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "recipient": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 4000
+        }
+      },
+      "required": [
+        "recipient",
+        "subject",
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

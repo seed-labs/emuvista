@@ -9,6 +9,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
+import java.util.UUID;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -21,7 +22,8 @@ import lombok.ToString;
 @EqualsAndHashCode
 @ToString(onlyExplicitlyIncluded = true)
 public final class OpenBankingPaymentCommandRequest {
-    @NotNull @Positive private final Long fromAccountId;
+    @NotNull private final UUID cardId;
+    @Positive private final Long fromAccountId;
     @NotNull @DecimalMin("0.01") @DecimalMax("1000000") @Digits(integer = 7, fraction = 2)
     private final BigDecimal amount;
     @NotBlank @Pattern(regexp = "[A-Z]{3}") private final String currency;

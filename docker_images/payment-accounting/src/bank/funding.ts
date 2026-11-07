@@ -32,12 +32,20 @@ interface Connection {
   secret: string
   expires: number
   active: boolean
+  cardId: string
+  cardName: string
+  maskedCard: string
+  currency: string
 }
 interface Link {
   bank: string
   verifier: string
   redirectURI: string
   expires: number
+  cardId: string
+  cardName: string
+  maskedCard: string
+  currency: string
 }
 export interface BankIntent {
   id: string
@@ -54,21 +62,21 @@ interface Receipt extends BankIntent {
   bankTransferId?: number
   error?: string
 }
-interface BankAccount {
-  accountId: string
-  accountType: string
-  accountNo: string
-  productName: string
+interface BankCard {
+  cardId: string
+  name: string
+  maskedCard: string
   currency: string
-  active: boolean
+  balanceMinor: number
 }
+interface CardConsent extends BankCard { consentId: string }
 
 /** Native accounting feature; PostgreSQL stores authorization and operation state,
  * while Fineract and the existing Komunitin ledger retain their own balances. */
 export class BankFunding {
   private providers: Provider[]
 
-  constructor(private currency: CurrencyService, private ctx: Context) {
+  constructor(private currency: CurrencyService, private ctx: Context, private walletEmail?: string) {
     if (ctx.type !== 'user' || !ctx.userId) throw forbidden('A wallet user is required')
     const file = process.env.BANK_PROVIDER_CONFIG
     this.providers = file ? (JSON.parse(readFileSync(file, 'utf8')) as Provider[])
@@ -94,7 +102,7 @@ export class BankFunding {
   }
 
   private async list<T>(name: string): Promise<T[]> {
-    const rows = await this.currency.db.value.findMany({ where: { key: { startsWith: this.key(name) } } })
+    const rows = await this.currency.db.value.findMany({ where: { tenantId: this.currency.model.code, key: { startsWith: this.key(name) } } })
     return rows.map(row => row.value as unknown as T)
   }
 
@@ -110,7 +118,14 @@ export class BankFunding {
 
   private async bank<T>(provider: Provider, path: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(provider.apiURL + path, { ...options, signal: AbortSignal.timeout(90000) })
-    if (!response.ok) throw transactionError(`Bank request failed (${response.status})`)
+    if (!response.ok) {
+      const message = response.status === 400 ? 'Card or bank request was rejected' :
+        response.status === 403 ? 'Bank authorization or card ownership verification failed' :
+          `Bank request failed (${response.status})`
+      const error = response.status === 400 ? badRequest(message) :
+        response.status === 401 || response.status === 403 ? forbidden(message) : transactionError(message)
+      throw Object.assign(error, { bankStatus: response.status })
+    }
     return response.json() as Promise<T>
   }
 
@@ -123,21 +138,27 @@ export class BankFunding {
     })
   }
 
-  async begin(bank: string, redirectURI: string) {
+  async begin(bank: string, cardNumber: string, redirectURI: string) {
     const provider = this.provider(bank)
+    if (!this.walletEmail) throw forbidden('A verified wallet email is required to bind a card')
     if (!provider.redirectURIs.includes(redirectURI)) throw badRequest('Callback address is not registered')
     const credentials = await this.token(provider, { grant_type: 'client_credentials', scope: 'openbanking:consents' })
-    const consent = await this.bank<{ consentId: string }>(provider, '/openbanking/account-access-consents', {
+    const consent = await this.bank<CardConsent>(provider, '/openbanking/account-access-consents/cards', {
       method: 'POST', headers: { Authorization: 'Bearer ' + credentials.access_token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ permissions: ['ReadAccountsBasic', 'ReadBalances', 'InitiatePayments'] })
+      body: JSON.stringify({ cardNumber, walletOwnerEmail: this.walletEmail })
     })
+    if (consent.currency !== provider.currency) throw badRequest('Card currency does not match this payment community')
+    const existing = (await this.list<Connection>('connection:')).find(connection =>
+      connection.active && connection.bank === bank && connection.cardId === consent.cardId)
+    if (existing) throw badRequest('This card is already linked')
     const state = randomBytes(32).toString('base64url')
     const verifier = randomBytes(32).toString('base64url')
-    const link: Link = { bank, verifier, redirectURI, expires: Date.now() + 600000 }
+    const link: Link = { bank, verifier, redirectURI, expires: Date.now() + 600000,
+      cardId: consent.cardId, cardName: consent.name, maskedCard: consent.maskedCard, currency: consent.currency }
     await this.set('link:' + state, { ...link, verifier: await encrypt(verifier, await this.currency.keys.encryptionKey()) })
     const url = new URL(provider.browserURL + '/api/v1/oauth2/authorize')
     url.search = new URLSearchParams({ response_type: 'code', client_id: provider.clientId,
-      redirect_uri: redirectURI, scope: 'openbanking:accounts.read openbanking:payments', state,
+      redirect_uri: redirectURI, scope: 'openbanking:cards.read openbanking:payments', state,
       code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256',
       consent_id: consent.consentId }).toString()
     return { authorizationURL: url.toString() }
@@ -150,9 +171,33 @@ export class BankFunding {
     const key = await this.currency.keys.encryptionKey()
     const tokens = await this.token(provider, { grant_type: 'authorization_code', code,
       redirect_uri: link.redirectURI, code_verifier: await decrypt(link.verifier, key) })
-    const id = createHash('sha256').update(state).digest('hex').slice(0, 32)
-    await this.set('connection:' + id, { id, owner: this.ctx.userId, bank: link.bank,
-      secret: await encrypt(JSON.stringify(tokens), key), expires: Date.now() + tokens.expires_in * 1000, active: true })
+    const card = await this.bank<BankCard>(provider, '/openbanking/cards/current', {
+      headers: { Authorization: 'Bearer ' + tokens.access_token }
+    })
+    if (card.cardId !== link.cardId || card.currency !== link.currency) throw forbidden('Bank returned another card')
+    const id = createHash('sha256').update(link.bank + ':' + card.cardId).digest('hex').slice(0, 32)
+    const connection: Connection = { id, owner: this.ctx.userId!, bank: link.bank,
+      secret: await encrypt(JSON.stringify(tokens), key), expires: Date.now() + tokens.expires_in * 1000,
+      active: true, cardId: card.cardId, cardName: card.name, maskedCard: card.maskedCard, currency: card.currency }
+    const record = JSON.parse(JSON.stringify(connection)) as Prisma.InputJsonValue
+    try {
+      const existing = await this.get<Connection>('connection:' + id)
+      if (existing) {
+        const updated = await this.currency.db.value.updateMany({ where: {
+          tenantId: this.currency.model.code, key: this.key('connection:' + id),
+          value: { path: ['active'], equals: false }
+        }, data: { value: record } })
+        if (updated.count !== 1) throw badRequest('This card is already linked')
+      } else {
+        await this.currency.db.value.create({ data: { key: this.key('connection:' + id), value: record } })
+      }
+    } catch (error) {
+      await this.bank(provider, '/openbanking/cards/current/revoke', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + tokens.access_token }
+      })
+      if ((error as { code?: string }).code === 'P2002') throw badRequest('This card is already linked')
+      throw error
+    }
     await this.currency.db.value.delete({ where: { tenantId_key: {
       tenantId: this.currency.model.code, key: this.key('link:' + state)
     } } })
@@ -174,12 +219,16 @@ export class BankFunding {
 
   private async connection(id: string) {
     const connection = await this.get<Connection>('connection:' + id)
-    if (!connection?.active || connection.owner !== this.ctx.userId) throw forbidden('Bank account is not linked to this wallet user')
+    if (!connection?.active || !connection.cardId || connection.owner !== this.ctx.userId)
+      throw forbidden('Card is not linked to this wallet user')
     return connection
   }
 
   async unlink(id: string) {
     const connection = await this.connection(id)
+    await this.bank(this.provider(connection.bank), '/openbanking/cards/current/revoke', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + await this.access(connection) }
+    })
     connection.active = false
     connection.secret = ''
     await this.set('connection:' + id, connection)
@@ -187,19 +236,22 @@ export class BankFunding {
   }
 
   async sources() {
-    const connections = (await this.list<Connection>('connection:')).filter(connection => connection.active)
+    const connections = (await this.list<Connection>('connection:')).filter(connection => connection.active && connection.cardId)
     const sources = []
     for (const connection of connections) {
       const provider = this.provider(connection.bank)
-      const headers = { Authorization: 'Bearer ' + await this.access(connection) }
-      const accounts = await this.bank<BankAccount[]>(provider, '/openbanking/accounts', { headers })
-      for (const account of accounts.filter(account => account.accountType === 'savings' && account.active && account.currency === provider.currency)) {
-        const balances = await this.bank<{ type: string; amount: number }[]>(provider, '/openbanking/accounts/' + account.accountId + '/balances', { headers })
-        const available = balances.find(balance => balance.type === 'InterimAvailable')?.amount
-        sources.push({ id: connection.id + '/' + account.accountId, connection: connection.id,
-          label: provider.name + ' · ' + account.productName, maskedAccount: account.accountNo.slice(-4),
-          currency: account.currency, balanceMinor: Number(Big(available ?? 0).times(100).round(0)) })
-      }
+      const item = { id: connection.id, connection: connection.id, bank: provider.id,
+        label: provider.name + ' · ' + connection.cardName, maskedCard: connection.maskedCard,
+        currency: connection.currency, balanceMinor: 0, available: false }
+      try {
+        const card = await this.bank<BankCard>(provider, '/openbanking/cards/current', {
+          headers: { Authorization: 'Bearer ' + await this.access(connection) }
+        })
+        if (card.cardId !== connection.cardId || card.currency !== connection.currency) throw forbidden('Card changed')
+        item.balanceMinor = card.balanceMinor
+        item.available = true
+      } catch { /* One unavailable bank must not hide other linked cards. */ }
+      sources.push(item)
     }
     return { sources }
   }
@@ -216,11 +268,8 @@ export class BankFunding {
       }
       return existing
     }
-    const [connectionId, accountId] = intent.source.split('/')
-    const connection = await this.connection(connectionId)
+    const connection = await this.connection(intent.source)
     const provider = this.provider(connection.bank)
-    const source = /^savings-([1-9][0-9]*)$/.exec(accountId)
-    if (!source || !Number.isSafeInteger(Number(source[1]))) throw badRequest('Invalid bank account')
     const payer = await this.currency.accounts.getFullAccount(intent.payer)
     if (!payer.users?.some(user => user.id === this.ctx.userId)) throw forbidden('Wallet account belongs to another user')
     const payee = await this.currency.accounts.getFullAccount(intent.payee)
@@ -233,6 +282,10 @@ export class BankFunding {
     const amount = Big(this.currency.toStringAmount(intent.amountMinor))
     if (!amount.eq(amount.round(2))) throw badRequest('Bank amount must have at most two decimal places')
     const access = await this.access(connection)
+    const card = await this.bank<BankCard>(provider, '/openbanking/cards/current', {
+      headers: { Authorization: 'Bearer ' + access }
+    })
+    if (card.cardId !== connection.cardId || card.currency !== provider.currency) throw forbidden('Card changed')
     const receipt: Receipt = { ...intent, status: 'pending', created: new Date().toISOString() }
     // Only the process that inserts the request may perform external writes.
     try {
@@ -246,7 +299,7 @@ export class BankFunding {
     try {
       const bank = await this.bank<{ status: string; transferId?: number }>(provider, '/openbanking/payments', {
         method: 'POST', headers: { Authorization: 'Bearer ' + access, 'Content-Type': 'application/json', 'Idempotency-Key': intent.id },
-        body: JSON.stringify({ fromAccountId: Number(source[1]), amount: amount.toFixed(2), currency: provider.currency })
+        body: JSON.stringify({ cardId: connection.cardId, amount: amount.toFixed(2), currency: provider.currency })
       })
       receipt.bankTransferId = bank.transferId
       if (bank.status !== 'completed' || !bank.transferId) {
@@ -263,9 +316,11 @@ export class BankFunding {
         receipt.transferId = transfer.id
         receipt.status = transfer.state === 'committed' ? 'completed' : 'needs_review'
       }
-    } catch {
-      receipt.status = 'needs_review'
-      receipt.error = 'An uncertain transfer must be reconciled before another debit is attempted'
+    } catch (error) {
+      const status = (error as { bankStatus?: number }).bankStatus
+      receipt.status = status && status >= 400 && status < 500 ? 'failed' : 'needs_review'
+      receipt.error = receipt.status === 'failed' ? 'Bank rejected this card payment' :
+        'An uncertain transfer must be reconciled before another debit is attempted'
     }
     await this.set('payment:' + intent.id, receipt)
     return receipt

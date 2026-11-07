@@ -36,6 +36,7 @@ public class OpenBankingPaymentCommandServiceImpl implements OpenBankingPaymentC
     private final AccessPolicyEvaluator policy;
     private final TransferFineractClient core;
     private final IdempotencyKeyHolder idempotencyKeyHolder;
+    private final org.apache.fineract.consumer.cards.BankCardService cards;
 
     @Value("${consumer.payments.settlement-account:}")
     private String settlementExternalId;
@@ -43,17 +44,22 @@ public class OpenBankingPaymentCommandServiceImpl implements OpenBankingPaymentC
     @Override
     public OpenBankingPaymentCommandData debit(Jwt jwt, UUID requestId, OpenBankingPaymentCommandRequest request) {
         OpenBankingConsent consent = requireConsent(jwt);
-        policy.authorize(jwt, ConsumerAction.OPENBANKING_PAYMENT_EXECUTE, request.getFromAccountId(),
+        var card = cards.authorizedCard(jwt, consent);
+        var source = cards.account(card);
+        if (!card.getId().equals(request.getCardId())
+                || request.getFromAccountId() != null && !source.getId().equals(request.getFromAccountId())) {
+            throw new OpenBankingPaymentInvalidException();
+        }
+        policy.authorize(jwt, ConsumerAction.OPENBANKING_PAYMENT_EXECUTE, source.getId(),
                 OpenBankingPaymentInvalidException::new);
         if (settlementExternalId.isBlank()) {
             throw new OpenBankingPaymentInvalidException();
         }
-        var source = core.retrieveSavingsAccount(request.getFromAccountId(), null, null, null);
         var target = core.retrieveSavingsAccountByExternalId(settlementExternalId);
         if (source.getCurrency() == null || target.getCurrency() == null
                 || !request.getCurrency().equals(source.getCurrency().getCode())
                 || !request.getCurrency().equals(target.getCurrency().getCode())
-                || request.getFromAccountId().equals(target.getId())) {
+                || source.getId().equals(target.getId())) {
             throw new OpenBankingPaymentInvalidException();
         }
         var existing = paymentRepository.findById(requestId);
@@ -61,7 +67,7 @@ public class OpenBankingPaymentCommandServiceImpl implements OpenBankingPaymentC
             return replay(existing.get(), consent, request);
         }
         var payment = OpenBankingPaymentCommandEntity.requested(requestId, consent.getId(),
-                consent.getTppClientId(), request.getFromAccountId(), request.getAmount(), request.getCurrency());
+                consent.getTppClientId(), source.getId(), card.getId(), request.getAmount(), request.getCurrency());
         // The repository commits before the remote call. A competing or uncertain
         // request reads this record and cannot execute another debit.
         try {
@@ -75,7 +81,7 @@ public class OpenBankingPaymentCommandServiceImpl implements OpenBankingPaymentC
             Long toOffice = core.getClientOfficeId(target.getClientId());
             var transfer = new AccountTransferRequest()
                     .fromOfficeId(String.valueOf(fromOffice)).fromClientId(String.valueOf(source.getClientId()))
-                    .fromAccountId(String.valueOf(request.getFromAccountId())).fromAccountType("2")
+                    .fromAccountId(String.valueOf(source.getId())).fromAccountType("2")
                     .toOfficeId(String.valueOf(toOffice)).toClientId(String.valueOf(target.getClientId()))
                     .toAccountId(String.valueOf(target.getId())).toAccountType("2")
                     .transferAmount(request.getAmount().toPlainString()).transferDate(LocalDate.now().toString())
@@ -112,6 +118,7 @@ public class OpenBankingPaymentCommandServiceImpl implements OpenBankingPaymentC
         if (consent.getStatus() != ConsentStatus.AUTHORISED || !consent.getExpiresAt().isAfter(Instant.now())
                 || !UUID.fromString(jwt.getSubject()).equals(consent.getUserId())
                 || !jwt.getAudience().contains(consent.getTppClientId())
+                || consent.getBankCardId() == null
                 || !consent.getPermissions().contains(OpenBankingPermission.INITIATE_PAYMENTS)) {
             throw new AccessDeniedException("Payment consent is not active");
         }
@@ -122,7 +129,8 @@ public class OpenBankingPaymentCommandServiceImpl implements OpenBankingPaymentC
             OpenBankingConsent consent, OpenBankingPaymentCommandRequest request) {
         if (!payment.getConsentId().equals(consent.getId())
                 || !payment.getTppClientId().equals(consent.getTppClientId())
-                || !payment.getFromAccountId().equals(request.getFromAccountId())
+                || !java.util.Objects.equals(payment.getBankCardId(), request.getCardId())
+                || request.getFromAccountId() != null && !payment.getFromAccountId().equals(request.getFromAccountId())
                 || payment.getAmount().compareTo(request.getAmount()) != 0
                 || !payment.getCurrency().equals(request.getCurrency())) {
             throw new OpenBankingPaymentInvalidException();

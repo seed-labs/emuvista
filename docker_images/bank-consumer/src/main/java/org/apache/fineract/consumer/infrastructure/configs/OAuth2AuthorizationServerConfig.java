@@ -113,6 +113,7 @@ public class OAuth2AuthorizationServerConfig {
             OAuth2ConsumerProperties oauth2Properties,
             OAuth2ConsentLookupPort consentLookup,
             OAuth2ConsentRecorderPort consentRecorder,
+            org.apache.fineract.consumer.cards.BankCardService cards,
             OAuth2AuthorizationService oAuth2AuthorizationService,
             ApplicationEventPublisher eventPublisher,
             RateLimitProperties rateLimitProperties,
@@ -123,7 +124,7 @@ public class OAuth2AuthorizationServerConfig {
                 .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
                 .with(authorizationServerConfigurer, authorizationServer ->
                         configureConsentAndTokenEndpoints(authorizationServer, oauth2Properties,
-                                consentLookup, consentRecorder,
+                                consentLookup, consentRecorder, cards,
                                 oAuth2AuthorizationService, eventPublisher))
                 .authorizeHttpRequests(authz -> authz.anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -151,6 +152,7 @@ public class OAuth2AuthorizationServerConfig {
             @Qualifier("openbankingTokenJwtDecoder") JwtDecoder openbankingTokenJwtDecoder) throws Exception {
         return http
                 .securityMatcher(
+                        "/api/v1/openbanking/cards/**",
                         OAuth2Constants.TPP_ACCOUNTS_PATTERN,
                         OAuth2Constants.TPP_PAYMENTS_PATTERN,
                         OAuth2Constants.TPP_ACCOUNT_ACCESS_CONSENTS_PATTERN)
@@ -231,10 +233,11 @@ public class OAuth2AuthorizationServerConfig {
             OAuth2ConsumerProperties oauth2Properties,
             OAuth2ConsentLookupPort consentLookup,
             OAuth2ConsentRecorderPort consentRecorder,
+            org.apache.fineract.consumer.cards.BankCardService cards,
             OAuth2AuthorizationService oAuth2AuthorizationService,
             ApplicationEventPublisher eventPublisher) {
         OAuth2ConsentAuthorizeRequestValidator consentValidator =
-                new OAuth2ConsentAuthorizeRequestValidator(consentLookup);
+                new OAuth2ConsentAuthorizeRequestValidator(consentLookup, cards::allowsScopes);
         OAuth2ConsentDecisionCustomizer consentDecisionCustomizer =
                 new OAuth2ConsentDecisionCustomizer(consentRecorder, eventPublisher);
         authorizationServer

@@ -29,4 +29,4 @@ Without `--state`, recompilation creates fresh mail storage outside `output`. St
 
 H00 provides authoritative DNS at `10.150.0.53`, signs the private root with its `Dnssec` layer, and validates queries at `10.150.0.54`. EmailBundle uses this resolver. The private zone contains mail-domain A/MX records and the `example.org` record required by Mailu's startup check. Public Internet mail delivery is not configured.
 
-See [the bundle API](../../services/EmailService/README.md).
+See [the bundle API](../../bundles/EmailBundle/README.md).

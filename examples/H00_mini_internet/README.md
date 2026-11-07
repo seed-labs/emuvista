@@ -40,5 +40,5 @@ Container bundles can use `DNS_RESOLVER` for their DNS configuration.
 
 `build_emulator(dnssec=True, dnssec_key_store=path)` signs the private root and
 enables validation at the resolver. This requires Docker for SEED's BIND key
-generation. Keep saved keys outside compiler output. H21–H23 enable this option.
+generation. Keep saved keys outside compiler output. H21, H22 and H99 enable this option.
 For standalone use: `python3 mini_internet.py --dnssec`.

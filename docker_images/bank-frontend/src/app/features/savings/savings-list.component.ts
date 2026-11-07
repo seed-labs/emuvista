@@ -1,0 +1,111 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { Router } from '@angular/router';
+import { CdkTableModule } from '@angular/cdk/table';
+import { IonCard, IonCardContent, IonProgressBar } from '@ionic/angular/standalone';
+import { TranslatePipe } from '../../core/adapters';
+import { BankCardsComponent } from '../cards/bank-cards.component';
+import { PageHeaderComponent } from '../../shared/ui/page-header.component';
+import { StatusBadgeComponent } from '../../shared/ui/status-badge.component';
+import { SavingsStore } from './savings.store';
+
+@Component({
+  selector: 'app-savings-list',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    CdkTableModule,
+    IonCard,
+    IonCardContent,
+    IonProgressBar,
+    TranslatePipe,
+    PageHeaderComponent,
+    BankCardsComponent,
+    StatusBadgeComponent,
+  ],
+  template: `
+    <app-page-header [title]="'savings.list.title' | appTranslate" />
+
+    <app-bank-cards />
+
+    <ion-card>
+      @if (store.loading()) {
+        <ion-progress-bar type="indeterminate" />
+      }
+
+      <ion-card-content>
+        <div class="table-scroll">
+          <table cdk-table [dataSource]="store.accounts()">
+            <ng-container cdkColumnDef="accountNo">
+              <th cdk-header-cell *cdkHeaderCellDef>Account number</th>
+              <td cdk-cell *cdkCellDef="let row">{{ row.accountNo }}</td>
+            </ng-container>
+            <ng-container cdkColumnDef="productName">
+              <th cdk-header-cell *cdkHeaderCellDef>{{ 'common.table.product' | appTranslate }}</th>
+              <td cdk-cell *cdkCellDef="let row">{{ row.productName }}</td>
+            </ng-container>
+            <ng-container cdkColumnDef="status">
+              <th cdk-header-cell *cdkHeaderCellDef>{{ 'common.table.status' | appTranslate }}</th>
+              <td cdk-cell *cdkCellDef="let row">
+                @if (row.status) {
+                  <app-status-badge [status]="row.status" />
+                }
+              </td>
+            </ng-container>
+            <ng-container cdkColumnDef="currency">
+              <th cdk-header-cell *cdkHeaderCellDef>
+                {{ 'common.table.currency' | appTranslate }}
+              </th>
+              <td cdk-cell *cdkCellDef="let row">{{ row.currency }}</td>
+            </ng-container>
+
+            <tr cdk-header-row *cdkHeaderRowDef="columns"></tr>
+            <tr
+              cdk-row
+              *cdkRowDef="let row; columns: columns"
+              class="clickable"
+              (click)="open(row.id)"
+            ></tr>
+            <tr class="empty-row" *cdkNoDataRow>
+              <td [attr.colspan]="columns.length">{{ 'savings.list.empty' | appTranslate }}</td>
+            </tr>
+          </table>
+        </div>
+      </ion-card-content>
+    </ion-card>
+  `,
+  styleUrls: ['../../shared/css/table.scss'],
+})
+export class SavingsListComponent {
+  protected readonly store = inject(SavingsStore);
+  private readonly router = inject(Router);
+
+  protected readonly columns = ['accountNo', 'productName', 'status', 'currency'];
+
+  constructor() {
+    this.store.loadAccounts();
+  }
+
+  protected open(savingsId: number | undefined): void {
+    if (savingsId != null) {
+      this.router.navigate(['/savings', savingsId]);
+    }
+  }
+}
