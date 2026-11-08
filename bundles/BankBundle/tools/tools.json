@@ -2,30 +2,48 @@
   {
     "name": "bank.accounts",
     "handler": "handlers:accounts",
-    "description": "Read your own bank savings accounts; login uses your email OTP.",
+    "description": "Read your own bank savings accounts; login uses your email OTP. Optionally choose a configured bank alias.",
     "input_schema": {
       "type": "object",
-      "properties": {},
+      "properties": {
+        "bank": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Configured bank alias, such as seed-bank or north-bank; omit for the default bank."
+        }
+      },
       "additionalProperties": false
     }
   },
   {
     "name": "bank.cards",
     "handler": "handlers:cards",
-    "description": "Read your own bank cards.",
+    "description": "Read your own bank cards. Optionally choose a configured bank alias.",
     "input_schema": {
       "type": "object",
-      "properties": {},
+      "properties": {
+        "bank": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Configured bank alias, such as seed-bank or north-bank; omit for the default bank."
+        }
+      },
       "additionalProperties": false
     }
   },
   {
     "name": "bank.loans",
     "handler": "handlers:loans",
-    "description": "Read your own bank loans.",
+    "description": "Read your own bank loans. Optionally choose a configured bank alias.",
     "input_schema": {
       "type": "object",
-      "properties": {},
+      "properties": {
+        "bank": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Configured bank alias, such as seed-bank or north-bank; omit for the default bank."
+        }
+      },
       "additionalProperties": false
     }
   }

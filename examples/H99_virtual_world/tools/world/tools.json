@@ -25,5 +25,29 @@
       ],
       "additionalProperties": false
     }
+  },
+  {
+    "name": "world.link_card",
+    "handler": "handlers:link_card",
+    "description": "Voluntarily bind one of your bank cards to your payment wallet. Choose a bank from payment.banks and a full card number from bank.cards. Completes your bank login, mailbox OTP and card-specific consent. Returns a masked card and source ID for payment.card_payment. No borrowing or prebinding.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "bank": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cardNumber": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 25
+        }
+      },
+      "required": [
+        "bank",
+        "cardNumber"
+      ],
+      "additionalProperties": false
+    }
   }
 ]

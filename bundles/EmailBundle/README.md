@@ -29,3 +29,9 @@ Only the front container publishes a browser port, bound to `127.0.0.1`. Emulate
 Without `setSavePath`, recompilation uses fresh temporary state outside the output directory. Explicit saved state includes accounts, mail, queues, Webmail settings, Redis, DKIM, TLS keys, initialization markers and credentials. Stop the stack before recompiling; resume with the same configuration and network. H21 also saves the SEED DNS signing keys under `--state`. TLS certificates have a finite lifetime and should be renewed for longer experiments.
 
 See [H21](../../examples/H21_email_service/README.md) for accounts and browser use.
+
+Agent sends use SMTP and then append a copy to the mailbox's Sent folder over
+IMAP. Replies can supply `inReplyTo`; sent messages have Date/Message-ID headers.
+`sent=true, savedToSent=false` reports accepted mail whose archive copy failed,
+so callers must not resend merely to repair Sent. Inbox observations include full
+text and reply identifiers, newest first.
