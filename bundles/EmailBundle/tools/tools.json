@@ -2,7 +2,7 @@
   {
     "name": "email.inbox",
     "handler": "handlers:inbox",
-    "description": "Read your five latest mailbox messages.",
+    "description": "Read your five latest inbox messages, newest first, including full bodies, sender and messageId for replies.",
     "input_schema": {
       "type": "object",
       "properties": {},
@@ -12,7 +12,7 @@
   {
     "name": "email.send",
     "handler": "handlers:send",
-    "description": "Send a message from your own mailbox to a world-directory recipient.",
+    "description": "Send a message from your own mailbox and save it to Sent. For a threaded reply, set inReplyTo to the received messageId. A sent=true result means SMTP accepted it, even if saving the Sent copy failed.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -25,7 +25,14 @@
         },
         "body": {
           "type": "string",
-          "maxLength": 4000
+          "maxLength": 4000,
+          "minLength": 1
+        },
+        "inReplyTo": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 998,
+          "description": "Optional Message-ID of the message being answered, copied from email.inbox."
         }
       },
       "required": [

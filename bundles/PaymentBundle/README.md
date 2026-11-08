@@ -89,3 +89,11 @@ Override images with `PaymentBundle(emu, images={role: reference})` or `payment.
 | `gateway` | nginx with `http_sub_module` and `/docker-entrypoint.sh` |
 
 Images must support running the routing wrapper as root and provide `ip`, or an Alpine/Debian package manager to install it. Original prepared components use revision `124a87b639c37952dc9a029fc7056e523a10de5b`; customized image sources and pinned upstream bases are recorded in [sources.json](../../docker_images/sources.json).
+
+## Agent tools
+
+Exports wallet balance/transfers, supported banks, linked cards, card-funded
+payments and payment receipts, plus native wallet transfer receipt/history queries. Card payments use a linked source ID and an
+idempotent operation UUID; only `completed` confirms success. The package's
+`client.py` provides payment API calls for composing authorization workflows.
+Bank customer login and consent remain in the bank package.

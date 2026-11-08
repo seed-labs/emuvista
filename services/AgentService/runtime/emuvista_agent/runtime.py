@@ -96,7 +96,8 @@ class ToolRegistry:
     def invoke(self, name, arguments, *, source='agent'):
         call_id = uuid.uuid4().hex
         started = time.monotonic()
-        self.context.emit('tool_started', tool=name, call_id=call_id, arguments=arguments, source=source)
+        self.context.emit('tool_started', tool=name, call_id=call_id, arguments=arguments,
+                          detail_version=2, source=source)
         try:
             result = self._invoke(name, arguments)
         except Exception as error:
@@ -109,7 +110,7 @@ class ToolRegistry:
         self.context.emit('tool_finished', tool=name, call_id=call_id, status='success',
                           source=source,
                           duration_ms=round((time.monotonic()-started)*1000),
-                          result=result_summary(result))
+                          result=result, summary=result_summary(result), detail_version=2)
         return result
 
     def _invoke(self, name, arguments):

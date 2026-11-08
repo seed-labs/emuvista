@@ -31,17 +31,19 @@ class JsonEvents:
                 self._find_secrets(item)
 
     def clean(self, value, depth=0):
-        if depth > 6:
+        if depth > 40:
             return '[truncated]'
         if isinstance(value, dict):
-            return {str(key): '[redacted]' if re.search(r'password|secret|token|api.?key|otp|body', str(key), re.I)
-                    else self.clean(item, depth+1) for key, item in list(value.items())[:40]}
+            return {str(key): '[redacted]' if re.search(r'password|secret|token|api.?key|otp|^authorization$|authorization.?code', str(key), re.I)
+                    else self.clean(item, depth+1) for key, item in value.items()}
         if isinstance(value, (list, tuple)):
-            return [self.clean(item, depth+1) for item in value[:40]]
+            return [self.clean(item, depth+1) for item in value]
         if isinstance(value, str):
             for secret in sorted(self.secrets, key=len, reverse=True):
                 value = value.replace(secret, '[redacted]')
-            return re.sub(r'\b[0-9]{16,19}\b', lambda m: '****'+m.group()[-4:], value)[:4000]
+            value = re.sub(r'(?i)\b(Bearer|Basic)\s+\S+', r'\1 [redacted]', value)
+            return re.sub(r'(?i)(\b(?:verification|security|login|one[- ]time)\s+code\s*(?:is\s*)?[:：]?\s*)([a-z0-9]{4,12})\b',
+                          r'\1[redacted]', value)
         if isinstance(value, float) and not math.isfinite(value):
             return '[non-finite]'
         if value is None or isinstance(value, (int, float, bool)):
@@ -59,7 +61,7 @@ class JsonEvents:
 
 
 def result_summary(value):
-    """Report outcomes without copying mailbox bodies or full bank records."""
+    """Compact outcome alongside the full, sanitized tool observation."""
     if isinstance(value, dict):
         public = ('state', 'balanceMinor', 'currency', 'sent', 'recipient', 'reachable', 'ready', 'status', 'agent', 'hostname')
         summary = {key: value[key] for key in public if key in value and

@@ -43,5 +43,112 @@
       ],
       "additionalProperties": false
     }
+  },
+  {
+    "name": "payment.banks",
+    "handler": "handlers:banks",
+    "description": "List the banks that the payment service supports for card linking.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "payment.cards",
+    "handler": "handlers:cards",
+    "description": "List your explicitly linked cards, masked numbers, balances and source IDs. No card is linked automatically.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "payment.card_payments",
+    "handler": "handlers:card_payments",
+    "description": "Inspect your card-funded payment receipts. Supply an operation UUID to check an uncertain payment before retrying; needs_review requires reconciliation.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "payment.card_payment",
+    "handler": "handlers:card_payment",
+    "description": "Pay a world-directory recipient with one explicitly linked card source. Use a canonical UUID and reuse the same ID and body for retries. Amounts are USD cents. Only status completed confirms success; pending, bank_debited and needs_review must not be treated as completed.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "source": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 32
+        },
+        "recipient": {
+          "type": "string",
+          "minLength": 1
+        },
+        "amountMinor": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source",
+        "recipient",
+        "amountMinor",
+        "description"
+      ]
+    }
+  },
+  {
+    "name": "payment.receipt",
+    "handler": "handlers:receipt",
+    "description": "Read one real wallet ledger transfer visible to your account. A committed transfer with the expected payee, amount and order reference can verify a purchase. Card-funded credits use the same transfer UUID as the card-payment request.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "payment.history",
+    "handler": "handlers:history",
+    "description": "Read your recent wallet ledger transfers, including incoming payments. Use actual ledger receipts to verify money received.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
   }
 ]

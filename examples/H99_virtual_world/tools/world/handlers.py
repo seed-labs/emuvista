@@ -3,6 +3,11 @@ import urllib.error
 from emuvista_agent.http import client
 
 
+def link_card(arguments, context):
+    from .card_link import link_card as compose_link
+    return compose_link(arguments, context)
+
+
 def catalog(arguments,context):
     return context.service('world')
 

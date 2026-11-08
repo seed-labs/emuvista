@@ -48,3 +48,10 @@ bank customer's cards and their account numbers, balances, status and expiry.
 Payment authorization APIs continue to expose masked card numbers. Account
 numbers and card numbers are separate identifiers; multiple cards may share one
 account.
+
+## Agent tools
+
+Customer tools accept an optional configured `bank` alias. `setService('bank', ...)`
+can include an `instances` map of per-bank URLs, browser origins and the current
+agent's credentials. `tools/client.py` owns email-OTP login and card-specific OAuth
+consent; composed callers keep authorization codes private. E99 omits lending tools.

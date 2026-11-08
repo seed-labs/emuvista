@@ -37,3 +37,10 @@ the bank resolves the debit account from its own card record and rejects another
 card or account. Unlinking revokes that consent at the bank.
 
 Card consent cannot request `openbanking:accounts.read` or other broader scopes.
+
+For agents, the world tool `world.link_card` composes the existing payment and bank
+clients, selects an owned card by bank and full card number, completes customer
+login/OTP/consent, and returns the linked source ID. Agents use `payment.cards`,
+`payment.card_payment` and `payment.card_payments` for funding and receipt checks.
+Each bank's advertised browser origin is translated to its configured internal
+address; authorization callbacks are validated and never followed across origins.

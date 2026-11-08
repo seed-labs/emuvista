@@ -1,5 +1,8 @@
 # AgentService
 
+See the [architecture](../../docs/agent-service/design.md) for the simulated world,
+AgentService internals and infrastructure developer responsibilities.
+
 Deploys an agent directly on a SEED host through normal virtual-node binding.
 Each agent has its own container, Python virtual environment and process user.
 Framework adapters and tool packages are copied into the image during compilation.
@@ -55,7 +58,8 @@ of this service and can be replaced with another framework.
 Run the CLI as the agent user. Logs are in `/home/emuvista-agent/agent.log`.
 
 `agentctl run` emits timestamped JSON events with a run ID and correlated tool
-start/end events, durations and outcome summaries. Framework adapters can report
+start/end events, durations, complete business arguments/results and outcome summaries.
+Authentication material is redacted; mail bodies remain visible for world observation. Framework adapters can report
 phases and replies through `context.emit(event, **fields)` independently of any UI.
 Normal `agentctl list/call` commands retain their single-result output. E99's
 host-side `monitor.py` visualizes these events without changing business services.
