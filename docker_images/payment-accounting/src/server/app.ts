@@ -11,9 +11,10 @@ import cors from "cors"
 import { createBaseService } from "../controller/base-service-builder"
 import { BaseService } from "../controller"
 import { getRoutes as getBankRoutes } from '../bank/routes'
+import { startBankRecovery } from '../bank/recovery'
 
 
-export type ExpressExtended = express.Express & { komunitin: { service: BaseService } }
+export type ExpressExtended = express.Express & { komunitin: { service: BaseService, stopBankRecovery?: () => void } }
 
 export async function createApp() : Promise<ExpressExtended> {
   const app = express()
@@ -59,7 +60,7 @@ export const setupApp = async (expressApp: express.Express) => {
 
   // Controller
   const service = await createBaseService()
-  app.komunitin = { service }
+  app.komunitin = { service, stopBankRecovery: startBankRecovery(service) }
   
   // Routes
   app.use("/", getRoutes(service))
@@ -76,6 +77,7 @@ export const setupApp = async (expressApp: express.Express) => {
 }
 
 export const closeApp = async (app: ExpressExtended) => {
+  app.komunitin.stopBankRecovery?.()
   await app.komunitin.service.stop()
 }
 

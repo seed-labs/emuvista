@@ -1,24 +1,34 @@
 # Payment application API
 
 Use the payment user's existing OAuth bearer token. On the host, the accounting
-base URL is `https://localhost:8443/accounting/SEED`; inside the emulator it is
-`https://10.152.0.10:2025/SEED`. Accept the laboratory certificate.
+base URL is `http://localhost:8443/accounting/SEED`; inside the emulator it is
+`http://payment.com/accounting/SEED`.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/bank/providers` | Available providers |
-| POST | `/bank/links` | Begin user authorization: `{"bank":"seed-bank","cardNumber":"9900010000000019","redirectURI":"https://localhost:8443/bank-accounts"}` |
+| POST | `/bank/links` | Begin user authorization: `{"bank":"south-bank","cardNumber":"9900010000000019","redirectURI":"http://localhost:8443/bank-accounts"}` |
 | POST | `/bank/links/complete` | Complete authorization with callback `state` and `code` |
 | GET | `/bank/sources` | List the user's linked cards and balances |
 | POST | `/bank/links/remove` | Revoke and unlink one card by `id` |
 | POST | `/bank/payments` | Make a bank-funded payment |
-| GET | `/bank/payments` | Read the user's payment history |
+| GET | `/bank/payments` | Read outgoing and incoming card payment receipts |
+| GET | `/bank/payments/{id}` | Read a receipt as its payer or recipient |
 
 A bank-funded payment body contains `id` (a new UUID), `source` (from the sources
 response), `payer` and `payee` (wallet account UUIDs), `amountMinor` (integer cents)
 and `description`. Reuse the same ID and body if the response is lost; inspect
 `status` before treating an operation as successful. `needs_review` requires
 reconciliation, not a new payment attempt.
+
+Card payments directly debit the card's bank account and credit the recipient
+wallet. Receipts include `bankTransactionId` and `ledgerHash`; no intermediary
+account or prefunded wallet is involved. The bank's own card-payment history and
+core transaction note retain the actual recipient and payment platform.
+The accounting backend periodically resumes unfinished requests without requiring
+an agent or page read. A confirmed debit can finish after its card is unlinked. If an already signed
+ledger credit expires before confirmation, it remains `needs_review` for manual
+reconciliation; the backend does not create a replacement credit blindly.
 
 Wallet-funded payments use the existing native accounting transfer API. Bank
 card authorization uses the bank's OAuth flow and requires the customer to sign

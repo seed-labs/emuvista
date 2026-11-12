@@ -13,12 +13,22 @@ The [prepared bank images](../../bundles/BankBundle/README.md) must be available
 
 | Website | Address | Login |
 | --- | --- | --- |
-| Customer bank | https://localhost:8444 | `alice@seed.example` / `BankDemoPass123!` |
-| Bank administration | https://localhost:8446 | `mifos` / `password` (tenant `default`) |
-| Webmail | https://localhost:8445/webmail/ | `alice@seed.example` / `EmailDemo123!` |
+| Customer bank | http://localhost:8444 | `alice@mail.com` / `BankDemoPass123!` |
+| Bank administration | http://localhost:8446 | `mifos` / `password` (tenant `default`) |
+| Webmail | http://localhost:8445/webmail/ | `alice@mail.com` / `EmailDemo123!` |
 | Internet Map | http://localhost:8080 | — |
 
-Accept the laboratory certificates. Bob uses `bob@seed.example` with the same respective passwords. Bank login and transfers require codes from the user's mailbox.
+| Account | Password | Use |
+| --- | --- | --- |
+| `mifos` | `password` | Built-in bank administrator; tenant `default` |
+| `admin@mail.com` | `MailAdminDemo123!` | Built-in mail administrator |
+| `bank@mail.com` | `BankMailDemo123!` | Bank sender mailbox |
+| `alice@mail.com`, `bob@mail.com` | `BankDemoPass123!` | Customer bank login |
+| `alice@mail.com`, `bob@mail.com`, `carol@mail.com` | `EmailDemo123!` | Personal mailboxes |
+
+Administrator credentials are fixed. Bank login and transfers require codes
+from the user's mailbox. Internal sites: <http://southbank.com>,
+<http://staff.southbank.com> and <http://mail.com/webmail/>.
 
 Edit [bank.json](bank.json) to configure users, mailbox passwords, products, opening balances and loans. Alice starts with USD 1,000 checking, USD 200 savings at 3% annual interest, EUR 300 checking and a disbursed USD 500 loan. Bob starts with USD 500 checking. Default loans use 12 monthly installments at 1% interest per month.
 
@@ -30,6 +40,13 @@ Try these customer operations:
 4. Open **Loans** to inspect the loan and repayment schedule. **Make payment** repays from a savings account and requires another email code.
 5. **Apply for a Loan** lets the customer select a product, preview a schedule and submit an application. Approve and disburse the application on the administration website.
 
+To create another customer while running, choose **Register** on the bank login
+page and verify the email code. Create the mailbox first through
+<http://localhost:8445/admin/user/signup/mail.com>. After logging in, open
+**Savings → Open account**, select a product and submit. Open its account detail
+and choose **Apply for a debit card**. Both start with zero funds; use the staff
+Deposit action below to fund the account. JSON is only needed for initial data.
+
 Use the administration website for staff operations:
 
 1. Log in with `mifos` / `password`, tenant `default`, and close the welcome warning. Open **Institution → Clients**, then select **Alice Example**.
@@ -39,7 +56,7 @@ Use the administration website for staff operations:
 
 The two bank websites share the same Fineract accounts and loans. Customer access uses email codes; staff access uses the separate administrator credentials above. See [API examples](api.md) for agent access.
 
-Agents use the internal bank gateway `10.151.0.10` and mailbox front `10.150.0.10`. The staff website uses `10.151.0.18`. Application browser ports bind to localhost; Internet Map uses port 8080. H22 includes its own full mini Internet and mailbox deployment; run it separately from the other examples to avoid duplicate node container names and ports.
+Agents use `southbank.com` (`10.151.0.10`) and `mail.com` (`10.150.0.10`). The staff website uses `10.151.0.18`. Application browser ports bind to localhost; Internet Map uses port 8080. H22 includes its own full mini Internet and mailbox deployment; run it separately from the other examples to avoid duplicate node container names and ports.
 
 Without `--state`, compiling starts fresh. From the example directory, use `python3 bank.py --state ./bank-state` to save and resume bank, email and DNS keys with the same configuration and addresses. Keep this directory outside `output` and stop containers before recompiling.
 

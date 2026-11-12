@@ -23,9 +23,6 @@ exec postgres -D "$PGDATA" -p "$PGPORT" -h 0.0.0.0
 BACKEND_START = r'''#!/bin/sh
 set -eu
 cd /app
-if [ -n "${APPLICATION_CA_FILES:-}" ]; then
-  cat /payment-config/server.crt $APPLICATION_CA_FILES > /tmp/application-ca.pem
-fi
 attempt=0
 until node node_modules/prisma/build/index.js migrate deploy; do
   attempt=$((attempt + 1))
@@ -87,30 +84,27 @@ main().catch(e=>{console.error(e.message);process.exitCode=1;});
 '''
 
 
-def nginx_config(addresses: dict, host_port: int | None = None) -> str:
-    address = addresses['gateway']
+def nginx_config(addresses: dict, host_port: int | None = None,
+                 public_url: str | None = None, host_url_mappings: dict | None = None) -> str:
+    origin = public_url or 'http://' + addresses['gateway']
     app = addresses['app']
     servers = [f'''server {{
-      listen 443 ssl;
+      listen 80;
       server_name _;
-      ssl_certificate /payment-config/server.crt;
-      ssl_certificate_key /payment-config/server.key;
       location = /healthz {{ default_type application/json; return 200 '{{"status":"ready"}}'; }}
       location / {{ proxy_pass http://{app}:80; proxy_set_header Host $http_host; }}
     }}''']
-    for public, private, role in [(2026,3026,'auth'), (2028,3028,'social'), (2025,3025,'accounting'),
-                                  (2023,3023,'notifications-ts'), (9191,9090,'files')]:
+    for public, private, role in [(2026, 3026, 'auth'), (2028, 3028, 'social'), (2025, 3025, 'accounting'),
+                                  (2023, 3023, 'notifications-ts'), (9191, 9090, 'files')]:
         servers.append(f'''server {{
-      listen {public} ssl;
+      listen {public};
       server_name _;
-      ssl_certificate /payment-config/server.crt;
-      ssl_certificate_key /payment-config/server.key;
       client_max_body_size 50m;
       location / {{
         proxy_pass http://{addresses[role]}:{private};
         proxy_http_version 1.1;
         proxy_set_header Host $http_host;
-        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Proto http;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
@@ -120,24 +114,24 @@ def nginx_config(addresses: dict, host_port: int | None = None) -> str:
     }}''')
     if host_port is not None:
         # Rewrite browser-facing configuration and JSON links on this endpoint
-        # only. Emulated clients retain the canonical IP-based API endpoints.
-        routes = [('auth',2026,3026,'auth'), ('social',2028,3028,'social'),
-                  ('accounting',2025,3025,'accounting'), ('notifications',2023,3023,'notifications-ts'),
-                  ('files',9191,9090,'files')]
+        # only. Emulated clients retain the canonical internal API endpoints.
+        routes = [('auth', 2026, 3026, 'auth'), ('social', 2028, 3028, 'social'),
+                  ('accounting', 2025, 3025, 'accounting'), ('notifications', 2023, 3023, 'notifications-ts'),
+                  ('files', 9191, 9090, 'files')]
         rewrites = '\n'.join(
-            f"sub_filter 'https://{address}:{public}' '$scheme://$http_host/{path}';"
+            f"sub_filter '{origin}:{public}' '$scheme://$http_host/{path}';"
             for path, public, _, _ in routes)
+        external_rewrites = '\n'.join(f"sub_filter '{source}' '{target}';"
+                                      for source, target in (host_url_mappings or {}).items())
         locations = '\n'.join(
             f'location /{path}/ {{ proxy_pass http://{addresses[role]}:{private}/; }}'
             for path, _, private, role in routes)
         servers.append(f'''server {{
-      listen {host_port} ssl;
+      listen {host_port};
       server_name _;
-      ssl_certificate /payment-config/server.crt;
-      ssl_certificate_key /payment-config/server.key;
       proxy_http_version 1.1;
       proxy_set_header Host $http_host;
-      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header X-Forwarded-Proto http;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
@@ -148,13 +142,15 @@ def nginx_config(addresses: dict, host_port: int | None = None) -> str:
       sub_filter_types application/javascript text/javascript application/json application/vnd.api+json text/css application/manifest+json;
       sub_filter_once off;
       {rewrites}
-      sub_filter 'https://{address}/' '$scheme://$http_host/';
-      sub_filter 'https://{address}"' '$scheme://$http_host"';
+      {external_rewrites}
+      sub_filter '{origin}/' '$scheme://$http_host/';
+      sub_filter '{origin}"' '$scheme://$http_host"';
       {locations}
       location = /healthz {{ default_type application/json; return 200 '{{"status":"ready"}}'; }}
       location / {{ proxy_pass http://{app}:80; }}
     }}''')
     return 'events {}\nhttp {\nmap $http_upgrade $connection_upgrade { default upgrade; \'\' close; }\n' + '\n'.join(servers) + '\n}\n'
+
 
 # Browser-visible resource links are sent back to the backend by the native app.
 # Normalize these links before fetching them from a separate backend container.

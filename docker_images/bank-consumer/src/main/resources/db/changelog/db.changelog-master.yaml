@@ -36,3 +36,5 @@ databaseChangeLog:
       file: db/changelog/openbanking/009-create-open-banking-payments.yaml
   - include:
       file: db/changelog/openbanking/010-create-bank-cards.yaml
+  - include:
+      file: db/changelog/openbanking/011-direct-card-payments.yaml

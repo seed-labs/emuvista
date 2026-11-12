@@ -6,21 +6,22 @@ from pathlib import Path
 
 
 class ToolPackage:
-    def __init__(self, name, source, *, requirements=(), software=()):
+    def __init__(self, name, source, *, requirements=(), software=(), configuration=None):
         if not re.fullmatch(r'[a-z][a-z0-9_]*', name):
             raise ValueError('invalid tool package name')
         self.name = name
         self.source = Path(source).resolve()
         self.requirements = tuple(requirements)
         self.software = tuple(software)
-        self.manifest = json.loads((self.source/'tools.json').read_text())
+        self.configuration = json.loads(json.dumps(configuration or {}, allow_nan=False))
+        self.manifest = json.loads((self.source / 'tools.json').read_text())
         names = set()
         for tool in self.manifest:
-            if (not re.fullmatch(re.escape(name)+r'\.[a-z][a-z0-9_]*', tool['name'])
+            if (not re.fullmatch(re.escape(name) + r'\.[a-z][a-z0-9_]*', tool['name'])
                     or tool['name'] in names
                     or not re.fullmatch(r'[a-zA-Z_]\w*:[a-zA-Z_]\w*', tool['handler'])):
                 raise ValueError('invalid or duplicate tool name or handler')
-            if not (self.source/(tool['handler'].split(':')[0]+'.py')).is_file():
+            if not (self.source / (tool['handler'].split(':')[0] + '.py')).is_file():
                 raise ValueError('tool handler module not found')
             names.add(tool['name'])
         if not names:

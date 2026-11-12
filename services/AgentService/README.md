@@ -1,74 +1,85 @@
 # AgentService
 
-See the [architecture](../../docs/agent-service/design.md) for the simulated world,
-AgentService internals and infrastructure developer responsibilities.
-
-Deploys an agent directly on a SEED host through normal virtual-node binding.
-Each agent has its own container, Python virtual environment and process user.
-Framework adapters and tool packages are copied into the image during compilation.
+Runs each person inside a bound SEED host with a private Python environment.
+See [design.md](../../docs/agent-service/design.md) for the architecture and the
+`createpeople → createworld → createagent` workflow.
 
 ```python
-from services.AgentService import AgentService, ToolPackage
-from seedemu.core import Binding, Filter
-
-agents = AgentService().addNetworkTools()
-# Optional: agents.addPkiTools()  # container-local certificate and TLS tools
-# Optional: agents.addToolsFrom(application)  # application.getAgentTools() -> ToolPackage
-agent = agents.install('alice')
-agent.allowTools('network.identity', 'network.resolve')
-agent.setScript([{'tool': 'network.identity'}])
+agents = AgentService(tools=tools, environment_file='.env')
+emu.addBinding(Binding(agents.clock.vnode, action=Action.NEW,
+                      filter=Filter(asn=171, nodeName=agents.clock.vnode, ip='10.171.0.79')))
+agent = agents.createagent(person)
+# Optional: agent.setFramework('langchain')  # Already the default.
+# Optional: agent.setTools(['email.inbox', 'email.send'])
 emu.addLayer(agents)
-emu.addBinding(Binding('alice', filter=Filter(asn=150, nodeName='host_0')))
-# Configure all agents before emu.render().
+emu.addBinding(Binding(agent.vnode, filter=Filter(asn=171, nodeName='host_0')))
 ```
 
-`allowTools(...)` replaces the exact-name allowlist. The default grants nothing.
-Unauthorized tools are hidden from discovery and rejected before handler import
-or execution, including local CLI invocations. One agent is allowed per node.
-Policies and copied source belong to root; agents run as `emuvista-agent`.
+`createagent(config)` copies one person's structured configuration and returns an
+Agent configuration object. It assigns a free virtual node name (`agent_1`,
+`agent_2`, ...), available as `agent.vnode`; normal SEED binding chooses the host.
+Creation does not run a model or create application accounts.
 
-Applications own their tool source and expose `getAgentTools()` or construct
-`ToolPackage(name, directory)` explicitly. A directory contains `tools.json` and
-Python handlers with signature `handler(arguments, context)`. `addToolsFrom(service)`
-or `addToolPackage(package)` selects packages for the installed services. Packages
-are copied to every agent; each agent's allowlist narrows what it may call.
-Payment, bank and email components export tool packages
-through `getAgentTools()`.
-The optional [PKI package](tools/pki/) includes certificate and TLS tools migrated
-from the former tool server. It executes as the agent user in the agent's own node.
+The deployment object stores the complete personal metadata once in `_persona`;
+installation writes that metadata directly into the runtime configuration. The
+runtime context exposes personal members to tools. Optional setters remain available:
 
-Tool definitions contain `name`, `description`, `handler` (`module:function`) and
-`input_schema`. The initial validator supports object/array/primitive types,
-required properties, enums, number ranges and string lengths. Unknown schema
-keywords are rejected when invoked. Tools can use `context.service(name)` for
-per-agent URLs and credentials set with `setService(name, configuration)`.
+- `setPersona(dict)`: personal information and private `accounts`, plus initial
+  `knowledge` and `possessions` when required by the example.
+- `setFramework(name)`: framework deployment integration; currently `langchain`.
+- `setTools(list)`: select registered tool names. All registered tools are available
+  by default. E99 gives every person the same tools and their own accounts.
 
-For another agent framework:
+`person['id']` is a stable identifier, independent of names and deployment slots.
+Runtime memory and events use that person ID. The lower-level
+`install(vnode).setPersona(person)` remains supported. Configure before render. Normal SEED binding gives each
+Agent its own container.
+Framework integrations under `frameworks/` generate dependencies, configuration,
+application source and the startup command during installation. Containers run the
+framework application directly; examples do not supply runtime adapters.
 
-```python
-agent.setFramework('./my_adapter', entrypoint='adapter:run', requirements=[])
-agent.setEnvironment('MODEL_NAME', 'your-model')
-```
+The LangChain application uses a native LangGraph resident graph, a LangChain
+conversation subgraph, SQLite checkpoints, summarization and per-activity model
+call budgets. One native graph execution owns observation, activity, waiting and
+continuation. There is no external loop issuing new tasks. Runtime memory defaults
+to `/home/emuvista-agent/state/langgraph.sqlite`; E99's `--state` preserves it.
 
-`adapter.py` defines `run(context)`. It wraps the chosen framework and passes
-`context.tools.list()` and `context.tools.invoke(name, arguments)` to that framework.
-Dependencies install in the agent's virtual environment. The service includes a script runner. The LangChain adapter in E99 is independent
-of this service and can be replaced with another framework.
-`agentctl list`, `agentctl call NAME '{...}'` and `agentctl run` use the same policy.
-Run the CLI as the agent user. Logs are in `/home/emuvista-agent/agent.log`.
+AgentService owns one native `ClockServer`, available as `agents.clock`. Bind its
+virtual node to a separate host using the normal SEED binding API. Installation
+starts an HTTP time server and an image health check, and supplies its internal
+address to every Agent. No per-Agent clock configuration is needed.
+Before each model decision, the framework reads `context.clock.now()` over HTTP
+and includes the current UTC time in that request. Rest deadlines use the same
+clock. It follows host time and is not registered as a tool.
 
-`agentctl run` emits timestamped JSON events with a run ID and correlated tool
-start/end events, durations, complete business arguments/results and outcome summaries.
-Authentication material is redacted; mail bodies remain visible for world observation. Framework adapters can report
-phases and replies through `context.emit(event, **fields)` independently of any UI.
-Normal `agentctl list/call` commands retain their single-result output. E99's
-host-side `monitor.py` visualizes these events without changing business services.
+`environment_file` is read-only mounted at startup. Only `LLM_*` and `AGENT_*`
+settings are loaded; API keys are not copied into images. Set `LLM_API_KEY`,
+`LLM_BASE_URL` and `LLM_MODEL` in the example's `.env`.
 
-This authorization controls the common tool entrypoint. It is not a sandbox for
-arbitrary framework code: code running as the agent can use its network and read
-its own files. Each world service must still enforce its account credentials and
-business permissions. Do not put credentials for other identities in an agent.
+Configured application instances export `getAgentTools()` or supply
+`ToolPackage(name, source, configuration=...)`. The export contains the tool source
+and a `configuration` map keyed by instance name. Exports of the same package
+merge instance settings, so two banks share one tool implementation.
+The shared catalog can be passed as `tools=`; existing `addToolPackage`,
+`addToolsFrom`, `addNetworkTools` and `addPkiTools` helpers also register packages
+at Service level. Each package owns `tools.json`, Python handlers and dependencies.
+Handlers use `handler(arguments, context)`. Personal account credentials come from
+`context.accounts`; service addresses and routing data come separately
+from `context.tool_config[package_name]`. Handlers combine them for protocol calls.
+Bundle configuration never enters the persona or system prompt. Tool source is
+framework-independent.
 
-Use `setEnvironmentFile(path)` to bind-mount LLM/AGENT settings and load them at
-startup without copying secrets into an image. See [E99](../../experiments/E99_virtual_world/)
-for five agents on the shared [H99 world](../../examples/H99_virtual_world/).
+The framework renders a system prompt at startup from the structured profile,
+initial knowledge and asset descriptions. E99 does not prebuild an `instructions`
+string. Private credentials and asset delivery payloads stay out of that prompt.
+Account credentials stay
+in the runtime context and are redacted from observable events. Simulated email,
+bank and payment clients use SMTP, IMAP and HTTP. Full business arguments/results, including mail bodies, are retained in logs. Applications still
+enforce authentication and business permissions; selecting a tool is not account
+authorization or a sandbox for arbitrary framework code.
+
+Run `agentctl list`, `agentctl call NAME '{...}'` or `agentctl run` as
+`emuvista-agent`. Starting containers already starts the framework; do not launch
+another `agentctl run` in an active Agent. Logs are in
+`/home/emuvista-agent/agent.log`. The E99 dashboard reads events and shop orders,
+not checkpoint tables. See [E99](../../experiments/E99_virtual_world_with_agents/) for startup.

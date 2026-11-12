@@ -13,12 +13,11 @@ from bundles.PaymentBundle import PaymentBundle
 emu.render()
 
 payment = PaymentBundle(emu)
-payment.setDefaultInternalNetwork(
-    name='net_150_net0',
+payment.addInternalNetwork(
+    asn='150', network_name='net0',
     ip_addresses=[f'10.150.0.{i}' for i in range(10, 24)],
     default_route='10.150.0.254',
 )
-payment.setAdminCredentials('admin@payment.example', 'replace-with-your-password')
 payment.enableHostAccess(8443)
 payment.setInitialConfiguration('groups.json')
 # Optional: payment.setSavePath('./payment-state')
@@ -44,13 +43,21 @@ Addresses are assigned in this order:
 
 ## Access
 
+| Built-in administrator | Password |
+| --- | --- |
+| `admin@payment.com` | `PaymentAdmin123!` |
+
+Administrator credentials are fixed; no credential setter is exposed.
+
 Only the gateway publishes a host port: `127.0.0.1:8443`. It serves the web app and proxies browser API calls. Other containers have no host port mappings. A Node startup adapter translates browser-provided localhost resource links into the emulated gateway IP before the accounting backend fetches them. Component connections use emulated IPs; loopback is used only for checks and operations within one container.
 
-Emulated clients use the gateway IP over HTTPS: port 443 for the web app, 2026 for authentication, 2028 for communities, 2025 for accounting, 2023 for notifications and 9191 for files. Accept the self-signed certificate. Backend APIs, databases and ledger services also remain reachable at their own emulated IPs.
+Emulated clients use the gateway over HTTP: port 80 for the web app, 2026 for authentication, 2028 for communities, 2025 for accounting, 2023 for notifications and 9191 for files. `setHostname(name)` selects a canonical domain; configure its DNS record separately and supply `resolver=` to the bundle. Without a hostname, URLs use the gateway IP.
+
+`enableHostAccess(port, url_mappings={internal_origin: host_origin})` rewrites linked application origins on the host-facing endpoint while internal clients retain their domain URLs.
 
 ## Initialization and state
 
-`setInitialConfiguration(path_or_dict)` accepts a JSON file or a Python dictionary with `groups` and `trustlines`. Each group defines `code`, `name`, `currency` (`name`, `symbol`, `rate`) and `users` (`name`, `email`, `password`, `balance`). Trustlines define `from`, `to` and `limit`, measured in the source currency. Use an empty trustline list for a standalone community. See [groups.json](../../examples/H20_payment_service/groups.json) for a complete configuration.
+`setInitialConfiguration(path_or_dict)` accepts a JSON file or a Python dictionary with `groups` and optional `trustlines`. Each group defines `code`, `name`, `currency` (`name`, `symbol`, `rate`) and `users` (`name`, `email`, `password`, `balance`). Trustlines define `from`, `to` and `limit`, measured in the source currency. Omit `users` when there are no personal wallets, and `trustlines` when no exchange is needed. See [groups.json](../../examples/H20_payment_service/groups.json) for a complete configuration.
 
 The API validates and copies the configuration. Compilation generates the import data; first startup creates the communities, users, balances and exchange relationships automatically. The bundle includes no sample users, balances or exchange rules. It supports two decimal places for balances and amounts; exchange rates are fixed values relative to a common reference unit. `bcrypt` from the root requirements is needed when generating initial passwords.
 
@@ -62,10 +69,39 @@ Without `setSavePath()`, every compilation uses fresh temporary runtime storage 
 
 ## Application configuration
 
-`configureApplication(role, environment=..., files=..., trusted_certificates=..., dependencies=...)`
+`connectBank(bank)` records a partnership and can be repeated for multiple banks.
+It does not configure either application. During `configure()`, the Bundle obtains
+each bank's connection, generates provider JSON, readiness dependencies and host
+browser URL mappings. Bank registration uses the payment application's own
+client ID and internal/host browser callbacks. PaymentBundle does not import
+BankBundle or create bank containers.
+
+Card payments require matching bank and wallet currencies. The bank returns a
+recipient-bound debit receipt; the payment ledger then credits the recipient
+using its existing asset issuer, without debiting another wallet or prefunding
+an intermediary account. Receipts retain the actual payer wallet as business
+identity, bank transaction ID and ledger hash. A saved signed transaction is
+reused during recovery so another credit is not created after an uncertain reply.
+Incoming credits are visible on the Bank cards page and through payment receipt
+and history tools. A backend recovery loop resumes unfinished requests independently
+of agents; receipt queries remain read-only. Retrying uses the same ID and body.
+
+`configureApplication(role, environment=..., files=..., dependencies=...)`
 passes settings to a deployed application. Text files are mounted read-only under
-`/payment-config`; dependencies are healthy Compose service names. Certificate paths
-resolve from compiler output. No other bundle type is required.
+`/payment-config`; dependencies are healthy Compose service names.
+No other bundle type is required.
+
+## Registration email
+
+`payment.connectEmail(email)` records an outbound mail partnership. Declare a
+sender mailbox named `<payment-instance-name>@<first-email-domain>` in that EmailBundle,
+or pass its address as `payment.connectEmail(email, 'sender@mail.com')`.
+Configuration resolves SMTP credentials and waits for mailbox initialization.
+Without a mail connection, outgoing messages remain local development artifacts.
+
+Users register at `/groups/<code>/signup`, confirm the email and submit their member
+profile. A community administrator accepts the request at `/groups/<code>/admin/accounts`.
+New wallets have zero balance. H99 includes this mail connection and its sender.
 
 ## Images
 
@@ -92,8 +128,19 @@ Images must support running the routing wrapper as root and provide `ip`, or an 
 
 ## Agent tools
 
+Before compilation, `payment.addUser(group_code, user)` adds an initial wallet
+to a configured community. The user fields are `name`, `email`, `password` and `balance`.
+
 Exports wallet balance/transfers, supported banks, linked cards, card-funded
 payments and payment receipts, plus native wallet transfer receipt/history queries. Card payments use a linked source ID and an
 idempotent operation UUID; only `completed` confirms success. The package's
 `client.py` provides payment API calls for composing authorization workflows.
 Bank customer login and consent remain in the bank package.
+
+`payment.getAgentTools()` exports the package and private instance settings:
+the service origin and initialized groups' email-to-wallet mappings. AgentService
+stores these separately in `context.tool_config['payment']`. Personal
+`accounts.payment` contains the group and password, with an optional `instance`
+selector; the email defaults to the person's mailbox. Tools resolve account IDs
+and API endpoints themselves. The model supplies a recipient email and amount;
+service routing data never enters its persona or prompt.

@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.util.UUID;
 import lombok.Builder;
@@ -27,4 +28,7 @@ public final class OpenBankingPaymentCommandRequest {
     @NotNull @DecimalMin("0.01") @DecimalMax("1000000") @Digits(integer = 7, fraction = 2)
     private final BigDecimal amount;
     @NotBlank @Pattern(regexp = "[A-Z]{3}") private final String currency;
+    @NotBlank @Size(max = 128) private final String payeeId;
+    @NotBlank @Size(max = 255) private final String payeeName;
+    @NotBlank @Size(max = 500) private final String description;
 }

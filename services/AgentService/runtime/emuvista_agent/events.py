@@ -16,7 +16,8 @@ class JsonEvents:
         self.sequence = 0
         self.lock = threading.Lock()
         self.secrets = {os.environ.get('LLM_API_KEY', '')}
-        self._find_secrets(configuration.get('services', {}))
+        self._find_secrets(configuration.get('persona', {}))
+        self._find_secrets(configuration.get('tool_config', {}))
         self.secrets.discard('')
 
     def _find_secrets(self, value):
@@ -35,9 +36,9 @@ class JsonEvents:
             return '[truncated]'
         if isinstance(value, dict):
             return {str(key): '[redacted]' if re.search(r'password|secret|token|api.?key|otp|^authorization$|authorization.?code', str(key), re.I)
-                    else self.clean(item, depth+1) for key, item in value.items()}
+                    else self.clean(item, depth + 1) for key, item in value.items()}
         if isinstance(value, (list, tuple)):
-            return [self.clean(item, depth+1) for item in value]
+            return [self.clean(item, depth + 1) for item in value]
         if isinstance(value, str):
             for secret in sorted(self.secrets, key=len, reverse=True):
                 value = value.replace(secret, '[redacted]')
@@ -48,7 +49,7 @@ class JsonEvents:
             return '[non-finite]'
         if value is None or isinstance(value, (int, float, bool)):
             return value
-        return self.clean(str(value), depth+1)
+        return self.clean(str(value), depth + 1)
 
     def __call__(self, event, **fields):
         with self.lock:
@@ -63,11 +64,13 @@ class JsonEvents:
 def result_summary(value):
     """Compact outcome alongside the full, sanitized tool observation."""
     if isinstance(value, dict):
-        public = ('state', 'balanceMinor', 'currency', 'sent', 'recipient', 'reachable', 'ready', 'status', 'agent', 'hostname')
+        public = ('state', 'balanceMinor', 'currency', 'sent', 'recipient',
+                  'reachable', 'ready', 'status', 'agent', 'hostname')
         summary = {key: value[key] for key in public if key in value and
                    (value[key] is None or isinstance(value[key], (str, int, float, bool)))}
         if isinstance(value.get('addresses'), list):
-            summary['addresses'] = [item for item in value['addresses'][:20] if isinstance(item, str)]
+            summary['addresses'] = [item for item in value['addresses']
+                                    [:20] if isinstance(item, str)]
         return summary or {'keys': list(value)[:20]}
     if isinstance(value, list):
         return {'items': len(value)}

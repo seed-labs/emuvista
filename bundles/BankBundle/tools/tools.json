@@ -9,7 +9,7 @@
         "bank": {
           "type": "string",
           "minLength": 1,
-          "description": "Configured bank alias, such as seed-bank or north-bank; omit for the default bank."
+          "description": "Configured bank alias, such as south-bank or north-bank; omit for the default bank."
         }
       },
       "additionalProperties": false
@@ -25,25 +25,98 @@
         "bank": {
           "type": "string",
           "minLength": 1,
-          "description": "Configured bank alias, such as seed-bank or north-bank; omit for the default bank."
+          "description": "Configured bank alias, such as south-bank or north-bank; omit for the default bank."
         }
       },
       "additionalProperties": false
     }
   },
   {
-    "name": "bank.loans",
-    "handler": "handlers:loans",
-    "description": "Read your own bank loans. Optionally choose a configured bank alias.",
+    "name": "bank.card_payments",
+    "handler": "handlers:card_payments",
+    "description": "Read your own card payment history, including payment platform, actual recipient, description, amount and bank debit transaction ID.",
     "input_schema": {
       "type": "object",
       "properties": {
         "bank": {
           "type": "string",
-          "minLength": 1,
-          "description": "Configured bank alias, such as seed-bank or north-bank; omit for the default bank."
+          "description": "Configured bank alias"
         }
       },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "bank.products",
+    "handler": "handlers:products",
+    "description": "List account products available at your bank. No account is opened.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "bank": {
+          "type": "string",
+          "description": "Configured bank alias; omit for the default bank."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "bank.open_account",
+    "handler": "handlers:open_account",
+    "description": "Open a zero-balance bank account for yourself. Reuse the same UUID and productId when retrying an uncertain result. This does not deposit money.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "bank": {
+          "type": "string",
+          "description": "Configured bank alias; omit for the default bank."
+        },
+        "productId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36,
+          "description": "A UUID for this application; reuse it on retry."
+        }
+      },
+      "required": [
+        "productId",
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "bank.issue_card",
+    "handler": "handlers:issue_card",
+    "description": "Apply for a simulated debit card linked to your own active bank account. Reuse the same UUID and accountId on retry. The card shares the account balance and does not create money.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "bank": {
+          "type": "string",
+          "description": "Configured bank alias; omit for the default bank."
+        },
+        "accountId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36,
+          "description": "A UUID for this application; reuse it on retry."
+        }
+      },
+      "required": [
+        "accountId",
+        "id"
+      ],
       "additionalProperties": false
     }
   }

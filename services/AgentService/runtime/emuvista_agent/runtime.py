@@ -11,12 +11,13 @@ import time
 import types
 import uuid
 from .events import result_summary
+from .clock import ClockClient
 
 
 def validate(value, schema):
     supported = {'type', 'properties', 'required', 'additionalProperties', 'items',
                  'description', 'enum', 'minimum', 'maximum', 'minLength', 'maxLength'}
-    if set(schema)-supported:
+    if set(schema) - supported:
         raise ValueError('unsupported tool schema keywords')
     kind = schema.get('type')
     matches = {'object': isinstance(value, dict), 'array': isinstance(value, list),
@@ -24,14 +25,14 @@ def validate(value, schema):
                'number': type(value) in (int, float), 'boolean': type(value) is bool,
                'null': value is None}
     if kind not in matches or not matches[kind]:
-        raise ValueError('expected argument type '+str(kind))
+        raise ValueError('expected argument type ' + str(kind))
     if 'enum' in schema and value not in schema['enum']:
         raise ValueError('argument is outside its allowed values')
     if kind == 'object':
         props = schema.get('properties', {})
-        if set(schema.get('required', []))-set(value):
+        if set(schema.get('required', [])) - set(value):
             raise ValueError('required argument is missing')
-        if not schema.get('additionalProperties', False) and set(value)-set(props):
+        if not schema.get('additionalProperties', False) and set(value) - set(props):
             raise ValueError('unknown argument')
         for key, item in value.items():
             if key in props:
@@ -55,15 +56,21 @@ class AgentContext:
             raise PermissionError('run as the configured agent user')
         self.identity = config['identity']
         self.config = config
+        self.persona = config['persona']
+        self.id = self.persona['id']
+        self.name = self.persona.get('name', self.id)
+        self.background = self.persona.get('background', '')
+        self.accounts = self.persona.setdefault('accounts', {})
+        self.knowledge = self.persona.setdefault('knowledge', {})
+        self.possessions = self.persona.setdefault('possessions', {})
+        self.tool_config = config.get('tool_config', {})
+        self.clock = ClockClient(config['clock'])
         self.observer = None
         self.tools = ToolRegistry(self)
 
     @classmethod
     def load(cls, path='/etc/emuvista-agent/config.json'):
         return cls(json.loads(Path(path).read_text()))
-
-    def service(self, name):
-        return dict(self.config['services'][name])
 
     def emit(self, event, **fields):
         if self.observer is not None:
@@ -79,19 +86,19 @@ class ToolRegistry:
         for package in context.config['packages']:
             if not re.fullmatch(r'[a-z][a-z0-9_]*', package):
                 raise ValueError('invalid tool package')
-            path = Path(context.config['root'])/'packages'/package
-            for definition in json.loads((path/'tools.json').read_text()):
+            path = Path(context.config['root']) / 'packages' / package
+            for definition in json.loads((path / 'tools.json').read_text()):
                 name = definition['name']
-                if name in self.definitions or not name.startswith(package+'.'):
+                if name in self.definitions or not name.startswith(package + '.'):
                     raise ValueError('duplicate or invalid tool definition')
                 self.definitions[name] = definition
                 self.paths[name] = (package, path)
-        if self.allowed-set(self.definitions):
+        if self.allowed - set(self.definitions):
             raise ValueError('policy grants tools that are not installed')
 
     def list(self):
-        return [{key:definition[key] for key in ('name', 'description', 'input_schema')}
-                for name,definition in sorted(self.definitions.items()) if name in self.allowed]
+        return [{key: definition[key] for key in ('name', 'description', 'input_schema')}
+                for name, definition in sorted(self.definitions.items()) if name in self.allowed]
 
     def invoke(self, name, arguments, *, source='agent'):
         call_id = uuid.uuid4().hex
@@ -103,28 +110,28 @@ class ToolRegistry:
         except Exception as error:
             self.context.emit('tool_failed', tool=name, call_id=call_id,
                               source=source,
-                              duration_ms=round((time.monotonic()-started)*1000),
+                              duration_ms=round((time.monotonic() - started) * 1000),
                               status='denied' if isinstance(error, PermissionError) else 'error',
                               error=str(error))
             raise
         self.context.emit('tool_finished', tool=name, call_id=call_id, status='success',
                           source=source,
-                          duration_ms=round((time.monotonic()-started)*1000),
+                          duration_ms=round((time.monotonic() - started) * 1000),
                           result=result, summary=result_summary(result), detail_version=2)
         return result
 
     def _invoke(self, name, arguments):
         # Check before importing or executing any handler, including direct CLI calls.
         if name not in self.allowed:
-            raise PermissionError('tool is not authorized: '+name)
+            raise PermissionError('tool is not authorized: ' + name)
         definition = self.definitions[name]
         validate(arguments, definition['input_schema'])
         package, path = self.paths[name]
-        namespace = 'emuvista_tools_'+package
+        namespace = 'emuvista_tools_' + package
         if namespace not in sys.modules:
             module = types.ModuleType(namespace)
             module.__path__ = [str(path)]
             sys.modules[namespace] = module
         module, handler = definition['handler'].split(':')
-        function = getattr(importlib.import_module('.'+module, namespace), handler)
+        function = getattr(importlib.import_module('.' + module, namespace), handler)
         return function(arguments, self.context)

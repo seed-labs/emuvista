@@ -19,8 +19,10 @@ export interface BankReceipt {
   payer: string
   payee: string
   description: string
-  transferId?: string
-  bankTransferId?: number
+  payeeName: string
+  currency: string
+  ledgerHash?: string
+  bankTransactionId?: number
   error?: string
 }
 export function useFunding(group: () => string) {

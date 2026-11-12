@@ -1,433 +1,584 @@
 # AgentService design
 
-AgentService puts agents inside the simulated world. Each agent runs on a bound
-SEED host, has its own execution environment, and uses the deployed infrastructure
-through the simulated network. Applications provide tools; an interchangeable
-agent framework decides when to use them.
+The world is assembled in three stages: `createpeople`, `createworld` and
+`createagent`. A person describes who someone is. The world supplies infrastructure
+and its Services/Bundles independently of people. Agent creation combines the two,
+resolves personal account access and gives each person an execution environment
+and a selected agent framework inside the simulation.
 
-The examples below are Python-like pseudocode. They show responsibility and data
-flow, omitting protocol details and error handling unless these explain the
-design. Helper names are explanatory, not additional AgentService APIs.
+## Status and scope
 
-## The simulated world
+AgentService and E99 implement single-person creation and deployment-time
+framework generation described here. E99 loads people through `createpeople`,
+imports H99's `createworld`, and calls
+`AgentService.createagent` for each person. The people generator remains a
+handwritten JSON input. Examples below illustrate responsibilities and omit some concrete
+arguments; they are not separate command-line tools.
 
-```mermaid
-flowchart TB
-    Experiment["World / experiment configuration"] --> AgentService["AgentService<br/>Native SEED service"]
-    AgentService -.->|"Bind and deploy"| Alice
-    AgentService -.->|"Bind and deploy"| Bob
+The normal entrypoint is `agent = agentservice.createagent(config)`, with one
+person's structured configuration. It returns an Agent configuration object,
+assigns its virtual node name, and defaults to LangChain and all registered tools.
+It does not start a framework or contact a model. Existing optional setters remain:
 
-    subgraph World["SEED Emulator: simulated world"]
-        subgraph HostA["SEED host / Docker container A"]
-            Alice["Agent Alice<br/>Own process and Python environment<br/>Local tools and writable files"]
-        end
-        subgraph HostB["SEED host / Docker container B"]
-            Bob["Agent Bob<br/>Own process and Python environment<br/>Local tools and writable files"]
-        end
-        Network["Simulated network<br/>IP routing and DNS"]
-        Email["Email infrastructure"]
-        Payment["Payment infrastructure"]
-        Bank["Bank infrastructure"]
-        Other["Other infrastructure<br/>DNS, Chat, CloudDrive, etc."]
+- `setPersona(persona)`
+- `setTools(tools)`
+- `setFramework(framework)`
 
-        Alice <-->|"Application requests and observations"| Network
-        Bob <-->|"Application requests and observations"| Network
-        Network <--> Email
-        Network <--> Payment
-        Network <--> Bank
-        Network <--> Other
-    end
-```
+Other settings use defaults within the framework integration or existing experiment
+configuration. Additional Agent APIs should be introduced only when a concrete
+requirement appears. Normal SEED service installation, node binding, rendering
+and compilation remain part of deployment.
 
-The dashed arrows describe deployment: AgentService is a SEED service layer that
-configures agents and binds their virtual nodes to hosts. Each agent gets a
-separate host/container, Python environment, process user and working files. The
-solid arrows describe runtime communication through the simulated network.
+Top-level code declares metadata, objects and their relationships. Each object
+stores those declarations. Framework- and compiler-specific deployment code reads
+the metadata during configure/install to generate actual files and commands.
 
-An agent can read mail, make a payment or query a bank just as a program on a user
-machine would. Its network position, DNS settings and application credentials
-influence what it can observe and do. Applications remain independent Services or
-Bundles and can run without agents.
-
-The agent's planning loop, tools and protocol clients all run inside its container.
-An LLM endpoint may be external, but using that endpoint does not move the agent
-outside the simulation. Network access to the model is configured by the experiment.
-
-The experiment assembles these independent parts before agents start:
-
-```python
-world = configure_network_and_applications()       # Infrastructure and accounts
-agents = AgentService()
-for application in selected_applications:
-    agents.addToolsFrom(application)               # Select its tool package
-
-for person in residents:
-    agent = agents.install(person.name)
-    agent.setFramework(adapter_directory)
-    agent.setService("email", person.mail_connection)
-    agent.setService("payment", person.wallet_connection)
-    agent.allowTools(*available_tool_names)
-    bind_to_own_host(agent, person.host)           # Normal SEED virtual-node binding
-
-compile_world(world, agents)                      # Render, attach bundles, compile
-# Compilation prepares deployment files; it does not run the agents.
-```
-
-E99 gives every resident the same tool entrypoints, but separate application
-accounts. Installing email infrastructure and selecting its tools are explicit
-experiment choices; deployment alone does not automatically register tools.
-
-## Inside AgentService
-
-AgentService separates deployment, framework-specific decision making and
-service-specific interaction. It installs the runtime in each agent container;
-there is no separate tool server between the agent and the applications.
-
-```mermaid
-flowchart TB
-    Packages["Service-owned tool packages<br/>Manifest and Python handlers"] -->|"getAgentTools()"| Setup
-    Frameworks["Framework adapter<br/>LangChain or another framework"] --> Setup
-    Configuration["Experiment configuration<br/>Accounts, connections, resident profiles and tool grants"] --> Setup
-    Setup["AgentService<br/>Select packages, configure agents and deploy"]
-
-    Setup -.->|"Install adapter"| Adapter
-    Setup -.->|"Copy tool code"| Handlers
-    Setup -.->|"Configure discovery and grants"| Registry
-    Setup -.->|"Write per-agent settings"| Context
-
-    subgraph Container["Agent container: local execution environment"]
-        Adapter["Agent framework + adapter<br/>Planning, memory and decision loop"]
-        Registry["Local tool registry<br/>Discovery, authorization and input validation"]
-        Handlers["Tool handlers<br/>Service-specific login, protocols and result parsing"]
-        Context["AgentContext<br/>Identity, connection settings and credentials"]
-        Local["Own files and local commands"]
-        Events["Local event log<br/>Authentication secrets redacted"]
-
-        Adapter <-->|"Discover tools, invoke tools, receive observations"| Registry
-        Registry <-->|"Dispatch calls and return results"| Handlers
-        Context --> Handlers
-        Handlers <--> Local
-        Adapter -->|"Lifecycle events"| Events
-        Registry -->|"Tool arguments and results"| Events
-    end
-
-    Handlers <-->|"Normal APIs and protocols over the simulated network"| Infrastructure["Deployed infrastructure<br/>HTTP, SMTP, IMAP, DNS, etc."]
-    Events -.->|"Read-only collection"| Observer["Optional host-side observer<br/>E99 dashboard"]
-```
-
-### Tools connect agents to the world
-
-Each application maintains its own tool package. A package describes the available
-operations and implements how to perform them: for example, reading a mailbox,
-sending a chat message or making a payment. The service exports this package with
-`getAgentTools()`. The experiment selects it through `addToolsFrom(...)`, and
-AgentService copies the selected packages into agent images and installs their
-dependencies.
-
-Registration is local to the agent runtime. The registry loads the package
-manifests, associates tool names with their handlers, and exposes only the tools
-allowed for that agent. All selected packages are currently copied to each agent
-managed by the same AgentService; the per-agent allowlist determines which
-entrypoints are available through discovery and invocation.
-
-A tool call follows this path:
-
-1. The framework receives the authorized tools' names, descriptions and input
-   schemas, then chooses an operation and its arguments.
-2. The local registry checks the agent's tool grant and validates the arguments.
-3. The handler obtains that agent's application connection and credentials from
-   `AgentContext`, then calls the real application through the simulated network.
-   Local diagnostic tools can instead inspect files or run commands in that
-   agent's own container.
-4. The handler converts the response into an observation. The framework uses it
-   to update its understanding and choose its next action.
-
-For example, `email.inbox` logs into the agent's mailbox over IMAP and returns
-messages. The agent may then choose `payment.transfer`; that handler authenticates
-as the agent's payment user and submits a transfer to the payment API. Balances and
-messages come from the running applications, rather than a separate model of the
-world maintained by AgentService.
-
-The registry controls tool entrypoints; applications enforce their own account
-permissions and business rules. Granting a payment tool does not grant access to
-another user's funds. The local allowlist is not a sandbox for arbitrary code
-running in the agent process. Likewise, a local PKI tool does not acquire command
-access or administrator privileges in another container.
-
-Registration and invocation are two different moments:
-
-```python
-# Compilation: collect source code and make it available inside each agent image.
-package = application.getAgentTools()              # tools.json + Python handlers
-copy_package_into_agent_image(package)
-
-# Agent startup: register definitions locally; defer handler imports until needed.
-for package in installed_packages:
-    for definition in read_manifest(package):
-        registry.register(definition.name, definition, package.directory)
-
-# Runtime: every framework and the local CLI use the same invocation path.
-def invoke(name, arguments):
-    emit("tool_started", name, arguments)
-    try:
-        require_allowed(name)                     # Before importing a handler
-        validate(arguments, registry[name].input_schema)
-        handler = load_handler(registry[name])
-        result = handler(arguments, agent_context)
-    except Exception as error:
-        emit("tool_failed", name, error)
-        raise
-    emit("tool_finished", name, result)
-    return result
-
-def email_inbox(arguments, context):
-    connection = context.service("email")         # This resident's account
-    return read_mail_over_imap(connection, arguments)
-```
-
-The registry knows how to locate and call a tool. The email handler knows IMAP;
-the payment handler knows the payment API. Neither needs to know which agent
-framework chose the call. Events retain complete business arguments and results;
-the event writer redacts authentication secrets before writing logs. E99's
-observer reads those records to display tool calls and mail bodies, without
-executing the tools itself.
-
-### Framework adapters connect decision engines to the runtime
-
-AgentService does not implement one particular planning algorithm. A framework
-adapter supplies `run(context)` and connects its framework to two local operations:
-`context.tools.list()` and `context.tools.invoke(name, arguments)`.
-
-The adapter translates tool definitions into the framework's format, routes calls
-through the registry, and returns observations to the framework. Prompts, memory,
-model settings and the decision loop belong to the adapter and experiment.
-Service handlers retain their own protocol and authentication logic.
-
-E99 currently uses a LangChain adapter. Another framework can provide a different
-adapter without changing the application tools or business-service images. A
-simple script runner uses the same tool entrypoints without an LLM. Runtime events
-report agent progress and complete business tool arguments/results to an observer,
-with authentication secrets removed. This is independent of the chosen framework.
-E99 starts infrastructure first, verifies initialization and reachability, then
-starts resident containers; later outages remain observations for residents.
-
-The adapter is the translation layer, rather than a second implementation of
-each application's tools:
-
-```python
-def run(context):
-    framework_tools = []
-    for definition in context.tools.list():
-        framework_tools.append(framework.wrap_tool(
-            name=definition.name,
-            description=definition.description,
-            schema=definition.input_schema,
-            callback=lambda arguments, name=definition.name:
-                context.tools.invoke(name, arguments),
-        ))
-    framework.run(tools=framework_tools, profile=resident_profile)
-```
-
-Replacing `framework` changes the decision engine and its loop. The registry,
-application handlers and deployed applications keep the same responsibilities.
-
-## E99: starting the world and living in it
-
-The following behavior belongs to the E99 experiment and its LangChain adapter.
-AgentService provides deployment and local tool execution; it does not require
-every experiment to use this startup policy or resident loop.
-
-### Infrastructure readiness precedes resident life
-
-```mermaid
-flowchart TD
-    Start["Start infrastructure<br/>Agent profile stays disabled"] --> Init["Wait for initialization jobs<br/>and container health checks"]
-    Init --> Probe["Probe HTTPS, SMTP and IMAP<br/>from a host in AS171"]
-    Probe --> Ready{"All checks passed?"}
-    Ready -->|"No; time remains"| Init
-    Ready -->|"Failure or timeout"| Stop["Report failure<br/>Do not start agents"]
-    Ready -->|"Yes"| Gate["Infrastructure ready"]
-    Gate --> Agents["Start agent containers<br/>Automatically or after manual inspection"]
-    Agents --> Life["Each resident runs its own life loop"]
-```
-
-```python
-def start_world(infrastructure_only=False, agents_only=False):
-    if not agents_only:
-        compose.start_infrastructure()            # Agents use an opt-in profile
-
-    wait_until_ready(
-        initialization_jobs_exit_successfully,
-        infrastructure_containers_healthy,
-        https_smtp_imap_reachable_from_as171,
-    )                                            # Abort on failure or timeout
-
-    if not infrastructure_only:
-        compose.start_agents()
-```
-
-`start.py --infrastructure-only` stops at the ready state, leaving the world
-running for manual inspection. `--agents-only` checks readiness again before
-starting residents. A successful initial check cannot guarantee permanent
-availability; later service failures become tool observations that residents can
-respond to.
-
-### Residents choose actions from their own observations
+## Three stages of world creation
 
 ```mermaid
 flowchart LR
-    Wake["Wake up"] --> Recall["Recall conversations,<br/>intentions and attempted actions"]
-    Recall --> Decide["Framework chooses<br/>a next action"]
-    Decide -->|"Use a tool"| Tool["Local registry and handler"]
-    Tool --> Observe["Real service result or error<br/>Record activity"]
-    Observe --> Decide
-    Decide -->|"Rest or finish this moment"| Rest["Save memory and wait"]
-    Rest --> Wake
+    People["createpeople<br/>Load people with stable IDs"] --> Initial["people.json<br/>Personal information"]
+    Market["market.json<br/>Shop inventory and ownership"] --> People
+    World["H99 createworld<br/>Native SEED infrastructure"] --> Infrastructure["Emulator and business service configuration"]
+    Initial --> Agents["createagent<br/>Combine people and world"]
+    Infrastructure --> Tools["Tool packages<br/>Private instance configuration"]
+    Tools --> Install
+    Agents --> Personas["Agent members<br/>Identity, accounts, knowledge and possessions"]
+    Personas --> Install["SEED configure / install<br/>Generate framework deployment files"]
+    Install --> Compile["Compile and build images"]
+    Compile --> Run["Start containers<br/>Agents operate inside the world"]
+    Run -.-> Collect["Read-only data collection"]
 ```
+
+### createpeople: describe the people
+
+A future generator will produce personal information. For now, a JSON file is
+sufficient. A person is independent of the framework used to run them and of the
+container on which they will eventually live.
+
+```json
+{
+  "people": [
+    {
+      "id": "4de4ceb9-78be-4d9b-8236-6d080b70d1f9",
+      "name": "Alice",
+      "background": "Alice enjoys photography and getting to know people.",
+      "interests": ["photography", "cooking"],
+      "relationships": [{"person": "18d0a020-1e17-4603-bd52-e3fa5e2d3e85", "relationship": "friend"}],
+      "accounts": {
+        "email": {
+          "email": "alice@mail.com",
+          "password": "example-password"
+        }
+      }
+    },
+    {
+      "id": "18d0a020-1e17-4603-bd52-e3fa5e2d3e85",
+      "name": "Bob",
+      "background": "Bob enjoys music and considers purchases carefully.",
+      "interests": ["music", "games"]
+    }
+  ]
+}
+```
+
+The stable `id` identifies the person independently of their name, mailbox, bank
+account or deployment host. E99 uses canonical UUIDs generated once and saved in
+`people.json`; loading a file never generates replacement IDs. Names can change
+or repeat. Runtime event identity, framework threads and saved-memory directories
+use the person ID. Virtual node and container names describe deployment only.
+The fields above are an initial example, not a complete schema for the future
+people generator. Personal facts, background, preferences, relationships and
+personal account information belong here. A person's mailbox, payment identity,
+bank accounts and personal credentials are part of their persona. Service addresses,
+protocol settings and wallet routing maps belong to tools, supplied by the configured
+Bundle instances. More than one account or
+bank instance can be represented in the corresponding account data when needed.
+
+An initial file may include existing accounts as above. E99 passes each person's
+configuration directly to `AgentService.createagent`, separately initializes
+application accounts, and collects configured tool packages.
+`createpeople` does not require a world or create
+business accounts. E99's `people.json` owns each person's `accounts.email`,
+`accounts.payment` and `accounts.bank` declarations, including initial personal
+balances and cards. Mailbox addresses are explicit, never inferred from names or IDs.
+Bank registration uses the declared mailbox credentials and the person UUID as
+its external customer identifier.
+The initial persona is sometimes described as the person's soul; it is distinct
+from the memories accumulated while running.
+
+The framework integration uses descriptive fields to build the framework's profile
+or prompt. Tools read private account fields to authenticate. The full persona
+JSON must not be copied wholesale into the model prompt: account passwords and
+other authentication material are excluded from prompt rendering and redacted
+from observation logs. No framework-specific Python class or memory database is
+required in the people file.
+
+### Preparing the initial context
+
+Preparation separates personal facts, account access, initial knowledge and owned
+assets. Account access contains a person's account declarations and credentials. The model
+receives only the account information needed for business choices, such as its
+email and available account types. Service URLs, protocol ports, authentication
+endpoints and wallet routing IDs are private tool configuration. A model calls a
+tool with business arguments; the tool resolves the destination, authenticates
+and issues the protocol request. Owned assets also have a public description and a tool-side payload; E99
+shows the shop's product metadata while retaining delivery contents in inventory.
 
 ```python
-while not stopping:
-    memory = recall_personal_memory()
-    emit("waking", intention=memory.intention)
-    observation = {"time": now(), "memory": memory, "recent_activity": recent_calls()}
-    try:
-        # Several calls can occur; reserve steps for a normal pause at the budget.
-        result = framework.resume(conversation_history, observation, step_limit)
-        save_conversation(result)
-        rest = chosen_wake_time_or_default()
-    except ModelOrLoopError:
-        keep_attempted_tool_calls()               # A payment may already be accepted
-        rest = recovery_backoff()
-    wait_until_next_moment(rest)
+people = createpeople('people.json')
+for person in people:
+    agent = agentservice.createagent(person)
 ```
 
-The wake-up observation is generated locally; it contains no externally assigned
-purchase or message task. The resident's background, memory and service results
-inform its choices. Carol's background describes a shop owner, but does not force
-other residents to buy. `life.remember`, `life.recall` and `life.rest` give the
-resident explicit ways to retain intentions and choose pauses. The adapter bounds
-model context and steps per moment; complete tool results remain in event logs.
+E99 keeps personal fields and account declarations in `people.json`, and product
+definitions in `market.json`. `createpeople` assembles the initial contact directory
+and owned inventory before passing each person to AgentService.
+The market's `owner` is a stable person UUID. Only the owner's possessions contain
+the products and delivery payloads. Other people start without product knowledge.
+The JSON inputs do not repeat the product catalog for every person.
+E99's `initialize_accounts` function lives in `virtual_world_with_agents.py` and
+declares application account metadata;
+tool configuration is collected separately from Bundle exports in `prepare_tools(bundles)`.
+`createagent(config)` copies one person's configuration into the deployment
+object's `_persona` dictionary. Personal fields are stored there once; install
+writes that dictionary directly into the runtime configuration. `agent.vnode`
+identifies its deployment slot. The runtime context exposes personal members
+for framework and tool execution.
 
-Before another model decision would consume the reserved graph steps, the adapter
-returns a local pause message with no tool requests. The graph ends normally, its
-complete conversation is saved, and the resident rests. This is an activity
-boundary rather than a failed moment; it makes no extra LLM request. The next
-moment receives that history and recent tool observations.
+E99 runs a small HTTP shop catalog in the owner's Agent container. The experiment
+declares its startup and registers its address as private shop tool configuration.
+`shop.catalog` makes a real network request; its result introduces product
+descriptions and prices into the customer's conversation. It does not read a
+preloaded product list from the customer's knowledge. Quotes and verified delivery
+remain owner tools. AgentService itself does not know about shops or start them.
 
-Attempt records matter when a request times out: the service might already have
-accepted it. Residents are instructed to inspect receipts or ask the other person
-before repeating payments. Memory alone does not guarantee exactly-once actions.
-
-### Example: a voluntary purchase
-
-This is one possible interaction, not a scheduled sequence. Quoting and delivery
-are experiment-owned `shop` tools; transfers and mail still use the independent
-Payment and Email infrastructure.
+When the container starts, the framework's `build_system_prompt` reads these
+members to render the personal profile, account types, initial knowledge and
+asset descriptions. It adds default instructions for continuous autonomous life.
+Account credentials and asset `content` payloads are excluded. Tool descriptions
+explain service-specific business workflows; framework code contains no bank or
+payment endpoint configuration. Storing a member does not automatically expose
+it to the model: only prompt sections and tool observations do so.
 
 ```mermaid
-sequenceDiagram
-    participant Buyer as Buyer agent
-    participant Mail as Email infrastructure
-    participant Seller as Carol agent
-    participant Payment as Payment infrastructure
-    participant Bank as Bank infrastructure
-    Buyer->>Mail: Ask about a product
-    Mail-->>Seller: Read inquiry through email.inbox
-    Note over Seller: shop.quote records a local order
-    Seller->>Mail: Reply with price and order reference
-    Mail-->>Buyer: Read quote
-    alt Buyer chooses wallet balance
-        Buyer->>Payment: payment.transfer with order reference
-    else Buyer chooses a bank card
-        Buyer->>Payment: Link a chosen card, then payment.card_payment
-        Payment->>Bank: Bank API request through configured connection
-        Bank-->>Payment: Debit outcome
-    end
-    Payment-->>Buyer: Payment status and transfer identifier
-    Buyer->>Mail: Tell seller the transfer identifier
-    Mail-->>Seller: Read buyer's message
-    Seller->>Payment: shop.deliver calls payment.receipt
-    Payment-->>Seller: Actual ledger receipt
-    Seller->>Mail: Send product only after receipt checks pass
-    Mail-->>Buyer: Receive actual product text
+flowchart LR
+    Person[Personal facts] --> Initial[Prepared initial context]
+    Access[Personal account credentials] --> Tools[Tool authentication and protocol calls]
+    Bundles["Configured Bundles<br/>Service addresses and routing maps"] --> Config["tool_config<br/>Separate from persona"]
+    Config --> Tools
+    Access --> Overview[Available account types]
+    Overview --> Initial
+    Knowledge[Initial knowledge] --> Initial
+    Assets[Owned assets] --> Description[Asset descriptions]
+    Assets --> Payload[Tool-side asset contents]
+    Description --> Initial
+    Initial --> Members[Agent members]
+    Members --> Prompt["Framework startup<br/>Render system prompt"]
+    Members --> Tools
+    Time[Time observations] --> Conversation[Native conversation and memory]
+    Results[Tool results] --> Conversation
+    Prompt --> Model[Model calls]
+    Conversation --> Model
 ```
 
-Card linking uses `world.link_card` to compose the payment and bank APIs with the
-resident's own account. Subsequent payments use the linked source identifier;
-the model does not handle authorization codes or bank login credentials.
+Agent decision calls use the framework's assembled system prompt. During the
+run, time observations and tool results enter the framework conversation, and its
+native checkpointer and summarization retain experience. Starting knowledge does
+not assert current balances, service availability or transaction outcomes.
+
+### createworld: supply the environment
+
+This stage configures the shared network and selected Services/Bundles. It reads
+world configuration, without receiving people, loading `people.json`, modifying
+personas or building personal prompts. Infrastructure can be compiled and used
+without creating any Agents. World configuration contains service settings,
+financial products and institutional administrator and sender accounts.
+Personal accounts and opening balances belong to people, not to `world.json`.
+The world builder never derives mailbox users from bank customer lists.
+`world.json` maps instance names to service settings. Each entry uses the common
+`hostname`, `asn`, `port` and `configuration` fields; Bundle types are defined in code. Application-specific
+settings stay with their own entry. There is no separate hostname map or bank list.
+Each entry's `connections` lists partner instance names: `email` for a bank's
+mail providers and `bank` for a payment application's banking partners. The world
+builder makes two passes to call `connectEmail()` and `connectBank()`. These calls
+record references only; Bundle `configure()` methods resolve the protocol
+settings, OAuth clients, callbacks, direct debit/credit settings and startup dependencies.
+
+H99 loads `world.json` once and keeps the settings inside that example.
+`createworld(state=None)` returns two objects: the native unrendered SEED `Emulator`
+and a separate map of declared application Bundles. No example fields are added
+to the Emulator. Mini Internet always includes DNSSEC and external IPv4 access.
+E99 receives the Bundles without a configuration-file argument or another load.
+After adding Agents, call `emu.render()` and pass `createcompiler(bundles)` to
+`emu.compile()`. This helper attaches containers to rendered networks and registers
+the Bundles with the native Docker compiler. Compilation calls their `configure()`
+and `install()` as usual; there is no compiler extension or additional Bundle class.
+E99's `initialize_accounts(people, bundles)` calls `EmailBundle.addUser`,
+`PaymentBundle.addUser` and `BankBundle.addCustomer`. Each Bundle manages its own
+initial configuration through its existing validation. Application
+initialization runs after containers start through bundle initializers. Mailboxes
+are created before bank customer registration through an explicit initializer
+dependency.
+
+H99 does not import AgentService, register tools or load the experimental shop.
+Service-owned tool exports and experiment-local tools are collected by E99's
+main flow; the personal shop is declared alongside its owner.
+
+The construction result is a native `Emulator`, without a wrapper class, custom
+compile method or attached people/tool attributes. Mail, balances and transactions
+belong to their application services. Live world information is obtained through tools
+and network communication; no Agent world-configuration setter is needed.
+
+### createagent: put people into the world
+
+The main flow creates AgentService with configured tools, passes each person's
+JSON entry to `agents.createagent(person)`, and binds that Agent to a host.
+There is no experiment-level creation wrapper. Input people are copied and remain
+unchanged. Framework-specific files are generated later during Service installation.
+
+The ordinary experiment entrypoint is:
 
 ```python
-def deliver_order(order_id, transfer_id):
-    order = read_local_order(order_id)
-    if order.status == "delivered":
-        return order                             # No second delivery
-    if order.status in ("delivering", "delivery_uncertain"):
-        return require_delivery_review(order)
-
-    receipt = tools.invoke("payment.receipt", {"id": transfer_id})
-    # Check committed state, amount, currency, seller, order reference and funding.
-    require_receipt_matches(order, receipt)
-    require_receipt_not_used_for_another_order(receipt)
-    save_order(order, status="delivering")
-    try:
-        delivery = tools.invoke("email.send", product_message(order))
-        require(delivery.sent)
-    except Exception:
-        save_order(order, status="delivery_uncertain")
-        raise                                    # Inspect before retrying
-    save_order(order, status="delivered")
+people = createpeople("people.json")
+emu, bundles = createworld()  # Optionally pass args.state.
+initialize_accounts(people, bundles)  # E99 account setup; not part of H99.
+agents = AgentService(tools=prepare_tools(bundles))
+network = emu.getLayer('Base').getAutonomousSystem(171)
+for index, person in enumerate(people, 1):
+    agent = agents.createagent(person)
+    network.createHost(agent.vnode).joinNetwork('net0', address=f'10.171.0.{79+index}')
+    emu.addBinding(Binding(agent.vnode, filter=Filter(asn=171, nodeName=agent.vnode)))
+emu.addLayer(agents)
+emu.render()
+emu.compile(createcompiler(bundles), "output", override=True)
 ```
 
-Order state lives in the seller's files. Mail lives on the mail server, and money
-lives in the bank/payment systems. A model's claim that a payment succeeded does
-not substitute for a ledger receipt. Delivery here means SMTP acceptance of the
-product email, not proof that the buyer has read it. The observer shows completed
-orders alongside the underlying tool arguments and results.
+`agents.createagent(person)` creates a configuration object under an automatically
+assigned SEED virtual node name. That deployment name is independent of `person["id"]`.
+The configuration supplies the stable person ID used by runtime memory and events, and the display name used
+in the interface. Later, normal SEED binding resolves the virtual node and
+`AgentServer.install` prepares its container. Renaming a person or reordering
+people does not change their ID or their saved-memory directory.
 
-The concrete implementation lives in E99's [startup coordinator](../../experiments/E99_virtual_world/start.py),
-[framework adapter](../../experiments/E99_virtual_world/adapters/langchain/adapter.py),
-[shop tools](../../experiments/E99_virtual_world/tools/shop/handlers.py) and
-[observer](../../experiments/E99_virtual_world/monitor.py).
+## Agent creation and optional settings
 
-## What infrastructure developers provide
+| API | Meaning | What it prepares |
+| --- | --- | --- |
+| `agentservice.createagent(config)` | Create one person's Agent from structured metadata. | An Agent object with an assigned `vnode`, default framework and all registered tools. |
+| `setPersona(persona)` | Assign this person's information and personal accounts. | Descriptive fields for the framework profile, and private credentials for tool handlers. Service connections are supplied separately by tool packages. |
+| `setTools(tools)` | Specify which tools from the available catalog this Agent can use. | The callable tool set exposed to the framework. The current default is all available tools. |
+| `setFramework(framework)` | Select the framework integration used to generate and start this Agent. | Framework dependency, configuration, native memory and application-entrypoint defaults. |
 
-A service integration has two parts: deploy usable infrastructure, and provide the
-tools an agent needs to interact with it. Keep them together:
+`setFramework("langchain")` selects a supported integration by name.
+Examples do not supply a runtime adapter directory. The caller does not choose checkpoint paths, thread identifiers,
+dependency versions or lifecycle settings in ordinary examples.
+
+`setTools` describes available capabilities. It does not supply accounts or modify
+persona. Tool availability does not grant access to another person's funds or
+mailbox; applications continue to authenticate requests and enforce business rules.
+For this iteration every Agent gets the same complete registered world-tool set.
+Examples leave this setter unset. `setTools` can select a subset of registered names, but E99 does not use it.
+Finer authorization is deferred; no extra policy setters or permission system
+are introduced here.
+
+The tool catalog is supplied to AgentService during Agent creation; the
+constructor argument in the pseudocode illustrates that shared input rather than
+a separate per-Agent configuration step. Infrastructure developers retain the
+existing `getAgentTools()` export. There is no personal service-binding variable
+combining credentials with tool package references.
+
+Settings are copied and checked before rendering. Repeating a setter replaces its
+value. Framework and tool definitions provide normal defaults. Registering tools
+does not deploy their infrastructure, create an account or run a business action.
+Persona supplies personal identity and accounts; the framework supplies runtime
+memory; the world supplies infrastructure and the available tool catalog.
+
+## Deployment through configure / install
+
+Framework adaptation belongs to the Service deployment lifecycle. AgentService
+selects an internal framework deployment module during configure/install. This
+module translates persona, available tools and defaults into files and commands
+for the selected framework.
+
+```mermaid
+flowchart TB
+    Settings["Agent settings<br/>Persona, tools, framework"] --> Configure["AgentService configure<br/>Resolve host and validate settings"]
+    Configure --> Install["AgentServer.install on the host"]
+    Install --> Framework["Selected framework deployment module<br/>Deployment-time Python code"]
+    Framework --> Dependencies["Build instructions<br/>Framework and tool dependencies"]
+    Framework --> Files["Generated files<br/>Native configuration, tools and application entrypoint"]
+    Framework --> Command["Node startup command"]
+    Dependencies --> Image["Compiler output and Docker image"]
+    Files --> Image
+    Command --> Image
+    Image --> Container["Container startup<br/>Run the framework application directly"]
+```
+
+Conceptually, installation performs:
+
+```python
+def install(self, node):
+    framework = select_framework_deployment(self.framework)
+    tools = select_tools(self.available_tools, self.tools)  # Default: all.
+    install_common_tool_runtime(node, tools)
+    framework.install(
+        node,
+        identity=self.identity,
+        persona=self.persona,
+        tools=tools,
+    )
+```
+
+The framework-specific deployment module uses existing node operations:
+
+```python
+def install(node, identity, persona, tools):
+    node.addBuildCommand(framework_dependency_installation())
+    node.setFile(configuration_path, generate_configuration(identity, persona))
+    node.setFile(entrypoint_path, generate_framework_application(tools))
+    node.appendStartCommand(framework_start_command())
+```
+
+These helpers illustrate responsibilities, not additional public Agent APIs.
+The module declares required packages and writable data locations using internal
+defaults. It does not import an instantiated framework on the deployment host or
+open an Agent's live memory database during compilation.
+
+There is no separate runtime Adapter layer between AgentService and the framework.
+There is also no new Docker compiler extension. The selected module is deployment
+code called from configure/install, using the existing SEED node APIs.
+
+A framework with a native executable can be started with its normal command and
+generated configuration. A library such as the currently used LangChain integration
+needs an application entrypoint that calls native framework APIs. AgentService
+can generate that entrypoint during install; the example author does not provide
+an `adapter.py` file. This program is the framework application, not a separate
+controller around it. Generating deployment files does not create an in-memory
+framework instance; that instance is created when its application starts.
+
+LLM endpoint/model/API-key values are read from the experiment's runtime environment
+with default wiring. Keys are not baked into the generated application or image.
+
+## Runtime inside the simulated world
+
+```mermaid
+flowchart TB
+    subgraph Simulation["SEED simulated world"]
+        subgraph Container["One Agent host / container"]
+            Framework["Configured framework application<br/>Observe, decide, act, wait and continue"]
+            Memory["Framework-native memory"]
+            Registry["Local tools<br/>Definitions, validation and dispatch"]
+            Handlers["Service-owned protocol handlers"]
+            Context["Persona<br/>Personal account information"]
+            ClockClient["Internal clock client<br/>Not a tool"]
+            Events["Tool and framework events"]
+            Framework --> ClockClient
+            Framework <--> Memory
+            Framework <--> Registry
+            Registry <--> Handlers
+            Context --> Handlers
+            Registry --> Events
+            Framework --> Events
+        end
+        Network["Simulated network<br/>Routing and DNS"]
+        ClockServer["ClockServer container<br/>Current host time in UTC"]
+        Email["Email"]
+        Payment["Payment"]
+        Bank["Bank"]
+        Handlers <--> Network
+        ClockClient <--> Network
+        Network <--> ClockServer
+        Network <--> Email
+        Network <--> Payment
+        Network <--> Bank
+    end
+    Events -.-> Collector["Read-only data collection / dashboard"]
+```
+
+Starting the container starts its framework application with the generated
+configuration, persona and tools. After startup, observations, tool use, memory
+and continuation are local to that framework execution. No external controller
+assigns a new business task or periodically activates the Agent. The collector
+observes results without driving behavior or modifying memory.
+
+ClockServer is a native SEED Server owned by AgentService, alongside its AgentServers.
+The example binds `agents.clock.vnode` to a separate host. During configure/install,
+AgentService resolves its internal address, generates the HTTP server and health
+check, and gives each Agent a clock client. The clock container is infrastructure;
+`start.py` waits for it to become healthy before starting Agents.
+
+The selected framework integration reads `context.clock.now()` over the simulated
+network before each model decision, including decisions after tool results. In the
+LangChain integration, model-call middleware adds a fresh time observation to that
+request. This observation does not accumulate in checkpointed messages or alter
+the persona. The shared server follows real host time in UTC, and rest deadlines
+use the same source.
+
+```text
+Read ClockServer → Model decision → Chosen tools or rest → Next decision
+```
+
+Reading time is a fixed workflow step. The model continues to choose its actions
+and when to rest. `time_observed` events expose clock reads to observation without
+presenting them as tool calls. Top-level code only declares the server's binding;
+no per-Agent clock settings or public clock tool are added.
+
+The model endpoint may be external, but the tool execution environment and
+application clients remain in the simulation. Network access to the model is an
+experiment deployment concern. H99 applications use internal domains with HTTP,
+SMTP and IMAP. AgentService does not generate or distribute certificates. The
+model SDK handles the configured external API connection.
+
+For example, a person may send an email, choose to wait, then consider checking
+for a reply. The configured framework execution carries this forward using its
+own state and supported execution mechanisms. It must not depend on an external
+script issuing a fresh instruction to check mail.
+
+Continuous autonomous operation is a requirement of the framework application,
+not an automatic consequence of installing a framework library. The selected
+integration must establish a supported execution strategy for observation,
+waiting, recovery and continuation, including normal execution limits. This must
+be checked as part of integration. The LangChain deployment uses a native
+LangGraph resident state graph containing the conversation agent as a subgraph.
+Graph nodes perform time observation and waits; the native executor owns
+continuation, and model calls have an independent per-activity budget. There is
+no built-in `run_forever` claim or external loop invoking the conversation agent.
+
+## Framework-native memory and default state
+
+The framework supplies memory implementation. The generated application configures
+and calls it; AgentService does not maintain a parallel memory engine or manually
+save/reconstruct conversation history in `Experience` or personal JSON files.
+
+LangChain uses a stable thread per person, a native LangGraph checkpointer with
+a local SQLite backend, and framework-provided summarization and context management. Paths, thread IDs and dependency choices are internal integration
+defaults. They are not additional Agent setters. These defaults are applied when
+generating the framework application, and the database is opened at runtime.
+See [short-term memory](https://docs.langchain.com/oss/python/langchain/short-term-memory),
+[SqliteSaver](https://reference.langchain.com/python/langgraph.checkpoint.sqlite/SqliteSaver)
+and [framework middleware](https://docs.langchain.com/oss/python/langchain/middleware/built-in).
+
+That checkpoint provides continuity within the person's persistent thread.
+Cross-thread semantic memory would use the framework's native persistent store
+if required later. The initial revision does not add a vector database, a custom
+note store or another public memory API. See [long-term memory](https://docs.langchain.com/oss/python/langchain/long-term-memory).
+
+The initial persona JSON remains distinct from accumulated runtime memories.
+Order records, balances, mail and framework memory also have different owners:
+
+| Data | Owner |
+| --- | --- |
+| Personal identity, background and service account access | Persona JSON, loaded by `createpeople` and prepared for execution by `createagent`. |
+| Conversation and remembered runtime observations | The selected framework's native memory. |
+| Mail, money, cards and transactions | Their deployed application services. |
+| Local shop order/delivery bookkeeping, if used | The shop tools' business data. |
+| Model/tool activity and outcomes collected for research | Events and observation data. |
+
+The integration declares framework data locations internally so the experiment
+can preserve them with its existing `--state` policy. Ordinary users do not choose
+a per-Agent state path. Without saved state, a fresh world starts with fresh
+runtime memory; with saved state, native framework data is retained separately
+for each Agent. A reused persona alone does not restore the previous conversation.
+
+Checkpointed memory does not guarantee exactly-once payment or delivery. A request
+may succeed before its result is saved. Application receipts and idempotency
+identifiers remain necessary when an outcome is uncertain; model recollection
+cannot substitute for transaction records.
+
+## Infrastructure tools and observation
+
+Each infrastructure maintainer provides a deployable Service/Bundle and a tool
+package alongside it:
 
 ```text
 services/<Service>/              bundles/<Bundle>/
-|-- ... application deployment  |-- ... application deployment
+|-- ... deployment              |-- ... deployment
 `-- tools/                      `-- tools/
     |-- tools.json                  |-- tools.json
     |-- handlers.py                 |-- handlers.py
     `-- ... protocol helpers        `-- ... protocol helpers
 ```
 
-The maintainer provides:
+`getAgentTools()` on a configured Bundle exports the package source and a
+`configuration` map keyed by instance name. Tool metadata describes operation names,
+arguments, descriptions and handlers. Dependencies belong to the package. The
+Agent creation collects these exports into the available-tool catalog.
+AgentService uses that catalog, with all tools available by default; `setTools`
+is the capability-selection entrypoint. The framework deployment module prepares
+the framework's callable tool representation. Tool references are not stored as
+part of a person's identity or credentials. Exports of the same package share
+code and merge named instance settings; for example, South Bank and North Bank
+use the same bank tool code with different addresses. AgentServer writes these
+settings into the separate top-level `tool_config` field in its runtime configuration.
 
-- **Infrastructure:** a working Service or Bundle, normal application endpoints,
-  account provisioning and documented network/certificate requirements.
-- **Tools:** a manifest containing names, descriptions and input schemas, plus
-  handlers with `handler(arguments, context)`. Handlers use the agent's connection
-  settings, implement login and protocol operations, and return useful structured
-  results. Tool code must work inside the agent container without importing
-  repository example code or a particular agent framework.
-- **Export and connection settings:** `getAgentTools()` returns the tool package;
-  its configuration documentation explains which endpoint, identity, credentials
-  and auxiliary connections the handlers require. Dependencies belong to the
-  package. For several application instances, the provider must define how its
-  tools select among the configured instances.
+A handler remains independent of the framework. It combines personal credentials
+with service-owned configuration. Provider selection and protocol details stay
+inside the tool implementation:
 
-The experiment author then selects those packages, assigns each agent its accounts
-and exact tool grants, chooses a framework adapter, and binds agents to hosts.
-Agent settings must be ready before `emu.render()`; bundles attached after render
-must use the same planned addresses and certificate paths. This does not require
-adding service-specific branches to AgentService.
+```python
+def email_inbox(arguments, context):
+    account = context.accounts["email"]
+    providers = context.tool_config["email"]
+    provider = select_by_domain(providers, account["email"])
+    return read_mail_over_imap({**provider, **account}, arguments)
+```
 
-Payment, Email and Bank currently export packages using this design. Domain/DNS,
-Chat and CloudDrive maintainers can add their own packages in the same way; their
-existing applications do not yet export AgentService tools. Shared Network and
-PKI diagnostics are optional packages under `services/AgentService/tools/`.
+The framework sees tool schemas and sanitized business results. It does not need
+the Bundle address map, API ports or wallet routing IDs in its prompt. Tools
+resolve those details when called. `world.catalog` exposes business names and
+contacts, while `world.probe` resolves connection settings internally.
 
-See the [AgentService README](../../services/AgentService/README.md) for the small
-configuration examples and current runtime details.
+The local tool runtime checks input and dispatches the call. Protocol handlers
+perform real SMTP/IMAP/HTTP/DNS operations inside the Agent container. Application
+maintainers do not need to import LangChain, generate personas or implement memory.
+The selected framework integration handles framework-specific tool wrappers.
+
+Framework hooks and tool execution emit observable events with tool names,
+business parameters, results, errors and timing. Authentication values are
+redacted, while mail bodies and other business observations remain available for
+research. The dashboard reads events; it does not require a second conversation
+store or read private framework checkpoint tables.
+
+## Startup and current implementation
+
+Infrastructure starts with mailbox initialization, followed by bank customer
+registration using the existing mailboxes. All infrastructure initialization
+completes before Agent containers start.
+E99's startup script verifies readiness, starts Agents and then leaves them
+running. It does not schedule their ongoing business actions. The ordinary
+Compose project is stopped with `docker compose down`.
+
+The main entrypoint ends at `emu.compile()`. `start.py` reads the generated Compose
+configuration and Bundle deployment records to identify infrastructure, initializers,
+Agents and saved data. Agent install writes identity and state-directory labels;
+startup does not recover identities by parsing Dockerfiles. No startup-plan JSON
+or additional people snapshot is generated. Saved Agent mounts are supplied by a
+startup-only Compose override; the compiled Compose file is unchanged.
+
+E99 loads people with personal account declarations and configures infrastructure
+independently. Its internal helper produces native application initialization data
+and runtime account access. `createagent` stores metadata and initial knowledge
+and configures one Agent per person. No personal account list is read from the
+world configuration.
+Each generated Agent configuration contains its complete personal metadata.
+Every resident receives the same registered tools. Loan tools are not implemented;
+memory is provided by the framework rather than custom remember/recall tools.
+
+Framework deployment code lives under `services/AgentService/frameworks/`. It
+stages the application through `node.setFile`, declares dependencies and generates
+the startup command. Adding a framework means adding its deployment module and
+registering its name, not changing infrastructure tool implementations. The
+LangChain application uses native checkpointed graph state, including the next
+wake time. Legacy `Experience` and personal-memory JSON writers are removed.
+
+With `--state`, existing legacy JSON memory is retained but not imported into
+framework checkpoints; the new conversation starts without that old history.
+Application databases and mail remain governed by their existing saved-state settings.
+
+Implementation references: [AgentService](../../services/AgentService/AgentService.py),
+[AgentServer](../../services/AgentService/AgentServer.py),
+[E99 assembly](../../experiments/E99_virtual_world_with_agents/virtual_world_with_agents.py),
+[framework deployment](../../services/AgentService/frameworks/langchain/__init__.py),
+[generated framework application](../../services/AgentService/frameworks/langchain/application.py)
+and [observer](../../experiments/E99_virtual_world_with_agents/monitor.py).

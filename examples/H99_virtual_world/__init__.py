@@ -1,4 +1,4 @@
-"""Reusable world construction for experiments."""
-from .virtual_world import VirtualWorld, build_world
+"""Shared world built with the native SEED Emulator API."""
+from .virtual_world import createworld, createcompiler
 
-__all__ = ['VirtualWorld','build_world']
+__all__ = ['createworld', 'createcompiler']
