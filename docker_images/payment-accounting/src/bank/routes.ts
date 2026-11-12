@@ -27,6 +27,12 @@ export function getRoutes(service: BaseService) {
   router.get('/:code/bank/providers', route(async funding => ({ banks: funding.banks() })))
   router.get('/:code/bank/sources', route(funding => funding.sources()))
   router.get('/:code/bank/payments', route(funding => funding.history()))
+  router.get('/:code/bank/payments/:id', asyncHandler(async (request, response) => {
+    const currency = await service.getCurrencyController(request.params.code)
+    await currency.users.checkUser(context(request))
+    const funding = new BankFunding(currency, context(request))
+    response.json(await funding.receipt(request.params.id))
+  }))
   router.post('/:code/bank/links', route((funding, body) => {
     const result = z.object({ bank: z.string(), cardNumber: z.string().transform(value => value.replace(/[ -]/g, '')).pipe(z.string().regex(/^[0-9]{16,19}$/)), redirectURI: z.url() }).strict().safeParse(body)
     if (!result.success) throw badRequest('Bank, card number and callback address are required')

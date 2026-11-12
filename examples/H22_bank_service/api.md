@@ -1,26 +1,26 @@
 # Customer API
 
-Customers and agents use the same API as the browser. Requests go to `https://10.151.0.10/api/v1` inside the emulator, or `https://localhost:8444/api/v1` on the host. Trust `output/bank/config/server.crt`. Use a persistent cookie jar and one `X-Device-Fingerprint` value for the session.
+Customers and agents use the same API as the browser. Requests go to `http://10.151.0.10/api/v1` inside the emulator, or `http://localhost:8444/api/v1` on the host. Use a persistent cookie jar and one `X-Device-Fingerprint` value for the session.
 
 From the example directory, begin a login:
 
 ```sh
-curl --cacert output/bank/config/server.crt -c cookies.txt -b cookies.txt \
+curl -c cookies.txt -b cookies.txt \
   -H 'Content-Type: application/json' -H 'X-Device-Fingerprint: agent-alice-1' \
-  -d '{"email":"alice@seed.example","password":"BankDemoPass123!"}' \
-  https://localhost:8444/api/v1/authentication/login
+  -d '{"email":"alice@mail.com","password":"BankDemoPass123!"}' \
+  http://localhost:8444/api/v1/authentication/login
 ```
 
-Read the new verification email through IMAPS at `10.150.0.10:993` using Alice's email credentials and `output/email/config/cert.pem`. Submit the returned `challengeToken` and the email code:
+Read the new verification email through IMAP at `10.150.0.10:143` using Alice's email credentials. Submit the returned `challengeToken` and the email code:
 
 ```sh
-curl --cacert output/bank/config/server.crt -c cookies.txt -b cookies.txt \
+curl -c cookies.txt -b cookies.txt \
   -H 'Content-Type: application/json' -H 'X-Device-Fingerprint: agent-alice-1' \
   -d '{"challengeToken":"<login challenge>","token":"<email code>"}' \
-  https://localhost:8444/api/v1/authentication/2fa
+  http://localhost:8444/api/v1/authentication/2fa
 ```
 
-Continue with the same cookies and fingerprint. For authenticated writes, also send `Origin: https://localhost:8444` on the host, or `Origin: https://10.151.0.10` inside the emulator.
+Continue with the same cookies and fingerprint. For authenticated writes, also send `Origin: http://localhost:8444` on the host, or `Origin: http://10.151.0.10` inside the emulator.
 
 | Method and path | Purpose |
 | --- | --- |
@@ -44,12 +44,12 @@ Adding Bob uses `name`, `officeName`, `accountNumber` and `transferLimit` at `/b
 
 ## Staff API
 
-Use `https://10.151.0.18/fineract-provider/api/v1` inside the emulator, or `https://localhost:8446/fineract-provider/api/v1` on the host. The customer gateway also retains its staff API route. Staff authenticate with native HTTP Basic credentials and a tenant header:
+Use `http://10.151.0.18/fineract-provider/api/v1` inside the emulator, or `http://localhost:8446/fineract-provider/api/v1` on the host. The customer gateway also retains its staff API route. Staff authenticate with native HTTP Basic credentials and a tenant header:
 
 ```sh
-curl --cacert output/bank/config/staff.crt -u mifos:password \
+curl -u mifos:password \
   -H 'Fineract-Platform-TenantId: default' \
-  https://localhost:8446/fineract-provider/api/v1/clients
+  http://localhost:8446/fineract-provider/api/v1/clients
 ```
 
 Deposits and withdrawals use `POST /savingsaccounts/{id}/transactions?command=deposit` or `command=withdrawal`. Loan approval and disbursement use `POST /loans/{id}?command=approve` or `command=disburse`. The administration website uses these same endpoints.

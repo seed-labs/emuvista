@@ -6,21 +6,23 @@ import threading
 import time
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit, unquote
-from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, HTTPSHandler, ProxyHandler, Request, build_opener
+from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
-from emuvista_agent.http import client, request, tls
-from emuvista_agent.mail import messages
+from emuvista_agent.http import client, request
+from emuvista_agent.mail import configuration as mailbox_configuration, messages
 
 _login_lock = threading.RLock()
 
 
 def configuration(context, bank=None):
-    config = context.service('bank')
-    if bank is None:
-        return config
-    if bank not in config.get('instances', {}):
+    accounts = context.accounts['bank']
+    bank = bank or next(iter(accounts))
+    if bank not in accounts:
         raise ValueError('Bank is not configured for this agent')
-    return dict(config['instances'][bank])
+    provider = context.tool_config['bank'][bank]
+    identity = accounts[bank]
+    return {**provider, 'email': identity.get('email', context.accounts['email']['email']),
+            'password': identity['password']}
 
 
 def connection(context, bank=None):
@@ -32,12 +34,12 @@ def connection(context, bank=None):
         cached = sessions.get(key)
         if cached and cached[0] > time.time():
             return config, cached[1], cached[2]
-        mail = context.service('email')
+        mail = mailbox_configuration(context)
         previous = max((message['uid'] for message in messages(mail, 50)), default=0)
         opener = client(config)
-        headers = {'X-Device-Fingerprint': 'agent-'+context.identity}
+        headers = {'X-Device-Fingerprint': 'agent-' + context.identity}
         challenge = request(config, '/api/v1/authentication/login', method='POST', headers=headers,
-            opener=opener, body={'email': config['email'], 'password': config['password']})['challengeToken']
+                            opener=opener, body={'email': config['email'], 'password': config['password']})['challengeToken']
         code = None
         for _ in range(30):
             for message in reversed(messages(mail, 10)):
@@ -54,7 +56,7 @@ def connection(context, bank=None):
             raise RuntimeError('Bank login email did not arrive')
         request(config, '/api/v1/authentication/2fa', method='POST', headers=headers, opener=opener,
                 body={'challengeToken': challenge, 'token': code})
-        sessions[key] = (time.time()+120, opener, headers)
+        sessions[key] = (time.time() + 120, opener, headers)
         return config, opener, headers
 
 
@@ -73,14 +75,14 @@ def _location(opener, url, headers, body=None):
             error.close()
             return location
         error.close()
-        raise RuntimeError('Bank authorization returned HTTP '+str(error.code)) from None
+        raise RuntimeError('Bank authorization returned HTTP ' + str(error.code)) from None
 
 
 def _origin(url):
     parsed = urlsplit(url)
-    if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+    if parsed.scheme != 'http' or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
         raise ValueError('Invalid bank authorization address')
-    return parsed.scheme, parsed.hostname, parsed.port or 443
+    return parsed.scheme, parsed.hostname, parsed.port or 80
 
 
 def _one(query, name):
@@ -115,9 +117,10 @@ def authorize_card(context, bank, authorization_url, redirect_uri, card_id):
         raise ValueError('Bank authorization does not match the requested card-link flow')
     original_state = _one(query, 'state')
     client_id = _one(query, 'client_id')
-    cookies = next(handler.cookiejar for handler in authenticated.handlers if isinstance(handler, HTTPCookieProcessor))
+    cookies = next(handler.cookiejar for handler in authenticated.handlers if isinstance(
+        handler, HTTPCookieProcessor))
     opener = build_opener(ProxyHandler({}), HTTPCookieProcessor(cookies),
-                          HTTPSHandler(context=tls(config)), _NoRedirect())
+                          _NoRedirect())
     location = _location(opener, authorization_url, {**headers, 'Accept': 'text/html'})
     consent = urlsplit(location)
     if consent.path == '/consent':
@@ -126,18 +129,18 @@ def authorize_card(context, bank, authorization_url, redirect_uri, card_id):
         if _one(parameters, 'client_id') != client_id or set(_one(parameters, 'scope').split()) != scopes:
             raise ValueError('Bank consent changed the requested permissions')
         consent_state = _one(parameters, 'state')
-        preview = request(config, '/api/v1/cards/authorization?'+urlencode({'state': consent_state}),
+        preview = request(config, '/api/v1/cards/authorization?' + urlencode({'state': consent_state}),
                           opener=opener, headers=headers)
         if preview['cardId'] != card_id:
             raise ValueError('Bank consent refers to another card')
-        cookie_request = Request(config['url'].rstrip('/')+'/api/v1/oauth2/authorize')
+        cookie_request = Request(config['url'].rstrip('/') + '/api/v1/oauth2/authorize')
         cookies.add_cookie_header(cookie_request)
         csrf = re.search(r'(?:^|;\s*)XSRF-TOKEN=([^;]+)', cookie_request.get_header('Cookie', ''))
         if not csrf:
             raise RuntimeError('Bank consent CSRF token was not received')
         fields = [('client_id', client_id), ('state', consent_state), ('_csrf', unquote(csrf[1]))]
         fields.extend(('scope', scope) for scope in sorted(scopes))
-        location = _location(opener, config['url'].rstrip('/')+'/api/v1/oauth2/authorize',
+        location = _location(opener, config['url'].rstrip('/') + '/api/v1/oauth2/authorize',
                              {**headers, 'Content-Type': 'application/x-www-form-urlencoded'},
                              urlencode(fields).encode())
     callback = urlsplit(location)

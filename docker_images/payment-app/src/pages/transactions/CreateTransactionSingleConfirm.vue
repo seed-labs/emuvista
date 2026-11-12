@@ -11,8 +11,8 @@
       <q-card-section v-if="receipt" id="bank-payment-receipt">
         <div class="text-h6">{{ receipt.status === 'completed' ? 'Bank payment completed' : 'Bank payment: ' + receipt.status }}</div>
         <div>{{ (receipt.amountMinor / 100).toFixed(2) }}</div>
-        <div v-if="receipt.bankTransferId">Bank transfer: {{ receipt.bankTransferId }}</div>
-        <div v-if="receipt.transferId">Wallet transfer: {{ receipt.transferId }}</div>
+        <div v-if="receipt.bankTransactionId">Bank debit: {{ receipt.bankTransactionId }}</div>
+        <div v-if="receipt.ledgerHash">Ledger credit: {{ receipt.ledgerHash }}</div>
         <p v-if="receipt.error">{{ receipt.error }}</p>
         
         <q-btn label="Payment home" flat to="/home" />

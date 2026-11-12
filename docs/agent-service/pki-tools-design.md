@@ -297,8 +297,8 @@ is exclusively handled by SEEDEmu `CAService` and its configured node filters.
 
 ## AgentService Integration
 
-Use `AgentService().addPkiTools()` to select the package, then grant individual
-`pki.*` names with `agent.allowTools(...)`. The existing tool entrypoint performs
+Use `AgentService().addPkiTools()` to select the package, optionally select individual
+`pki.*` names with `agent.setTools([...])`. The existing tool entrypoint performs
 per-agent authorization, and PKI argument models validate inputs before execution.
 The handler injects `source=local`; commands run as the agent user in its own
 container. Remote TLS targets are network endpoints, not command execution nodes.

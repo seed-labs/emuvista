@@ -1,0 +1,27 @@
+[
+  {
+    "name": "life.rest",
+    "description": "Finish this moment and choose when to wake again, from 30 to 1800 seconds. You can rest, think, wait for a reply, or return later to an unavailable service. This schedules a wake-up; it does not execute a business action.",
+    "handler": "handlers:rest",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "seconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 1800
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "seconds",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

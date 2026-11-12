@@ -8,11 +8,12 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.consumer.infrastructure.access.data.ConsumerAction;
 import org.apache.fineract.consumer.infrastructure.access.service.AccessPolicyEvaluator;
-import org.apache.fineract.consumer.infrastructure.fineractclient.generated.model.AccountTransferRequest;
-import org.apache.fineract.consumer.infrastructure.fineractclient.service.TransferFineractClient;
+import java.util.Map;
+import org.apache.fineract.consumer.infrastructure.fineractclient.service.CardPaymentLedgerClient;
 import org.apache.fineract.consumer.infrastructure.idempotency.service.IdempotencyKeyHolder;
 import org.apache.fineract.consumer.infrastructure.idempotency.service.IdempotencyKeyDeriver;
 import org.apache.fineract.consumer.infrastructure.oauth2.data.OAuth2Constants;
+import org.apache.fineract.consumer.infrastructure.oauth2.service.PaymentClientConfiguration;
 import org.apache.fineract.consumer.openbanking.command.data.ConsentStatus;
 import org.apache.fineract.consumer.openbanking.command.data.OpenBankingPaymentCommandData;
 import org.apache.fineract.consumer.openbanking.command.data.OpenBankingPaymentCommandRequest;
@@ -22,7 +23,6 @@ import org.apache.fineract.consumer.openbanking.command.domain.OpenBankingPaymen
 import org.apache.fineract.consumer.openbanking.command.exception.OpenBankingPaymentInvalidException;
 import org.apache.fineract.consumer.openbanking.command.repository.OpenBankingConsentCommandRepository;
 import org.apache.fineract.consumer.openbanking.command.repository.OpenBankingPaymentCommandRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -34,12 +34,11 @@ public class OpenBankingPaymentCommandServiceImpl implements OpenBankingPaymentC
     private final OpenBankingConsentCommandRepository consentRepository;
     private final OpenBankingPaymentCommandRepository paymentRepository;
     private final AccessPolicyEvaluator policy;
-    private final TransferFineractClient core;
+    private final CardPaymentLedgerClient ledger;
     private final IdempotencyKeyHolder idempotencyKeyHolder;
     private final org.apache.fineract.consumer.cards.BankCardService cards;
 
-    @Value("${consumer.payments.settlement-account:}")
-    private String settlementExternalId;
+    private final PaymentClientConfiguration paymentClients;
 
     @Override
     public OpenBankingPaymentCommandData debit(Jwt jwt, UUID requestId, OpenBankingPaymentCommandRequest request) {
@@ -52,14 +51,11 @@ public class OpenBankingPaymentCommandServiceImpl implements OpenBankingPaymentC
         }
         policy.authorize(jwt, ConsumerAction.OPENBANKING_PAYMENT_EXECUTE, source.getId(),
                 OpenBankingPaymentInvalidException::new);
-        if (settlementExternalId.isBlank()) {
+        var partner = paymentClients.find(consent.getTppClientId());
+        if (partner == null) {
             throw new OpenBankingPaymentInvalidException();
         }
-        var target = core.retrieveSavingsAccountByExternalId(settlementExternalId);
-        if (source.getCurrency() == null || target.getCurrency() == null
-                || !request.getCurrency().equals(source.getCurrency().getCode())
-                || !request.getCurrency().equals(target.getCurrency().getCode())
-                || source.getId().equals(target.getId())) {
+        if (source.getCurrency() == null || !request.getCurrency().equals(source.getCurrency().getCode())) {
             throw new OpenBankingPaymentInvalidException();
         }
         var existing = paymentRepository.findById(requestId);
@@ -67,7 +63,8 @@ public class OpenBankingPaymentCommandServiceImpl implements OpenBankingPaymentC
             return replay(existing.get(), consent, request);
         }
         var payment = OpenBankingPaymentCommandEntity.requested(requestId, consent.getId(),
-                consent.getTppClientId(), source.getId(), card.getId(), request.getAmount(), request.getCurrency());
+                consent.getTppClientId(), source.getId(), card.getId(), request.getAmount(), request.getCurrency(),
+                partner.platform(), request.getPayeeId(), request.getPayeeName(), request.getDescription());
         // The repository commits before the remote call. A competing or uncertain
         // request reads this record and cannot execute another debit.
         try {
@@ -77,21 +74,17 @@ public class OpenBankingPaymentCommandServiceImpl implements OpenBankingPaymentC
         }
         idempotencyKeyHolder.set(IdempotencyKeyDeriver.derive(UUID.fromString(jwt.getSubject()), requestId.toString()));
         try {
-            Long fromOffice = core.getClientOfficeId(source.getClientId());
-            Long toOffice = core.getClientOfficeId(target.getClientId());
-            var transfer = new AccountTransferRequest()
-                    .fromOfficeId(String.valueOf(fromOffice)).fromClientId(String.valueOf(source.getClientId()))
-                    .fromAccountId(String.valueOf(source.getId())).fromAccountType("2")
-                    .toOfficeId(String.valueOf(toOffice)).toClientId(String.valueOf(target.getClientId()))
-                    .toAccountId(String.valueOf(target.getId())).toAccountType("2")
-                    .transferAmount(request.getAmount().toPlainString()).transferDate(LocalDate.now().toString())
-                    .dateFormat("yyyy-MM-dd").locale("en").transferDescription("Wallet funding " + requestId);
-            Long transferId = core.createAccountTransfer(transfer);
-            if (transferId == null) {
-                payment.requireReview();
-            } else {
-                payment.complete(transferId);
-            }
+            String note = "Card payment via " + partner.platform() + " to " + request.getPayeeName()
+                    + " [" + request.getPayeeId() + "]; " + request.getDescription() + "; payment " + requestId;
+            var paymentType = ledger.paymentTypes().stream().filter(type -> "Simulation".equals(type.get("name")))
+                    .findFirst().orElseThrow(OpenBankingPaymentInvalidException::new).get("id");
+            var result = ledger.debit(source.getId(), Map.of(
+                    "transactionDate", LocalDate.now(java.time.ZoneOffset.UTC).toString(),
+                    "transactionAmount", request.getAmount(), "locale", "en", "dateFormat", "yyyy-MM-dd",
+                    "externalId", requestId.toString(), "note", note, "paymentTypeId", paymentType));
+            Object transactionId = result.get("resourceId");
+            if (transactionId instanceof Number number) payment.complete(number.longValue());
+            else payment.requireReview();
         } catch (FeignException exception) {
             if (exception.status() == 400 || exception.status() == 403) {
                 payment.decline();
@@ -125,21 +118,52 @@ public class OpenBankingPaymentCommandServiceImpl implements OpenBankingPaymentC
         return consent;
     }
 
-    private static OpenBankingPaymentCommandData replay(OpenBankingPaymentCommandEntity payment,
+    private OpenBankingPaymentCommandData replay(OpenBankingPaymentCommandEntity payment,
             OpenBankingConsent consent, OpenBankingPaymentCommandRequest request) {
         if (!payment.getConsentId().equals(consent.getId())
                 || !payment.getTppClientId().equals(consent.getTppClientId())
                 || !java.util.Objects.equals(payment.getBankCardId(), request.getCardId())
                 || request.getFromAccountId() != null && !payment.getFromAccountId().equals(request.getFromAccountId())
                 || payment.getAmount().compareTo(request.getAmount()) != 0
-                || !payment.getCurrency().equals(request.getCurrency())) {
+                || !payment.getCurrency().equals(request.getCurrency())
+                || !java.util.Objects.equals(payment.getPayeeId(), request.getPayeeId())
+                || !java.util.Objects.equals(payment.getPayeeName(), request.getPayeeName())
+                || !java.util.Objects.equals(payment.getDescription(), request.getDescription())) {
             throw new OpenBankingPaymentInvalidException();
+        }
+        return reconcile(payment);
+    }
+
+    public OpenBankingPaymentCommandData status(Jwt jwt, UUID id) {
+        var payment = paymentRepository.findById(id).orElseThrow(OpenBankingPaymentInvalidException::new);
+        // Revoking a card stops future debits, not historical receipt queries by
+        // the authenticated payment platform which submitted that transaction.
+        if (payment.getTppClientId().equals(jwt.getSubject())
+                && AccessPolicyEvaluator.hasScope(jwt, "openbanking:payments")) return reconcile(payment);
+        var consent = requireConsent(jwt);
+        if (!payment.getTppClientId().equals(consent.getTppClientId())
+                || !payment.getConsentId().equals(consent.getId())) throw new AccessDeniedException("Payment belongs to another consent");
+        return reconcile(payment);
+    }
+
+    private OpenBankingPaymentCommandData reconcile(OpenBankingPaymentCommandEntity payment) {
+        if (!"completed".equals(payment.getStatus()) && !"declined".equals(payment.getStatus())) {
+            try {
+                var row = ledger.find(payment.getFromAccountId(), payment.getId().toString());
+                if (row.get("id") instanceof Number id) {
+                    payment.complete(id.longValue());
+                    paymentRepository.saveAndFlush(payment);
+                }
+            } catch (FeignException ignored) { /* Uncertain debits are never repeated. */ }
         }
         return acknowledgement(payment);
     }
 
-    private static OpenBankingPaymentCommandData acknowledgement(OpenBankingPaymentCommandEntity payment) {
+    public static OpenBankingPaymentCommandData acknowledgement(OpenBankingPaymentCommandEntity payment) {
         return OpenBankingPaymentCommandData.builder().id(payment.getId()).status(payment.getStatus())
-                .transferId(payment.getTransferId()).build();
+                .transactionId(payment.getTransactionId()).clientId(payment.getTppClientId())
+                .platform(payment.getPlatform()).payeeId(payment.getPayeeId()).payeeName(payment.getPayeeName())
+                .description(payment.getDescription()).amount(payment.getAmount()).currency(payment.getCurrency())
+                .accountId(payment.getFromAccountId()).created(payment.getCreatedAt()).build();
     }
 }

@@ -1,0 +1,81 @@
+[
+  {
+    "name": "shop.catalog",
+    "handler": "handlers:catalog",
+    "description": "Visit residents' shops over the simulated network to discover their current products, sellers and USD-cent prices. Products are not included in your initial knowledge. Decide for yourself whether to buy; contact the seller by email for a quote.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "shop.quote",
+    "handler": "handlers:quote",
+    "description": "If you own a shop, prepare a real order and payment reference for an interested buyer. Then send that quote by email. Quoting does not charge anyone or force a purchase. Ask the buyer to put paymentReference in the payment description and return the actual transfer UUID for verification and delivery.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "buyer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "product": {
+          "type": "string",
+          "minLength": 1
+        },
+        "priceMinor": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "buyer",
+        "product"
+      ]
+    }
+  },
+  {
+    "name": "shop.orders",
+    "handler": "handlers:orders",
+    "description": "If you own a shop, inspect your quotes and delivery status.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "shop.deliver",
+    "handler": "handlers:deliver",
+    "description": "If you own a shop, verify a committed real payment against an order, then deliver the actual product by email. Rejects an incorrect amount, recipient, reference or reused receipt. A repeated completed delivery is not sent again.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "order": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "transfer": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "order",
+        "transfer"
+      ]
+    }
+  }
+]

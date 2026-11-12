@@ -1,26 +1,25 @@
-"""Configure one agent, its framework and tool policy."""
+"""Configure a person's framework deployment on one SEED host."""
 
 import json
-import re
 import shlex
 from pathlib import Path
 from seedemu.core import Server
+from .frameworks import get_framework
 
 ROOT = '/opt/emuvista-agent'
 CONFIG = '/etc/emuvista-agent/config.json'
+DATA = '/home/emuvista-agent/state'
 
 
 class AgentServer(Server):
-    def __init__(self, packages):
+    def __init__(self, packages, environment_file=None):
         super().__init__()
         self._packages = packages
-        self._identity = None
-        self._allowed = []
-        self._services = {}
-        self._steps = []
-        self._framework = None
-        self._environment = {}
-        self._environment_file = None
+        self._persona = {}
+        self.vnode = None
+        self._tools = None
+        self._framework = 'langchain'
+        self._environment_file = environment_file
         self._installed = False
         self.appendClassName('AgentService')
 
@@ -28,110 +27,89 @@ class AgentServer(Server):
         if self._installed:
             raise RuntimeError('configure the agent before rendering')
 
-    def setIdentity(self, identity):
+    def setPersona(self, persona):
         self._editable()
-        if not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_-]{0,49}', identity):
-            raise ValueError('invalid agent identity')
-        self._identity = identity
-        self.setDisplayName('Agent '+identity)
+        if not isinstance(persona, dict):
+            raise TypeError('persona must be a JSON object')
+        value = json.loads(json.dumps(persona, allow_nan=False))
+        if not isinstance(value.get('id'), str) or not value['id'].strip():
+            raise ValueError('persona requires a stable, non-empty person id')
+        if not isinstance(value.get('accounts', {}), dict):
+            raise TypeError('persona accounts must be an object')
+        self._persona = value
+        self.setDisplayName(value.get('name') or 'Agent ' + value['id'])
         return self
 
-    def allowTools(self, *names):
+    def setTools(self, tools):
         self._editable()
-        self._allowed = list(dict.fromkeys(names))
+        if not isinstance(tools, (list, tuple)) or any(not isinstance(name, str) for name in tools):
+            raise TypeError('tools must be a list of registered tool names')
+        self._tools = list(dict.fromkeys(tools))
         return self
 
-    def setService(self, name, configuration):
+    def setFramework(self, framework):
         self._editable()
-        self._services[name] = json.loads(json.dumps(configuration))
-        return self
-
-    def setScript(self, steps):
-        self._editable()
-        self._steps = json.loads(json.dumps(steps))
-        self._framework = None
-        return self
-
-    def setFramework(self, source, entrypoint='adapter:run', requirements=()):
-        """Copy a framework adapter exposing run(context); dependencies use pip."""
-        self._editable()
-        source = Path(source).resolve()
-        if not re.fullmatch(r'[a-zA-Z_]\w*:[a-zA-Z_]\w*', entrypoint):
-            raise ValueError('entrypoint must be module:function')
-        if not (source/(entrypoint.split(':')[0]+'.py')).is_file():
-            raise ValueError('adapter module not found')
-        self._framework = (source, entrypoint, list(requirements))
-        return self
-
-    def setEnvironment(self, name, value):
-        self._editable()
-        if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name):
-            raise ValueError('invalid environment variable')
-        self._environment[name] = str(value)
-        return self
-
-    def setEnvironmentFile(self, path, prefixes=('LLM_', 'AGENT_')):
-        """Read a bind-mounted environment at startup; never copy its values into images."""
-        self._editable()
-        path=Path(path).resolve()
-        if not path.is_file():raise ValueError('environment file not found')
-        if not prefixes or any(not re.fullmatch(r'[A-Z][A-Z0-9_]*_',p) for p in prefixes):
-            raise ValueError('invalid environment prefixes')
-        self._environment_file=(path,list(prefixes))
+        get_framework(framework)
+        self._framework = framework
         return self
 
     def install(self, node):
         self._editable()
+        if 'id' not in self._persona:
+            raise ValueError('setPersona with a stable person id before rendering')
         names = {tool['name'] for package in self._packages.values() for tool in package.manifest}
-        if not set(self._allowed) <= names:
-            raise ValueError('authorized tools are not installed: '+str(sorted(set(self._allowed)-names)))
+        selected = sorted(names) if self._tools is None else self._tools
+        if not set(selected) <= names:
+            raise ValueError('tools are not installed: ' + str(sorted(set(selected) - names)))
         node.addSoftware('python3 python3-venv ca-certificates')
-        node.addBuildCommand('python3 -m venv '+ROOT+'/venv')
-        node.addBuildCommand('useradd --uid 10001 --create-home --shell /usr/sbin/nologin emuvista-agent')
-        source = Path(__file__).parent/'runtime/emuvista_agent'
-        for path in source.glob('*.py'):
-            node.importFile(str(path.resolve()), ROOT+'/emuvista_agent/'+path.name)
-        packages = []
+        node.addBuildCommand('python3 -m venv ' + ROOT + '/venv')
+        node.addBuildCommand(
+            'useradd --uid 10001 --create-home --shell /usr/sbin/nologin emuvista-agent')
+        node.addBuildCommand('install -d -m 700 -o 10001 -g 10001 ' + DATA)
+        for path in (Path(__file__).parent / 'runtime/emuvista_agent').glob('*.py'):
+            node.importFile(str(path.resolve()), ROOT + '/emuvista_agent/' + path.name)
         requirements = []
         for package in self._packages.values():
             if package.software:
                 node.addSoftware(' '.join(package.software))
             requirements.extend(package.requirements)
             for path, relative in package.files():
-                node.importFile(str(path), ROOT+'/packages/'+package.name+'/'+relative.as_posix())
-            packages.append(package.name)
-        framework = None
-        if self._framework:
-            source, framework, framework_requirements = self._framework
-            requirements.extend(framework_requirements)
-            for path in source.rglob('*'):
-                if any(p in {'__pycache__', '.git', '.venv'} for p in path.relative_to(source).parts):
-                    continue
-                if path.is_symlink():
-                    raise ValueError('adapter source must not contain symlinks')
-                if path.is_file() and not any(p in {'__pycache__', '.git', '.venv'} for p in path.relative_to(source).parts):
-                    node.importFile(str(path), ROOT+'/adapter/'+path.relative_to(source).as_posix())
+                if relative.as_posix() != 'tools.json':
+                    node.importFile(str(path), ROOT + '/packages/' +
+                                    package.name + '/' + relative.as_posix())
+            node.setFile(ROOT + '/packages/' + package.name + '/tools.json',
+                         json.dumps(package.manifest, indent=2) + '\n')
+        framework = get_framework(self._framework)
+        requirements.extend(framework.REQUIREMENTS)
         if requirements:
-            node.addBuildCommand(ROOT+'/venv/bin/pip install '+shlex.join(dict.fromkeys(requirements)))
-        config = {'identity': self._identity, 'uid': 10001, 'root': ROOT,
-                  'packages': packages, 'allowed_tools': self._allowed,
-                  'services': self._services, 'steps': self._steps, 'framework': framework}
-        node.setFile(CONFIG, json.dumps(config, indent=2)+'\n')
-        node.setFile('/usr/local/bin/agentctl', '#!/bin/sh\nexport PYTHONPATH='+ROOT+':'+ROOT+'/adapter\n'
-                     'export PYTHONDONTWRITEBYTECODE=1\nexec '+ROOT+'/venv/bin/python -m emuvista_agent \"$@\"\n')
+            node.addBuildCommand(ROOT + '/venv/bin/python -m pip install ' +
+                                 shlex.join(dict.fromkeys(requirements)))
+        deployment = framework.install(node, ROOT, DATA)
+        config = {'identity': self._persona['id'], 'uid': 10001, 'root': ROOT,
+                  'packages': list(self._packages), 'allowed_tools': selected,
+                  'tool_config': {name: package.configuration for name, package in self._packages.items()},
+                  'persona': self._persona, 'framework': deployment}
+        node.setFile(CONFIG, json.dumps(config, indent=2, allow_nan=False) + '\n')
+        node.setFile('/usr/local/bin/agentctl', '#!/bin/sh\nexport PYTHONPATH=' + ROOT + '\n'
+                     'export PYTHONDONTWRITEBYTECODE=1\nexec ' + ROOT + '/venv/bin/python -m emuvista_agent "$@"\n')
         node.addBuildCommandAtEnd('chmod 755 /usr/local/bin/agentctl')
-        # Files and policy belong to root; the framework runs under its own user.
-        node.addBuildCommandAtEnd('chmod -R go-w '+ROOT+' /etc/emuvista-agent')
-        environment = {'PYTHONPATH': ROOT+':'+ROOT+'/adapter', 'PYTHONDONTWRITEBYTECODE': '1',
-                       'VIRTUAL_ENV': ROOT+'/venv', 'PATH': ROOT+'/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-                       'HOME': '/home/emuvista-agent', **self._environment}
+        node.addBuildCommandAtEnd('chmod -R go-w ' + ROOT + ' /etc/emuvista-agent')
+        node.addBuildCommandAtEnd('chmod 640 ' + CONFIG + ' && chown 0:10001 ' + CONFIG)
+        node.setLabel('org.emuvista.agent.id', self._persona['id'])
+        node.setLabel('org.emuvista.agent.state-directory', DATA)
+        environment = {'PYTHONPATH': ROOT, 'PYTHONDONTWRITEBYTECODE': '1',
+                       'VIRTUAL_ENV': ROOT + '/venv',
+                       'PATH': ROOT + '/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+                       'HOME': '/home/emuvista-agent'}
         command = ['runuser', '-u', 'emuvista-agent', '--', 'env',
-                   *(key+'='+value for key,value in environment.items()),
-                   ROOT+'/venv/bin/python', '-u', '-m', 'emuvista_agent', 'run']
+                   *(key + '=' + value for key, value in environment.items()),
+                   ROOT + '/venv/bin/python', '-u', deployment['entrypoint']]
         if self._environment_file:
-            source,prefixes=self._environment_file
-            target='/run/emuvista-agent.env'
-            node.addSharedFolder(target,str(source),read_only=True,bind={'create_host_path':False})
-            command=['python3',ROOT+'/emuvista_agent/launch.py',target,json.dumps(prefixes),*command]
-        node.appendStartCommand(shlex.join(command)+' > /home/emuvista-agent/agent.log 2>&1', fork=True)
+            target = '/run/emuvista-agent.env'
+            node.addSharedFolder(target, str(self._environment_file), read_only=True,
+                                 bind={'create_host_path': False})
+            command = ['python3', ROOT + '/emuvista_agent/launch.py', target,
+                       json.dumps(['LLM_', 'AGENT_']), *command]
+        node.appendStartCommand(shlex.join(command) +
+                                ' > /home/emuvista-agent/agent.log 2>&1', fork=True)
         self._installed = True

@@ -17,16 +17,15 @@ DNS_AUTHORITY = '10.150.0.53'
 DNS_RESOLVER = '10.150.0.54'
 
 
-def build_emulator(hosts_per_as=2, *, dnssec=False, dnssec_key_store=None) -> Emulator:
-    """Return an unrendered mini Internet with authoritative and recursive DNS.
+def build_emulator(hosts_per_as=2, *, dnssec_key_store=None) -> Emulator:
+    """Return an unrendered mini Internet with an empty private DNS root.
 
     Add application records and services before calling emu.render(). DNSSEC is
-    optional; its key store must be outside compiler output when preserving keys.
+    always enabled; saved signing keys must be outside compiler output.
+    The network includes an IPv4 gateway to destinations outside the emulation.
     """
     if type(hosts_per_as) is not int or hosts_per_as < 1:
         raise ValueError('hosts_per_as must be a positive integer')
-    if dnssec_key_store is not None and not dnssec:
-        raise ValueError('dnssec_key_store requires dnssec=True')
     emu = Emulator()
     ebgp = Ebgp()
     base = Base().setNameServers([DNS_RESOLVER])
@@ -51,7 +50,7 @@ def build_emulator(hosts_per_as=2, *, dnssec=False, dnssec_key_store=None) -> Em
     ###############################################################################
     # Create Transit Autonomous Systems
 
-    ## Tier 1 ASes
+    # Tier 1 ASes
     Makers.makeTransitAs(
         base,
         2,
@@ -73,7 +72,7 @@ def build_emulator(hosts_per_as=2, *, dnssec=False, dnssec_key_store=None) -> Em
         [(100, 104), (102, 104)],
     )
 
-    ## Tier 2 ASes
+    # Tier 2 ASes
     Makers.makeTransitAs(base, 11, [102, 105], [(102, 105)])
     Makers.makeTransitAs(base, 12, [101, 104], [(101, 104)])
 
@@ -118,6 +117,11 @@ def build_emulator(hosts_per_as=2, *, dnssec=False, dnssec_key_store=None) -> Em
     ebgp.addPrivatePeerings(105, [3], [11, 170], PeerRelationship.Provider)
     ebgp.addPrivatePeerings(105, [11], [171], PeerRelationship.Provider)
 
+    outside = base.createAutonomousSystem(99999)
+    outside.createRealWorldRouter('internet-egress',
+                                  prefixes=['0.0.0.0/1', '128.0.0.0/1']).joinNetwork('ix100', '10.100.0.99')
+    ebgp.addPrivatePeerings(100, [3], [99999], PeerRelationship.Provider)
+
     ###############################################################################
     # Add layers to the emulator
 
@@ -126,43 +130,34 @@ def build_emulator(hosts_per_as=2, *, dnssec=False, dnssec_key_store=None) -> Em
     emu.addLayer(ebgp)
     emu.addLayer(Ibgp())
     emu.addLayer(Ospf())
-    _configure_dns(emu, dnssec=dnssec, key_store=dnssec_key_store)
+    _configure_dns(emu, key_store=dnssec_key_store)
     return emu
 
 
-def _configure_dns(emu, *, dnssec, key_store):
+def _configure_dns(emu, *, key_store):
     base = emu.getLayer('Base')
     authority = DomainNameService()
-    zones = [('.', 150, 'dns_authority'), ('com.', 151, 'dns_com'),
-             ('net.', 152, 'dns_net'), ('edu.', 153, 'dns_edu'),
-             ('google.com.', 162, 'dns_google_com'), ('twitter.com.', 161, 'dns_twitter_com'),
-             ('example.net.', 163, 'dns_example_net'), ('syr.edu.', 164, 'dns_syr_edu')]
-    for zone, asn, name in zones:
-        base.getAutonomousSystem(asn).createHost(name).joinNetwork('net0', address=f'10.{asn}.0.53')
-        vnode = name.replace('_', '-')
-        authority.install(vnode).addZone(zone).setMaster()
-        emu.addBinding(Binding(vnode, filter=Filter(asn=asn, nodeName=name)))
-        emu.getVirtualNode(vnode).setDisplayName('DNS '+zone)
-    for domain, address in (('google.com.', '2.2.2.2'), ('twitter.com.', '1.1.1.1'),
-                            ('example.net.', '3.3.3.3'), ('syr.edu.', '128.230.18.63')):
-        authority.getZone(domain).addRecord('@ A '+address)
-    authority.getRootZone().addRecord('dns.seed.example. A '+DNS_AUTHORITY)
+    base.getAutonomousSystem(150).createHost(
+        'dns_authority').joinNetwork('net0', address=DNS_AUTHORITY)
+    authority.install('dns-authority').addZone('.').setMaster()
+    emu.addBinding(Binding('dns-authority', filter=Filter(asn=150, nodeName='dns_authority')))
+    emu.getVirtualNode('dns-authority').setDisplayName('Root DNS')
 
     caching = DomainNameCachingService()
-    base.getAutonomousSystem(150).createHost('dns_resolver').joinNetwork('net0', address=DNS_RESOLVER)
+    base.getAutonomousSystem(150).createHost(
+        'dns_resolver').joinNetwork('net0', address=DNS_RESOLVER)
     resolver = caching.install('dns-resolver')
     emu.addLayer(authority)
     emu.addLayer(caching)
     emu.addBinding(Binding('dns-resolver', filter=Filter(asn=150, nodeName='dns_resolver')))
     emu.getVirtualNode('dns-resolver').setDisplayName('Recursive DNS')
 
-    if dnssec:
-        signing = Dnssec().enableOn('.')
-        if key_store is not None:
-            signing.setKeyStore(Path(key_store).expanduser().resolve())
-        resolver.addDnssecTrustAnchor('.', signing.getTrustAnchor('.'))
-        resolver.setDnssecValidation()
-        emu.addLayer(signing)
+    signing = Dnssec().enableOn('.')
+    if key_store is not None:
+        signing.setKeyStore(Path(key_store).expanduser().resolve())
+    resolver.addDnssecTrustAnchor('.', signing.getTrustAnchor('.'))
+    resolver.setDnssecValidation()
+    emu.addLayer(signing)
 
 
 def main():
@@ -170,23 +165,17 @@ def main():
     parser.add_argument('--output', type=Path, default=Path('output'))
     parser.add_argument('--platform', choices=['amd', 'arm'], default='amd')
     parser.add_argument('--hosts-per-as', type=int, default=2)
-    parser.add_argument('--dnssec', action='store_true', help='Sign the private root and validate DNS responses')
-    parser.add_argument('--dnssec-key-store', type=Path, help='Optional directory to save and reuse DNSSEC keys')
+    parser.add_argument('--dnssec-key-store', type=Path,
+                        help='Optional directory to save and reuse DNSSEC keys')
     args = parser.parse_args()
-    if args.dnssec_key_store and not args.dnssec:
-        parser.error('--dnssec-key-store requires --dnssec')
     if args.dnssec_key_store and (args.dnssec_key_store.resolve() == args.output.resolve()
-                                or args.output.resolve() in args.dnssec_key_store.resolve().parents):
+                                  or args.output.resolve() in args.dnssec_key_store.resolve().parents):
         parser.error('DNSSEC keys must be outside output')
-    emu = build_emulator(args.hosts_per_as, dnssec=args.dnssec,
-                         dnssec_key_store=args.dnssec_key_store)
+    emu = build_emulator(args.hosts_per_as, dnssec_key_store=args.dnssec_key_store)
     emu.render()
     platform = Platform.AMD64 if args.platform == 'amd' else Platform.ARM64
-    emu.compile(Docker(platform=platform, internetMapEnabled=True), str(args.output.resolve()), override=True)
-    print('DNS authority: '+DNS_AUTHORITY)
-    print('DNS resolver: '+DNS_RESOLVER)
-    print('Internet Map: http://localhost:8080')
-    print('Next: cd '+str(args.output)+'; docker compose build; docker compose up -d')
+    emu.compile(Docker(platform=platform, internetMapEnabled=True),
+                str(args.output.resolve()), override=True)
 
 
 if __name__ == '__main__':

@@ -8,4 +8,5 @@ import org.springframework.security.oauth2.jwt.Jwt;
 
 public interface OpenBankingPaymentCommandService {
     OpenBankingPaymentCommandData debit(Jwt jwt, UUID requestId, OpenBankingPaymentCommandRequest request);
+    OpenBankingPaymentCommandData status(Jwt jwt, UUID requestId);
 }

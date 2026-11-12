@@ -39,7 +39,8 @@ def _validate_users(data, admin_email):
             raise ValueError(f"{prefix}: duplicate or reserved administrator email")
         emails.add(email)
         if not isinstance(password, str) or len(password) < 8 or len(password.encode()) > 72 or "\x00" in password:
-            raise ValueError(f"{prefix}: password requires at least 8 characters and at most 72 UTF-8 bytes")
+            raise ValueError(
+                f"{prefix}: password requires at least 8 characters and at most 72 UTF-8 bytes")
         try:
             if isinstance(item["balance"], bool):
                 raise InvalidOperation
@@ -48,7 +49,8 @@ def _validate_users(data, admin_email):
                     or balance != balance.quantize(CENT) or balance * 100 > MAX_MINOR_UNITS):
                 raise InvalidOperation
         except (InvalidOperation, ValueError):
-            raise ValueError(f"{prefix}: balance must be nonnegative, with at most two decimal places") from None
+            raise ValueError(
+                f"{prefix}: balance must be nonnegative, with at most two decimal places") from None
         users.append({"name": name.strip(), "email": email, "password": password,
                       "balance": format(balance.quantize(CENT), "f")})
     if sum(Decimal(user["balance"]) for user in users) * 100 > MAX_MINOR_UNITS:
@@ -60,61 +62,70 @@ def load_configuration(source: str | Path | dict, admin_email: str) -> dict:
     """Read a JSON file or copy a mapping into a validated configuration."""
     data = source if isinstance(source, dict) else json.loads(
         Path(source).expanduser().read_text(), parse_float=Decimal)
-    if not isinstance(data, dict) or set(data) != {'groups', 'trustlines'}:
-        raise ValueError('configuration requires groups and trustlines')
+    if not isinstance(data, dict) or 'groups' not in data or set(data) - {'groups', 'trustlines'}:
+        raise ValueError('configuration requires groups; trustlines are optional')
     if not isinstance(data['groups'], list) or not 1 <= len(data['groups']) <= 100:
         raise ValueError('configuration requires 1 to 100 groups')
     groups, codes, identities = [], set(), {}
     for group in data['groups']:
-        if not isinstance(group, dict) or set(group) != {'code','name','currency','users'}:
-            raise ValueError('each group requires code, name, currency and users')
+        if not isinstance(group, dict) or set(group) - {'users'} != {'code', 'name', 'currency'}:
+            raise ValueError('each group requires code, name and currency; users are optional')
         code, name, currency = group['code'], group['name'], group['currency']
         if not isinstance(code, str) or not re.fullmatch('[A-Z0-9]{4}', code) or code in codes:
-            raise ValueError('group codes must be unique four-character uppercase letters or digits')
+            raise ValueError(
+                'group codes must be unique four-character uppercase letters or digits')
         codes.add(code)
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 255:
             raise ValueError('invalid group name')
-        if not isinstance(currency, dict) or set(currency) != {'name','symbol','rate'}:
+        if not isinstance(currency, dict) or set(currency) != {'name', 'symbol', 'rate'}:
             raise ValueError('each currency requires name, symbol and rate')
         if not isinstance(currency['name'], str) or not 1 <= len(currency['name']) <= 254:
             raise ValueError('invalid currency name')
         if not isinstance(currency['symbol'], str) or not 1 <= len(currency['symbol']) <= 3:
             raise ValueError('currency symbol requires 1 to 3 characters')
         try:
-            if isinstance(currency['rate'], bool): raise ValueError
+            if isinstance(currency['rate'], bool):
+                raise ValueError
             rate = Fraction(Decimal(str(currency['rate'])))
-            if rate <= 0 or max(rate.numerator, rate.denominator) > 2147483647: raise ValueError
+            if rate <= 0 or max(rate.numerator, rate.denominator) > 2147483647:
+                raise ValueError
         except (ValueError, InvalidOperation, OverflowError):
-            raise ValueError('currency rate must be positive and exactly representable as a supported ratio') from None
-        users = _validate_users(group['users'], admin_email)
+            raise ValueError(
+                'currency rate must be positive and exactly representable as a supported ratio') from None
+        users = _validate_users(group.get('users', []), admin_email)
         for user in users:
             previous = identities.setdefault(user['email'], user['password'])
             if previous != user['password']:
                 raise ValueError('the same email must use the same password in every group')
-        groups.append({'code':code,'name':name.strip(),'currency':{'name':currency['name'],
-                       'symbol':currency['symbol'],'rate':format(Decimal(str(currency['rate'])), 'f')},'users':users})
-    reserved = {_treasury_email(group['code'],admin_email) for group in groups}
+        groups.append({'code': code, 'name': name.strip(), 'currency': {'name': currency['name'],
+                       'symbol': currency['symbol'], 'rate': format(Decimal(str(currency['rate'])), 'f')}, 'users': users})
+    reserved = {_treasury_email(group['code'], admin_email) for group in groups}
     if any(user['email'] in reserved for group in groups for user in group['users']):
         raise ValueError('user email conflicts with an automatically generated community treasury')
-    if not isinstance(data['trustlines'], list):
+    trustlines = data.get('trustlines', [])
+    if not isinstance(trustlines, list):
         raise ValueError('trustlines must be a list')
     lines, pairs = [], set()
-    for line in data['trustlines']:
-        if not isinstance(line, dict) or set(line) != {'from','to','limit'}:
+    for line in trustlines:
+        if not isinstance(line, dict) or set(line) != {'from', 'to', 'limit'}:
             raise ValueError('each trustline requires from, to and limit')
         source, target = line['from'], line['to']
-        if (not isinstance(source,str) or not isinstance(target,str) or source not in codes or target not in codes
-                or source == target or (source,target) in pairs):
-            raise ValueError('trustlines require two distinct configured groups and unique directions')
+        if (not isinstance(source, str) or not isinstance(target, str) or source not in codes or target not in codes
+                or source == target or (source, target) in pairs):
+            raise ValueError(
+                'trustlines require two distinct configured groups and unique directions')
         try:
-            if isinstance(line['limit'], bool): raise ValueError
+            if isinstance(line['limit'], bool):
+                raise ValueError
             limit = Decimal(str(line['limit']))
-            if not limit.is_finite() or limit < 0 or limit != limit.quantize(CENT) or limit*100 > 2**53-1: raise ValueError
+            if not limit.is_finite() or limit < 0 or limit != limit.quantize(CENT) or limit * 100 > 2**53 - 1:
+                raise ValueError
         except (ValueError, InvalidOperation):
-            raise ValueError('trustline limit must be a supported nonnegative amount with at most two decimal places') from None
-        pairs.add((source,target))
-        lines.append({'from':source,'to':target,'limit':format(limit.quantize(CENT),'f')})
-    return {'groups':groups,'trustlines':lines}
+            raise ValueError(
+                'trustline limit must be a supported nonnegative amount with at most two decimal places') from None
+        pairs.add((source, target))
+        lines.append({'from': source, 'to': target, 'limit': format(limit.quantize(CENT), 'f')})
+    return {'groups': groups, 'trustlines': lines}
 
 
 def _identifier(kind: str, key: str, code: str) -> str:
@@ -123,7 +134,7 @@ def _identifier(kind: str, key: str, code: str) -> str:
 
 
 def _treasury_email(code, admin_email):
-    return 'treasury.'+code.lower()+'@'+admin_email.split('@',1)[1]
+    return 'treasury.' + code.lower() + '@' + admin_email.split('@', 1)[1]
 
 
 def build_bundle(users: list[dict], admin_email: str, group: dict) -> bytes:
@@ -138,7 +149,7 @@ def build_bundle(users: list[dict], admin_email: str, group: dict) -> bytes:
     group_name = group['name']
     money = group['currency']
     rate = Fraction(Decimal(money['rate']))
-    identifier = lambda kind, key: _identifier(kind,key,code)
+    identifier = lambda kind, key: _identifier(kind, key, code)
     total = sum((Decimal(user["balance"]) for user in users), Decimal(0))
     treasury = code + "0000"
     community = [{"id": identifier("community", code), "code": code,
@@ -150,7 +161,7 @@ def build_bundle(users: list[dict], admin_email: str, group: dict) -> bytes:
                   "settings.allowAnonymousMemberList": 'true',
                   "settings.defaultGroupEmailFrequency": "never"}]
     currency = [{"id": identifier("currency", code), "code": code,
-                 "adminUser": admin_email, "name": money['name'], "namePlural": money['name']+'s',
+                 "adminUser": admin_email, "name": money['name'], "namePlural": money['name'] + 's',
                  "symbol": money['symbol'], "decimals": 2, "scale": 2,
                  "rateNumerator": rate.numerator, "rateDenominator": rate.denominator,
                  "createdAt": timestamp, "updatedAt": timestamp,
@@ -161,7 +172,7 @@ def build_bundle(users: list[dict], admin_email: str, group: dict) -> bytes:
                  "settings.defaultAcceptPaymentsAfter": "false", "settings.defaultHideBalance": "false",
                  "settings.defaultAllowExternalPayments": 'true',
                  "settings.defaultAllowExternalPaymentRequests": 'true',
-                 "settings.externalTraderCreditLimit": group.get('external_credit','0.00'),
+                 "settings.externalTraderCreditLimit": group.get('external_credit', '0.00'),
                  "settings.externalTraderMaximumBalance": 'false',
                  "settings.enableExternalPayments": 'true',
                  "settings.enableExternalPaymentRequests": 'true'}]
@@ -212,22 +223,23 @@ def build_bundle(users: list[dict], admin_email: str, group: dict) -> bytes:
 def build_initial_data(configuration, admin_email):
     output = io.BytesIO()
     names = []
-    with zipfile.ZipFile(output,'w',compression=zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         for group in configuration['groups']:
-            name = 'group-'+group['code']+'.zip'
+            name = 'group-' + group['code'] + '.zip'
             external_credit = sum((Decimal(line['limit']) for line in configuration['trustlines']
-                                   if line['from']==group['code']),Decimal(0))
-            archive.writestr(name,build_bundle(group['users'],_treasury_email(group['code'],admin_email),
-                             {**group,'external_credit':format(external_credit,'.2f')}))
+                                   if line['from'] == group['code']), Decimal(0))
+            archive.writestr(name, build_bundle(group['users'], _treasury_email(group['code'], admin_email),
+                             {**group, 'external_credit': format(external_credit, '.2f')}))
             names.append(name)
-        manifest = {'format':'seedemu-payment-v1','bundles':names}
+        manifest = {'format': 'seedemu-payment-v1', 'bundles': names}
         if configuration['trustlines']:
-            script = 'const trustlines = '+json.dumps(configuration['trustlines'])+';\n'
+            script = 'const trustlines = ' + json.dumps(configuration['trustlines']) + ';\n'
             script += FX_SETUP
-            archive.writestr('after-import.mjs',script)
+            archive.writestr('after-import.mjs', script)
             manifest['after_import'] = 'after-import.mjs'
-        archive.writestr('payment-initialization.json',json.dumps(manifest))
-        archive.comment = json.dumps({'config_sha256':_fingerprint(configuration,admin_email)}).encode()
+        archive.writestr('payment-initialization.json', json.dumps(manifest))
+        archive.comment = json.dumps(
+            {'config_sha256': _fingerprint(configuration, admin_email)}).encode()
     return output.getvalue()
 
 
@@ -246,7 +258,8 @@ def prepare_bundle(users: dict, admin_email: str, state: Path | None = None) -> 
     if not bundle.exists():
         if legacy_bundle.exists() or legacy_metadata.exists():
             if not legacy_bundle.is_file() or not legacy_metadata.is_file():
-                raise ValueError('incomplete initial data cache; restore both legacy initialization files')
+                raise ValueError(
+                    'incomplete initial data cache; restore both legacy initialization files')
             bundle = legacy_bundle
         else:
             return build_initial_data(users, admin_email)
@@ -265,5 +278,6 @@ def prepare_bundle(users: dict, admin_email: str, state: Path | None = None) -> 
             if saved.get('bundle_sha256') != hashlib.sha256(data).hexdigest():
                 raise ValueError('cached initial data checksum mismatch')
     if saved.get('config_sha256') != _fingerprint(users, admin_email):
-        raise ValueError('initial configuration changed; use a new state directory to start a new experiment')
+        raise ValueError(
+            'initial configuration changed; use a new state directory to start a new experiment')
     return data
