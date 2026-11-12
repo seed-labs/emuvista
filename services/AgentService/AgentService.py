@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 from seedemu.core import Service
 from .AgentServer import AgentServer
+from .ClockServer import ClockServer
 from .ToolPackage import ToolPackage
 
 
@@ -15,6 +16,8 @@ class AgentService(Service):
         self._packages = {}
         self._nodes = set()
         self._person_ids = set()
+        self.clock = ClockServer()
+        self._pending_targets[self.clock.vnode] = self.clock
         self._environment_file = Path(environment_file).resolve() if environment_file else None
         if self._environment_file and not self._environment_file.is_file():
             raise ValueError('environment file not found')
@@ -78,12 +81,16 @@ class AgentService(Service):
         return server
 
     def _createServer(self):
-        return AgentServer(self._packages, self._environment_file)
+        return AgentServer(self._packages, self.clock, self._environment_file)
 
     def _doConfigure(self, node, server):
         key = (node.getAsn(), node.getName())
         if key in self._nodes:
-            raise ValueError('bind each agent to a separate node')
+            raise ValueError('bind each agent and the clock to separate nodes')
+        if server is self.clock:
+            self.clock.configure(node)
+            self._nodes.add(key)
+            return
         if not server._persona:
             raise ValueError('setPersona with a stable person id before rendering')
         person_id = server._persona['id']

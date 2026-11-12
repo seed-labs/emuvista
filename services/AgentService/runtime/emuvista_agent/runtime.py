@@ -11,6 +11,7 @@ import time
 import types
 import uuid
 from .events import result_summary
+from .clock import ClockClient
 
 
 def validate(value, schema):
@@ -63,6 +64,7 @@ class AgentContext:
         self.knowledge = self.persona.setdefault('knowledge', {})
         self.possessions = self.persona.setdefault('possessions', {})
         self.tool_config = config.get('tool_config', {})
+        self.clock = ClockClient(config['clock'])
         self.observer = None
         self.tools = ToolRegistry(self)
 

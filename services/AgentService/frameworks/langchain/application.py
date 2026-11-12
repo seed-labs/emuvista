@@ -8,7 +8,6 @@ from pathlib import Path
 import random
 import signal
 import threading
-import time
 from typing import TypedDict
 
 from langchain.agents import AgentState, create_agent
@@ -143,6 +142,12 @@ def build_graph(context, model, checkpoints, stop, *, default_rest=120, maximum=
         if stop.is_set():
             raise ResidentStopped()
         counters['calls'] += 1
+        current_time = context.clock.now().isoformat()
+        context.emit('time_observed', time=current_time)
+        request = request.override(messages=[
+            *request.messages,
+            HumanMessage(content=json.dumps({'kind': 'time_observation', 'time': current_time})),
+        ])
         try:
             return handler(request)
         except ResidentStopped:
@@ -172,16 +177,16 @@ def build_graph(context, model, checkpoints, stop, *, default_rest=120, maximum=
         if counters['first_cycle'] is None:
             counters['first_cycle'] = cycle
         counters.update(calls=0, error=None)
-        now = time.time()
+        now = context.clock.now().timestamp()
         context.emit('waking', cycle=cycle)
         message = HumanMessage(content=json.dumps({
-            'kind': 'time_observation', 'time': datetime.now(timezone.utc).isoformat(),
+            'kind': 'wake_observation', 'cycle': cycle,
         }))
         return {'messages': add_messages(state.get('messages', []), [message]),
                 'cycle': cycle, 'moment_started': now}
 
     def plan_rest(state):
-        now = time.time()
+        now = context.clock.now().timestamp()
         selected = None
         for message in reversed(state['messages']):
             if isinstance(message, ToolMessage) and message.name == 'life__rest':
@@ -218,7 +223,7 @@ def build_graph(context, model, checkpoints, stop, *, default_rest=120, maximum=
         return 'wait'
 
     def wait(state):
-        remaining = max(0, state.get('wake_at', 0) - time.time())
+        remaining = max(0, state.get('wake_at', 0) - context.clock.now().timestamp())
         if stop.wait(remaining):
             raise ResidentStopped()
         return {}
@@ -273,7 +278,7 @@ def main():
             if snapshot.next:
                 context.emit('framework_resumed', nodes=list(snapshot.next))
             else:
-                seconds = max(0, snapshot.values.get('wake_at', 0) - time.time()
+                seconds = max(0, snapshot.values.get('wake_at', 0) - context.clock.now().timestamp()
                               ) if snapshot.values else random.uniform(0, startup_delay)
                 context.emit('starting', seconds=round(seconds, 1))
                 if stop.wait(seconds):

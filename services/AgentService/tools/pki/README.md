@@ -11,6 +11,7 @@ agent.setTools(['pki.inspect_certificate_file', 'pki.inspect_remote_tls_certific
 ```
 
 The package installs OpenSSL, coreutils and Pydantic in the agent image.
+Bind `agents.clock.vnode` as shown in the AgentService README.
 Commands run as the agent user in its own container; `source` is injected as
 `local`. File permissions still apply. A network `target` can be another node;
 it does not grant access to that node's files or commands. Omit optional arguments

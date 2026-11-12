@@ -8,7 +8,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from seedemu.core import Binding, Filter
+from seedemu.core import Action, Binding, Filter
 from examples.H99_virtual_world import createworld, createcompiler
 from services.AgentService import AgentService, ToolPackage
 
@@ -79,6 +79,8 @@ def main():
     initialize_accounts(people, bundles)
     agents = AgentService(tools=prepare_tools(bundles), environment_file=HERE / '.env')
     network = emu.getLayer('Base').getAutonomousSystem(171)
+    emu.addBinding(Binding(agents.clock.vnode, action=Action.NEW,
+                           filter=Filter(asn=171, nodeName=agents.clock.vnode, ip='10.171.0.79')))
     for index, person in enumerate(people, 1):
         agent = agents.createagent(person)
         address = '10.171.0.' + str(79 + index)

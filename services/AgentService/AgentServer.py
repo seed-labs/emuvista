@@ -12,9 +12,10 @@ DATA = '/home/emuvista-agent/state'
 
 
 class AgentServer(Server):
-    def __init__(self, packages, environment_file=None):
+    def __init__(self, packages, clock, environment_file=None):
         super().__init__()
         self._packages = packages
+        self._clock = clock
         self._persona = {}
         self.vnode = None
         self._tools = None
@@ -86,6 +87,7 @@ class AgentServer(Server):
                                  shlex.join(dict.fromkeys(requirements)))
         deployment = framework.install(node, ROOT, DATA)
         config = {'identity': self._persona['id'], 'uid': 10001, 'root': ROOT,
+                  'clock': self._clock.getURL(),
                   'packages': list(self._packages), 'allowed_tools': selected,
                   'tool_config': {name: package.configuration for name, package in self._packages.items()},
                   'persona': self._persona, 'framework': deployment}

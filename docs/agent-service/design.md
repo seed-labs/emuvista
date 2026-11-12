@@ -371,7 +371,9 @@ flowchart TB
             Registry["Local tools<br/>Definitions, validation and dispatch"]
             Handlers["Service-owned protocol handlers"]
             Context["Persona<br/>Personal account information"]
+            ClockClient["Internal clock client<br/>Not a tool"]
             Events["Tool and framework events"]
+            Framework --> ClockClient
             Framework <--> Memory
             Framework <--> Registry
             Registry <--> Handlers
@@ -380,10 +382,13 @@ flowchart TB
             Framework --> Events
         end
         Network["Simulated network<br/>Routing and DNS"]
+        ClockServer["ClockServer container<br/>Current host time in UTC"]
         Email["Email"]
         Payment["Payment"]
         Bank["Bank"]
         Handlers <--> Network
+        ClockClient <--> Network
+        Network <--> ClockServer
         Network <--> Email
         Network <--> Payment
         Network <--> Bank
@@ -396,6 +401,28 @@ configuration, persona and tools. After startup, observations, tool use, memory
 and continuation are local to that framework execution. No external controller
 assigns a new business task or periodically activates the Agent. The collector
 observes results without driving behavior or modifying memory.
+
+ClockServer is a native SEED Server owned by AgentService, alongside its AgentServers.
+The example binds `agents.clock.vnode` to a separate host. During configure/install,
+AgentService resolves its internal address, generates the HTTP server and health
+check, and gives each Agent a clock client. The clock container is infrastructure;
+`start.py` waits for it to become healthy before starting Agents.
+
+The selected framework integration reads `context.clock.now()` over the simulated
+network before each model decision, including decisions after tool results. In the
+LangChain integration, model-call middleware adds a fresh time observation to that
+request. This observation does not accumulate in checkpointed messages or alter
+the persona. The shared server follows real host time in UTC, and rest deadlines
+use the same source.
+
+```text
+Read ClockServer → Model decision → Chosen tools or rest → Next decision
+```
+
+Reading time is a fixed workflow step. The model continues to choose its actions
+and when to rest. `time_observed` events expose clock reads to observation without
+presenting them as tool calls. Top-level code only declares the server's binding;
+no per-Agent clock settings or public clock tool are added.
 
 The model endpoint may be external, but the tool execution environment and
 application clients remain in the simulation. Network access to the model is an

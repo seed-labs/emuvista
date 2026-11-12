@@ -6,6 +6,8 @@ See [design.md](../../docs/agent-service/design.md) for the architecture and the
 
 ```python
 agents = AgentService(tools=tools, environment_file='.env')
+emu.addBinding(Binding(agents.clock.vnode, action=Action.NEW,
+                      filter=Filter(asn=171, nodeName=agents.clock.vnode, ip='10.171.0.79')))
 agent = agents.createagent(person)
 # Optional: agent.setFramework('langchain')  # Already the default.
 # Optional: agent.setTools(['email.inbox', 'email.send'])
@@ -41,6 +43,14 @@ conversation subgraph, SQLite checkpoints, summarization and per-activity model
 call budgets. One native graph execution owns observation, activity, waiting and
 continuation. There is no external loop issuing new tasks. Runtime memory defaults
 to `/home/emuvista-agent/state/langgraph.sqlite`; E99's `--state` preserves it.
+
+AgentService owns one native `ClockServer`, available as `agents.clock`. Bind its
+virtual node to a separate host using the normal SEED binding API. Installation
+starts an HTTP time server and an image health check, and supplies its internal
+address to every Agent. No per-Agent clock configuration is needed.
+Before each model decision, the framework reads `context.clock.now()` over HTTP
+and includes the current UTC time in that request. Rest deadlines use the same
+clock. It follows host time and is not registered as a tool.
 
 `environment_file` is read-only mounted at startup. Only `LLM_*` and `AGENT_*`
 settings are loaded; API keys are not copied into images. Set `LLM_API_KEY`,

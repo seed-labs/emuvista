@@ -1,11 +1,10 @@
 """Return a resident's requested wait; the framework checkpoints the schedule."""
 
 from datetime import datetime, timezone
-import time
 
 
 def rest(arguments, context):
-    now = time.time()
+    now = context.clock.now().timestamp()
     seconds = arguments['seconds']
     wake_at = now + seconds
     context.emit('rest_scheduled', seconds=seconds, reason=arguments['reason'], intention=arguments['reason'],

@@ -198,6 +198,11 @@ bank account/card queries, wallet receipt/history queries, shop browsing/quotes/
 delivery/orders, and a local rest tool. Loan tools are not implemented.
 Their accounts remain separate. Backgrounds and existing balances can differ.
 
+AgentService's shared ClockServer runs in a separate container at
+`http://10.171.0.79:8080/time`, with no host port mapping. The framework reads it
+before each model decision; it is not an Agent tool. `start.py` treats the clock
+as infrastructure and waits for its image health check before starting Agents.
+
 Agents use H99's internal domain names over HTTP, SMTP and IMAP. Host browsers
 use HTTP on the mapped `localhost` ports. See H99 for the URL table.
 
