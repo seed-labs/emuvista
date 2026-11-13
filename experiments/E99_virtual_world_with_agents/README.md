@@ -46,7 +46,7 @@ and shop orders survive removal of the containers. Logs remain inside containers
 `start.py` supplies saved-memory mounts through `output/docker-compose.agents.yml`;
 the compiled Compose file remains unchanged. Plain `docker compose down` still stops the whole project.
 Reusing the same `--state` directory when regenerating also preserves application
-credentials and DNSSEC keys. Regeneration can change image contents; build again
+credentials. Regeneration can change image contents; build again
 after regenerating or changing code.
 
 If building the whole world fails with `failed to receive status ... no such job`,

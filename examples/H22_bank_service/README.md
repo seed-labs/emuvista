@@ -1,6 +1,6 @@
 # Bank service
 
-Apache Fineract banking on the shared [H00 mini Internet](../H00_mini_internet/), using H21 email records and H00 DNSSEC for real verification emails.
+Apache Fineract banking on the shared [H00 mini Internet](../H00_mini_internet/), using H21 email for verification messages.
 
 ```sh
 python3 bank.py
@@ -58,6 +58,6 @@ The two bank websites share the same Fineract accounts and loans. Customer acces
 
 Agents use `southbank.com` (`10.151.0.10`) and `mail.com` (`10.150.0.10`). The staff website uses `10.151.0.18`. Application browser ports bind to localhost; Internet Map uses port 8080. H22 includes its own full mini Internet and mailbox deployment; run it separately from the other examples to avoid duplicate node container names and ports.
 
-Without `--state`, compiling starts fresh. From the example directory, use `python3 bank.py --state ./bank-state` to save and resume bank, email and DNS keys with the same configuration and addresses. Keep this directory outside `output` and stop containers before recompiling.
+Without `--state`, compiling starts fresh. From the example directory, use `python3 bank.py --state ./bank-state` to save and resume bank and email data with the same configuration and addresses. Keep this directory outside `output` and stop containers before recompiling.
 
 USD/EUR accounts are separate balances: native transfers require the same currency. Currency conversion, investments and payment-system integration are outside this example.

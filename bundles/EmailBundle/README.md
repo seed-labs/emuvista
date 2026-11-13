@@ -34,16 +34,16 @@ server for each customer's address. A bank declares this with `connectEmail(emai
 
 `setInitialConfiguration(path_or_dict)` supplies `domains`, `users` and optional `aliases`. The server hostname is configured separately with `setHostname()`. Users define `email`, `password`, optional `quota_bytes` and `change_password_on_login`. Aliases define `email` and a `destination` list of configured users. Each instance has `admin@<first configured domain>` / `MailAdminDemo123!`; the default example uses `admin@mail.com`. No administrator credential setter is exposed. Application mailboxes are supplied by the caller. Native Mailu APIs create the accounts at first startup. Existing mailbox passwords and data are retained on resume.
 
-Mailu application components share one emulated subnet, matching its internal trust model. Their ordered roles are `front`, `admin`, `smtp`, `imap`, `redis`, `webmail`, `antispam`, `initialize`. The required `resolver` argument identifies an existing DNSSEC-validating resolver. Without a network assignment, free addresses are allocated on a rendered host network.
+Mailu application components share one emulated subnet, matching its internal trust model. Their ordered roles are `front`, `admin`, `smtp`, `imap`, `redis`, `webmail`, `antispam`, `initialize`. The required `resolver` argument identifies an existing DNS resolver. Without a network assignment, free addresses are allocated on a rendered host network.
 
 Only the front container publishes a browser port, bound to `127.0.0.1`. Emulated clients use its internal address: SMTP 25, authenticated SMTP 587, IMAP 143 and ManageSieve 4190. Webmail uses HTTP; SMTP and IMAP use plain connections. Users and agents authenticate to their own mailboxes.
 
 After setting the initial configuration, `email.addUser(user)` adds one mailbox
 using the same user fields before compilation.
 
-[H00](../../examples/H00_mini_internet/) provides DNS using SEED's `DomainNameService`, `Dnssec` and `DomainNameCachingService`. Add application records before rendering. Supply the signer's `getTrustAnchor('.')` to the caching server's `addDnssecTrustAnchor()` and call `setDnssecValidation()`. Mailu also checks the signed name `example.org` at startup. H21 defines this name in its private simulation namespace; public Internet resolution is not configured. EmailBundle does not generate DNS records, keys or resolver containers.
+[H00](../../examples/H00_mini_internet/) provides unsigned DNS using SEED's `DomainNameService` and `DomainNameCachingService`. Add application records before rendering. EmailBundle removes the mandatory DNSSEC startup check from the admin container's `/start.py` before launching it; no DNS answers are marked as validated. Public Internet resolution is not configured. EmailBundle does not generate DNS records, keys or resolver containers.
 
-Without `setSavePath`, recompilation uses fresh temporary state outside the output directory. Explicit saved state includes accounts, mail, queues, Webmail settings, Redis, DKIM, initialization markers and credentials. Stop the stack before recompiling; resume with the same configuration and network. H21 also saves the SEED DNS signing keys under `--state`.
+Without `setSavePath`, recompilation uses fresh temporary state outside the output directory. Explicit saved state includes accounts, mail, queues, Webmail settings, Redis, DKIM, initialization markers and credentials. Stop the stack before recompiling; resume with the same configuration and network.
 
 See [H21](../../examples/H21_email_service/README.md) for accounts and browser use.
 

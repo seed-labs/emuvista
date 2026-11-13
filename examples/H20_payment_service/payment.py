@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 from seedemu.compiler import Docker, Platform
 from bundles.PaymentBundle import PaymentBundle
-from examples.H00_mini_internet import DNS_RESOLVER, build_emulator
+from examples.H00_mini_internet import DNS_RESOLVER, build_emulator, host_zone
 
 
 def main():
@@ -38,7 +38,7 @@ def main():
         parser.error(
             'output contains runtime data from the old layout; stop its containers and move output aside before recompiling')
     emu = build_emulator()
-    emu.getLayer('DomainNameService').getRootZone().addRecord('payment.com. A 10.150.0.10')
+    host_zone(emu, 'payment.com').addRecord('@ A 10.150.0.10')
     emu.render()
     payment = PaymentBundle(emu, images=json.loads(args.images.read_text())
                             if args.images else None, resolver=DNS_RESOLVER)

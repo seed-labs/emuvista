@@ -1,8 +1,9 @@
 # Virtual world
 
-Email, payment and two banks on the shared [H00 mini Internet](../H00_mini_internet/), with DNSSEC.
-H00 supplies an empty DNS root; `createworld` registers the application A and MX
-records before rendering. Network placement stays in the example through SEED's
+Email, payment and two banks on the shared [H00 mini Internet](../H00_mini_internet/).
+H00 supplies root, TLD, recursive and shared hosting DNS servers. `createworld`
+registers separate application zones and their A/MX records before rendering.
+Network placement stays in the example through SEED's
 native `addInternalNetwork()` API.
 Agents are added by [E99](../../experiments/E99_virtual_world_with_agents/).
 Use the application images already required by H20–H22; customized images are in [docker_images](../../docker_images/README.md).
@@ -38,7 +39,7 @@ accounts and cards are declared in [E99 people.json](../../experiments/E99_virtu
 Run E99 to initialize those residents and their Agents. Email initialization completes first. South Bank and North Bank then initialize
 customers in order because they share the sender mailbox.
 
-Inside the town, DNSSEC-backed DNS resolves these HTTP addresses:
+Inside the town, DNS resolves these HTTP addresses:
 
 | Application | Internal URL |
 | --- | --- |
@@ -146,7 +147,7 @@ its own client ID, secret and callbacks. Users still link their own cards throug
 login and consent. No concrete instance pairing is hardcoded in Python.
 
 Without `--state`, compilation starts fresh. `--state .runtime/world` preserves
-bank, email, wallet and DNS state. Stop the world with `docker compose down`
+bank, email and wallet state. Stop the world with `docker compose down`
 before recompiling. H99 and E99 use the same host ports; run one at a time.
 
 After upgrading from the intermediary-account payment version, regenerate the
