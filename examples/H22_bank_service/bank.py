@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 from seedemu.compiler import Docker, Platform
 from examples.H21_email_service.email_service import add_mail_records
-from examples.H00_mini_internet import DNS_RESOLVER, build_emulator
+from examples.H00_mini_internet import DNS_RESOLVER, build_emulator, host_zone
 from bundles.BankBundle import BankBundle
 from bundles.EmailBundle import EmailBundle
 
@@ -20,7 +20,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, default=Path(__file__).with_name('bank.json'))
     parser.add_argument('--output', type=Path, default=Path('output'))
-    parser.add_argument('--state', type=Path, help='Save and resume bank, mailbox and DNS state')
+    parser.add_argument('--state', type=Path, help='Save and resume bank and mailbox state')
     args = parser.parse_args()
     if args.state and (args.state.resolve() == args.output.resolve() or args.output.resolve() in args.state.resolve().parents):
         parser.error('state must be outside output')
@@ -37,11 +37,11 @@ def main():
     mailbox['domains'] = sorted(set(mailbox['domains']) | {
                                 user['email'].split('@')[1] for user in mailbox['users']})
 
-    emu = build_emulator(dnssec_key_store=args.state.resolve() / 'dnssec' if args.state else None)
+    emu = build_emulator()
     add_mail_records(emu, mailbox)
-    zone = emu.getLayer('DomainNameService').getRootZone()
-    zone.addRecord('southbank.com. A 10.151.0.10')
-    zone.addRecord('staff.southbank.com. A 10.151.0.18')
+    zone = host_zone(emu, 'southbank.com')
+    zone.addRecord('@ A 10.151.0.10')
+    zone.addRecord('staff A 10.151.0.18')
     emu.render()
     email = EmailBundle(emu, resolver=DNS_RESOLVER).setHostname(
         mailbox['hostname']).setInitialConfiguration(mailbox).enableHostAccess(8445)

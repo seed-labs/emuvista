@@ -9,7 +9,7 @@ docker compose build
 docker compose up -d
 ```
 
-Use the updated SEED Emulator with the DNSSEC validation and signing-key APIs. Mailu uses the official `ghcr.io/mailu/*:2024.06.67` images; first build downloads them and adds routing tools when needed. SEED generates its signing keys using the official ISC BIND Docker image.
+Mailu uses the official `ghcr.io/mailu/*:2024.06.67` images; first build downloads them and adds routing tools when needed.
 
 | Interface | Address |
 | --- | --- |
@@ -37,6 +37,6 @@ Agents inside the emulator use `mail.com` (`10.150.0.10`): authenticated SMTP su
 
 Without `--state`, recompilation creates fresh mail storage outside `output`. Stop the current stack before recompiling. To save and resume mailboxes, use `python3 email_service.py --state ./email-state` with the same configuration and network. Keep the state directory outside `output`.
 
-H00 provides authoritative DNS at `10.150.0.53`, signs the private root with its `Dnssec` layer, and validates queries at `10.150.0.54`. EmailBundle uses this resolver. The private zone contains mail-domain A/MX records and the `example.org` record required by Mailu's startup check. Public Internet mail delivery is not configured.
+H00 provides root and TLD DNS, a recursive resolver at `10.150.0.54` and shared zone hosting at `10.154.0.53`. The mail domains have their own hosted zones with A/MX records. DNSSEC is disabled; EmailBundle skips Mailu's DNSSEC startup check. Public Internet mail delivery is not configured.
 
 See [the bundle API](../../bundles/EmailBundle/README.md).

@@ -46,7 +46,7 @@ class EmailBundle(ContainerBundle):
                 raise ValueError('invalid email image role or reference')
             self._images[role] = image
         if resolver is None:
-            raise ValueError('EmailBundle requires an external DNSSEC-validating resolver')
+            raise ValueError('EmailBundle requires an external DNS resolver')
         self._resolver = str(IPv4Address(resolver))
         self._containers = {r: PreparedContainer(
             name=name + '-' + r, emulator=self._emulator) for r in ROLES}
@@ -248,7 +248,9 @@ class EmailBundle(ContainerBundle):
                 value['volumes'].append(f'{directory}:{target}')
             c.updateServiceConfig(value)
             c.setFile('/application-start.sh', '#!/bin/sh\nexec "$@"\n')
-            c.setEntrypointWrapper('/application-start.sh', [])
+            # The private simulation uses unsigned DNS; skip Mailu's DNSSEC gate.
+            startup_commands = ["sed -i '/^test_DNS()$/d' /start.py"] if role == 'admin' else []
+            c.setEntrypointWrapper('/application-start.sh', startup_commands)
         (root / 'deployment.json').write_text(json.dumps({'addresses': self._addresses, 'resolver': self._resolver,
                                                           'images': self._images, 'state_path': str(state), 'persistent': self._state_path is not None,
                                                           'hostname': self._hostname, 'browser': f'http://localhost:{self._host_port}/webmail/' if self._host_port else None}, indent=2) + '\n')

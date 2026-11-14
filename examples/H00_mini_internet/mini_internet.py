@@ -8,20 +8,20 @@ from pathlib import Path
 
 from seedemu.compiler import Docker, Platform
 from seedemu.core import Binding, Emulator, Filter
-from seedemu.layers import Base, Dnssec, Ebgp, Ibgp, Ospf, PeerRelationship, Routing
+from seedemu.layers import Base, Ebgp, Ibgp, Ospf, PeerRelationship, Routing
 from seedemu.services import DomainNameCachingService, DomainNameService
 from seedemu.utilities import Makers
 
 
 DNS_AUTHORITY = '10.150.0.53'
 DNS_RESOLVER = '10.150.0.54'
+DNS_HOSTING = '10.154.0.53'
 
 
-def build_emulator(hosts_per_as=2, *, dnssec_key_store=None) -> Emulator:
-    """Return an unrendered mini Internet with an empty private DNS root.
+def build_emulator(hosts_per_as=2) -> Emulator:
+    """Return an unrendered mini Internet with hierarchical private DNS.
 
-    Add application records and services before calling emu.render(). DNSSEC is
-    always enabled; saved signing keys must be outside compiler output.
+    Add application records and services before calling emu.render().
     The network includes an IPv4 gateway to destinations outside the emulation.
     """
     if type(hosts_per_as) is not int or hosts_per_as < 1:
@@ -130,34 +130,57 @@ def build_emulator(hosts_per_as=2, *, dnssec_key_store=None) -> Emulator:
     emu.addLayer(ebgp)
     emu.addLayer(Ibgp())
     emu.addLayer(Ospf())
-    _configure_dns(emu, key_store=dnssec_key_store)
+    _configure_dns(emu)
     return emu
 
 
-def _configure_dns(emu, *, key_store):
+def _configure_dns(emu):
     base = emu.getLayer('Base')
     authority = DomainNameService()
-    base.getAutonomousSystem(150).createHost(
-        'dns_authority').joinNetwork('net0', address=DNS_AUTHORITY)
-    authority.install('dns-authority').addZone('.').setMaster()
-    emu.addBinding(Binding('dns-authority', filter=Filter(asn=150, nodeName='dns_authority')))
-    emu.getVirtualNode('dns-authority').setDisplayName('Root DNS')
+    emu.addLayer(authority)
+    for name, domain, asn, display in [
+        ('dns_authority', '.', 150, 'Root DNS'),
+        ('dns_com', 'com.', 151, '.com DNS'),
+        ('dns_net', 'net.', 152, '.net DNS'),
+        ('dns_org', 'org.', 153, '.org DNS'),
+    ]:
+        base.getAutonomousSystem(asn).createHost(name).joinNetwork(
+            'net0', address=f'10.{asn}.0.53')
+        authority.install(name).addZone(domain).setMaster()
+        emu.addBinding(Binding(name, filter=Filter(asn=asn, nodeName=name)))
+        emu.getVirtualNode(name).setDisplayName(display)
 
-    caching = DomainNameCachingService()
+    base.getAutonomousSystem(154).createHost('dns_hosting').joinNetwork(
+        'net0', address=DNS_HOSTING)
+    authority.install('dns_hosting').setMaster()
+    emu.addBinding(Binding('dns_hosting', filter=Filter(asn=154, nodeName='dns_hosting')))
+    emu.getVirtualNode('dns_hosting').setDisplayName('DNS Hosting: ns1.dns.com')
+    host_zone(emu, 'dns.com').addRecord('ns1 A ' + DNS_HOSTING)
+    # Bootstrap the provider's own nameserver with glue in its parent zone.
+    authority.getZone('com.').addRecord('ns1.dns.com. A ' + DNS_HOSTING)
+
+    recursive = DomainNameCachingService()
     base.getAutonomousSystem(150).createHost(
         'dns_resolver').joinNetwork('net0', address=DNS_RESOLVER)
-    resolver = caching.install('dns-resolver')
-    emu.addLayer(authority)
-    emu.addLayer(caching)
-    emu.addBinding(Binding('dns-resolver', filter=Filter(asn=150, nodeName='dns_resolver')))
-    emu.getVirtualNode('dns-resolver').setDisplayName('Recursive DNS')
+    recursive.install('dns_resolver')
+    emu.addLayer(recursive)
+    emu.addBinding(Binding('dns_resolver', filter=Filter(asn=150, nodeName='dns_resolver')))
+    emu.getVirtualNode('dns_resolver').setDisplayName('Recursive DNS')
 
-    signing = Dnssec().enableOn('.')
-    if key_store is not None:
-        signing.setKeyStore(Path(key_store).expanduser().resolve())
-    resolver.addDnssecTrustAnchor('.', signing.getTrustAnchor('.'))
-    resolver.setDnssecValidation()
-    emu.addLayer(signing)
+
+def host_zone(emu, domain):
+    """Delegate a zone to the shared nameserver and return its native Zone."""
+    dns = emu.getLayer('DomainNameService')
+    name = domain.rstrip('.') + '.'
+    server = dns.install('dns_hosting')
+    zone = dns.getZone(name)
+    if name not in server.getZones():
+        server.addZone(name, createNsAndSoa=False)
+        zone.addRecord('@ SOA ns1.dns.com. hostmaster.dns.com. 1 900 900 1800 60')
+        zone.addRecord('@ NS ns1.dns.com.')
+        parent = name.rstrip('.').split('.', 1)[1]
+        dns.getZone(parent).addRecord(f'{name} NS ns1.dns.com.')
+    return zone
 
 
 def main():
@@ -165,13 +188,8 @@ def main():
     parser.add_argument('--output', type=Path, default=Path('output'))
     parser.add_argument('--platform', choices=['amd', 'arm'], default='amd')
     parser.add_argument('--hosts-per-as', type=int, default=2)
-    parser.add_argument('--dnssec-key-store', type=Path,
-                        help='Optional directory to save and reuse DNSSEC keys')
     args = parser.parse_args()
-    if args.dnssec_key_store and (args.dnssec_key_store.resolve() == args.output.resolve()
-                                  or args.output.resolve() in args.dnssec_key_store.resolve().parents):
-        parser.error('DNSSEC keys must be outside output')
-    emu = build_emulator(args.hosts_per_as, dnssec_key_store=args.dnssec_key_store)
+    emu = build_emulator(args.hosts_per_as)
     emu.render()
     platform = Platform.AMD64 if args.platform == 'amd' else Platform.ARM64
     emu.compile(Docker(platform=platform, internetMapEnabled=True),

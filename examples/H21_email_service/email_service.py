@@ -11,17 +11,14 @@ sys.path.insert(0, str(ROOT))
 
 from seedemu.compiler import Docker, Platform
 from bundles.EmailBundle import EmailBundle
-from examples.H00_mini_internet import DNS_AUTHORITY, DNS_RESOLVER, build_emulator
+from examples.H00_mini_internet import DNS_RESOLVER, build_emulator, host_zone
 
 
 def add_mail_records(emu, configuration, address='10.150.0.10'):
     """Add application records to H00's existing DNS infrastructure."""
-    zone = emu.getLayer('DomainNameService').getRootZone()
-    zone.addRecord(f'{configuration["hostname"]}. A {address}')
+    host_zone(emu, configuration['hostname']).addRecord('@ A ' + address)
     for domain in configuration['domains']:
-        zone.addRecord(f'{domain}. MX 10 {configuration["hostname"]}.')
-    # Mailu checks this signed name at startup in the private simulation namespace.
-    zone.addRecord('example.org. A ' + DNS_AUTHORITY)
+        host_zone(emu, domain).addRecord(f'@ MX 10 {configuration["hostname"]}.')
 
 
 def main():
@@ -33,7 +30,7 @@ def main():
     args = parser.parse_args()
     if args.state and (args.state.resolve() == args.output.resolve() or args.output.resolve() in args.state.resolve().parents):
         parser.error('email state must be outside output')
-    emu = build_emulator(dnssec_key_store=args.state.resolve() / 'dnssec' if args.state else None)
+    emu = build_emulator()
     configuration = json.loads(args.config.read_text())
     bundle = EmailBundle(emu, resolver=DNS_RESOLVER)
     bundle.setHostname(configuration['hostname'])
