@@ -227,3 +227,9 @@ output/
 
 .runtime/
 *.bin
+
+# Vendored application build output
+node_modules/
+.gradle/
+.angular/
+.quasar/

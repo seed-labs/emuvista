@@ -52,6 +52,13 @@ python3 "$SEEDEMU_ROOT/seedemu/testing/cli.py" up \
 
 ## PKI tool walkthrough
 
+The PKI tools now live in
+[`services/AgentService/tools/pki`](../../services/AgentService/tools/pki/).
+There is no standalone tool server. The multi-node calls below describe the
+library workflow and require a caller-supplied execution backend. AgentService's
+local backend cannot administer the CA and web containers from another node.
+This scenario does not install an AgentService or automatically issue certificates.
+
 Invoke the PKI tools directly. Set `source` to the running web container's Docker
 name or ID and `ca_service_source` to the CA container's Docker name or ID; the
 generated `docker compose ps` output lists the container names. Use the credentials

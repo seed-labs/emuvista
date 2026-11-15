@@ -1,0 +1,327 @@
+{
+  "people": [
+    {
+      "id": "4de4ceb9-78be-4d9b-8236-6d080b70d1f9",
+      "name": "Alice",
+      "background": "Alice is curious and sociable. She enjoys books, cooking and discovering useful things, and likes getting to know people before making plans with them.",
+      "accounts": {
+        "email": {
+          "email": "alice@mail.com",
+          "password": "EmailDemo123!"
+        },
+        "payment": {
+          "group": "SEED",
+          "password": "PaymentDemo123!",
+          "balance": 100
+        },
+        "bank": {
+          "south-bank": {
+            "firstName": "Alice",
+            "lastName": "Example",
+            "password": "BankDemoPass123!",
+            "accounts": [
+              {
+                "id": "alice-checking",
+                "name": "Alice Checking",
+                "product": "USDC",
+                "balance": 1000
+              },
+              {
+                "id": "alice-savings",
+                "name": "Alice Savings",
+                "product": "USDC",
+                "balance": 600
+              }
+            ],
+            "cards": [
+              {
+                "id": "alice-salary",
+                "name": "Salary card",
+                "account": "alice-checking",
+                "number": "9900010000000019",
+                "expires": "2035-12"
+              },
+              {
+                "id": "alice-savings",
+                "name": "Savings card",
+                "account": "alice-savings",
+                "number": "9900010000000027",
+                "expires": "2035-12"
+              }
+            ]
+          },
+          "north-bank": {
+            "firstName": "Alice",
+            "lastName": "Example",
+            "password": "BankDemoPass123!",
+            "accounts": [
+              {
+                "id": "alice-checking",
+                "name": "Alice North Checking",
+                "product": "USDC",
+                "balance": 800
+              }
+            ],
+            "cards": [
+              {
+                "id": "alice-north",
+                "name": "North card",
+                "account": "alice-checking",
+                "number": "9900020000000018",
+                "expires": "2035-12"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "18d0a020-1e17-4603-bd52-e3fa5e2d3e85",
+      "name": "Bob",
+      "background": "Bob is friendly and thoughtful. He enjoys music and games, likes exchanging recommendations, and tends to consider a purchase before spending money.",
+      "accounts": {
+        "email": {
+          "email": "bob@mail.com",
+          "password": "EmailDemo123!"
+        },
+        "payment": {
+          "group": "SEED",
+          "password": "PaymentDemo123!",
+          "balance": 50
+        },
+        "bank": {
+          "south-bank": {
+            "firstName": "Bob",
+            "lastName": "Example",
+            "password": "BankDemoPass123!",
+            "accounts": [
+              {
+                "id": "bob-checking",
+                "name": "Bob Checking",
+                "product": "USDC",
+                "balance": 500
+              }
+            ],
+            "cards": [
+              {
+                "id": "bob-card",
+                "name": "Bob card",
+                "account": "bob-checking",
+                "number": "9900010000000050",
+                "expires": "2035-12"
+              }
+            ]
+          },
+          "north-bank": {
+            "firstName": "Bob",
+            "lastName": "Example",
+            "password": "BankDemoPass123!",
+            "accounts": [
+              {
+                "id": "bob-checking",
+                "name": "Bob Checking",
+                "product": "USDC",
+                "balance": 500
+              }
+            ],
+            "cards": [
+              {
+                "id": "bob-north",
+                "name": "Bob North card",
+                "account": "bob-checking",
+                "number": "9900020000000026",
+                "expires": "2035-12"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "5916d101-7015-4240-9fa0-5ff9ed92e51d",
+      "name": "Carol",
+      "background": "Carol runs a small digital shop. She is a friendly, imaginative salesperson who enjoys explaining her products and earning money from useful digital creations.",
+      "accounts": {
+        "email": {
+          "email": "carol@mail.com",
+          "password": "EmailDemo123!"
+        },
+        "payment": {
+          "group": "SEED",
+          "password": "PaymentDemo123!",
+          "balance": 200
+        },
+        "bank": {
+          "south-bank": {
+            "firstName": "Carol",
+            "lastName": "Example",
+            "password": "BankDemoPass123!",
+            "accounts": [
+              {
+                "id": "carol-checking",
+                "name": "Carol Checking",
+                "product": "USDC",
+                "balance": 500
+              }
+            ],
+            "cards": [
+              {
+                "id": "carol-card",
+                "name": "Carol card",
+                "account": "carol-checking",
+                "number": "9900010000000068",
+                "expires": "2035-12"
+              }
+            ]
+          },
+          "north-bank": {
+            "firstName": "Carol",
+            "lastName": "Example",
+            "password": "BankDemoPass123!",
+            "accounts": [
+              {
+                "id": "carol-checking",
+                "name": "Carol Checking",
+                "product": "USDC",
+                "balance": 500
+              }
+            ],
+            "cards": [
+              {
+                "id": "carol-card",
+                "name": "Carol card",
+                "account": "carol-checking",
+                "number": "9900020000000067",
+                "expires": "2035-12"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "79e2b92d-d80b-42b4-9bc9-8bc9ebf3c7fb",
+      "name": "Dave",
+      "background": "Dave is patient and practical. He enjoys cycling and organizing his finances, and values friendly relationships and clear agreements.",
+      "accounts": {
+        "email": {
+          "email": "dave@mail.com",
+          "password": "EmailDemo123!"
+        },
+        "payment": {
+          "group": "SEED",
+          "password": "PaymentDemo123!",
+          "balance": 200
+        },
+        "bank": {
+          "south-bank": {
+            "firstName": "Dave",
+            "lastName": "Example",
+            "password": "BankDemoPass123!",
+            "accounts": [
+              {
+                "id": "dave-checking",
+                "name": "Dave Checking",
+                "product": "USDC",
+                "balance": 500
+              }
+            ],
+            "cards": [
+              {
+                "id": "dave-card",
+                "name": "Dave card",
+                "account": "dave-checking",
+                "number": "9900010000000076",
+                "expires": "2035-12"
+              }
+            ]
+          },
+          "north-bank": {
+            "firstName": "Dave",
+            "lastName": "Example",
+            "password": "BankDemoPass123!",
+            "accounts": [
+              {
+                "id": "dave-checking",
+                "name": "Dave Checking",
+                "product": "USDC",
+                "balance": 500
+              }
+            ],
+            "cards": [
+              {
+                "id": "dave-card",
+                "name": "Dave card",
+                "account": "dave-checking",
+                "number": "9900020000000075",
+                "expires": "2035-12"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "8710c758-d8c7-46ef-b330-4e58ee7de9d9",
+      "name": "Erin",
+      "background": "Erin is observant and open-minded. She enjoys photography and everyday stories, and likes learning about people and places at her own pace.",
+      "accounts": {
+        "email": {
+          "email": "erin@mail.com",
+          "password": "EmailDemo123!"
+        },
+        "payment": {
+          "group": "SEED",
+          "password": "PaymentDemo123!",
+          "balance": 200
+        },
+        "bank": {
+          "south-bank": {
+            "firstName": "Erin",
+            "lastName": "Example",
+            "password": "BankDemoPass123!",
+            "accounts": [
+              {
+                "id": "erin-checking",
+                "name": "Erin Checking",
+                "product": "USDC",
+                "balance": 500
+              }
+            ],
+            "cards": [
+              {
+                "id": "erin-card",
+                "name": "Erin card",
+                "account": "erin-checking",
+                "number": "9900010000000084",
+                "expires": "2035-12"
+              }
+            ]
+          },
+          "north-bank": {
+            "firstName": "Erin",
+            "lastName": "Example",
+            "password": "BankDemoPass123!",
+            "accounts": [
+              {
+                "id": "erin-checking",
+                "name": "Erin Checking",
+                "product": "USDC",
+                "balance": 500
+              }
+            ],
+            "cards": [
+              {
+                "id": "erin-card",
+                "name": "Erin card",
+                "account": "erin-checking",
+                "number": "9900020000000083",
+                "expires": "2035-12"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

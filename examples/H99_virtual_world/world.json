@@ -1,0 +1,95 @@
+{
+  "email": {
+    "hostname": "mail.com",
+    "asn": 150,
+    "port": 8445,
+    "configuration": {
+      "domains": [
+        "mail.com"
+      ],
+      "users": [
+        {
+          "email": "bank@mail.com",
+          "password": "BankMailDemo123!"
+        },
+        {
+          "email": "payment@mail.com",
+          "password": "PaymentMailDemo123!"
+        }
+      ]
+    }
+  },
+  "payment": {
+    "hostname": "payment.com",
+    "asn": 152,
+    "port": 8443,
+    "configuration": {
+      "groups": [
+        {
+          "code": "SEED",
+          "name": "Payments",
+          "currency": {
+            "name": "US Dollar",
+            "symbol": "USD",
+            "rate": 1
+          }
+        }
+      ]
+    },
+    "connections": {
+      "bank": [
+        "south-bank",
+        "north-bank"
+      ],
+      "email": [
+        "email"
+      ]
+    }
+  },
+  "south-bank": {
+    "name": "South Bank",
+    "hostname": "southbank.com",
+    "asn": 151,
+    "port": 8444,
+    "staffPort": 8446,
+    "configuration": {
+      "savingsProducts": [
+        {
+          "id": "USDC",
+          "name": "USD",
+          "currency": "USD",
+          "interestRate": 0
+        }
+      ],
+      "sender": "bank@mail.com"
+    },
+    "connections": {
+      "email": [
+        "email"
+      ]
+    }
+  },
+  "north-bank": {
+    "name": "North Bank",
+    "hostname": "northbank.com",
+    "asn": 153,
+    "port": 8447,
+    "staffPort": 8448,
+    "configuration": {
+      "savingsProducts": [
+        {
+          "id": "USDC",
+          "name": "USD",
+          "currency": "USD",
+          "interestRate": 0
+        }
+      ],
+      "sender": "bank@mail.com"
+    },
+    "connections": {
+      "email": [
+        "email"
+      ]
+    }
+  }
+}

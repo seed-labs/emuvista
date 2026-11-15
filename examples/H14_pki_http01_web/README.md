@@ -44,6 +44,13 @@ emulation network.
 
 ## PKI tool walkthrough
 
+The PKI tools now live in
+[`services/AgentService/tools/pki`](../../services/AgentService/tools/pki/).
+There is no standalone tool server. The multi-node calls below describe the
+library workflow and require a caller-supplied execution backend. AgentService's
+local backend cannot administer the CA and web containers from another node.
+This scenario does not install an AgentService or automatically issue certificates.
+
 After the scenario is running, invoke the PKI tools directly. Set `source` to
 the running web container's Docker name or ID and `ca_service_source` to the CA
 container's Docker name or ID. The `docker compose ps` command in the generated
@@ -71,7 +78,7 @@ python3 "$SEEDEMU_ROOT/seedemu/testing/cli.py" test \
   examples/H14_pki_http01_web/example.yaml
 ```
 
-The Tool Service calls above perform the actual issuance and deployment; the
+The library calls above perform the actual issuance and deployment; the
 TestRunner `test` stage verifies their result. Do not use the `all` command for
 this walkthrough because it runs `test` before you can make the tool calls and
 then shuts the environment down.
