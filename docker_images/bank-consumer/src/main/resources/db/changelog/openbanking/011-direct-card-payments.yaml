@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 011-direct-card-payments
+      author: emuvista
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE open_banking_payments RENAME COLUMN transfer_id TO transaction_id;
+              ALTER TABLE open_banking_payments ADD COLUMN platform VARCHAR(255);
+              ALTER TABLE open_banking_payments ADD COLUMN payee_id VARCHAR(128);
+              ALTER TABLE open_banking_payments ADD COLUMN payee_name VARCHAR(255);
+              ALTER TABLE open_banking_payments ADD COLUMN description VARCHAR(500);
+              ALTER TABLE open_banking_payments ADD COLUMN created_at TIMESTAMPTZ;

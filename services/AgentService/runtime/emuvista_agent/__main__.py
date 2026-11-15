@@ -1,18 +1,11 @@
-"""Agent runner and local tool CLI."""
+"""Local tool CLI and direct framework application launcher."""
 
 import argparse
-import importlib
 import json
+import os
+import sys
 from .runtime import AgentContext
 from .events import JsonEvents
-
-
-def emit(context, **fields):
-    if context.observer is not None:
-        terminal = fields.get('status') in ('complete', 'failed') and 'tool' not in fields
-        context.emit('run_finished' if terminal else 'message', **fields)
-        return
-    print(json.dumps({'agent': context.identity, **fields}, allow_nan=False), flush=True)
 
 
 def main():
@@ -28,35 +21,24 @@ def main():
     context = None
     try:
         context = AgentContext.load(args.config)
-        if args.command == 'run':
-            context.observer = JsonEvents(context.identity, context.config)
-            context.emit('run_started')
         if args.command == 'list':
-            emit(context, tools=context.tools.list())
+            print(json.dumps({'agent': context.identity, 'tools': context.tools.list()}))
         elif args.command == 'call':
-            emit(context, result=context.tools.invoke(args.tool, json.loads(args.arguments)))
-        elif context.config['framework']:
-            module, function = context.config['framework'].split(':')
-            result = getattr(importlib.import_module(module), function)(context)
-            emit(context, status='complete', result=result)
+            redactor = JsonEvents(context.identity, context.config)
+            result = context.tools.invoke(args.tool, json.loads(args.arguments))
+            print(json.dumps(redactor.clean(
+                {'agent': context.identity, 'result': result}), allow_nan=False))
         else:
-            failed = False
-            for step in context.config['steps']:
-                try:
-                    result = context.tools.invoke(step['tool'], step.get('arguments', {}))
-                    emit(context, tool=step['tool'], status='success', result=result)
-                    failed |= step.get('expect') == 'denied'
-                except PermissionError as error:
-                    emit(context, tool=step['tool'], status='denied', error=str(error))
-                    failed |= step.get('expect') != 'denied'
-            emit(context, status='failed' if failed else 'complete')
-            return int(failed)
+            if args.config != '/etc/emuvista-agent/config.json':
+                raise ValueError('framework startup uses the installed default configuration')
+            os.execv(sys.executable, [sys.executable, '-u',
+                     context.config['framework']['entrypoint']])
         return 0
     except Exception as error:
-        if context is not None and context.observer is not None:
+        if context and context.observer:
             context.emit('run_failed', status='failed', error=str(error))
         else:
-            print(json.dumps({'error': str(error)}), flush=True)
+            print(json.dumps({'error': str(error)}))
         return 1
 
 

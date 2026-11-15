@@ -22,7 +22,7 @@ export function canonicalResourceURL(href: string): string {
   const address = new URL(href)
   if (address.username || address.password || address.hash) return href
   let relative = relativeTo(address, configured.canonical) ?? relativeTo(address, configured.internal)
-  if (relative === undefined && address.protocol === 'https:' && browserHosts.has(address.hostname)
+  if (relative === undefined && address.protocol === configured.canonical.protocol && browserHosts.has(address.hostname)
       && address.port === process.env.PAYMENT_BROWSER_PORT && address.pathname.startsWith('/accounting/')) {
     relative = address.pathname.slice('/accounting/'.length) + address.search
   }

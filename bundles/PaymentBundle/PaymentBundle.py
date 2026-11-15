@@ -7,14 +7,14 @@ import io
 import json
 import re
 import secrets
-import shutil
-import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
+from ipaddress import IPv4Address
 
 from seedemu.containerBundle import ContainerBundle
 from seedemu.containerBundle.ContainerBundle import PreparedContainer
+from bundles import urls
 
 from .initialization import _identifier, load_configuration, prepare_bundle
 from .templates import BACKEND_START, BROWSER_LINKS, DATABASE_START, INITIALIZE, nginx_config
@@ -39,18 +39,19 @@ ROLES = ('gateway', 'app', 'auth', 'social', 'accounting', 'notifications-ts',
          'redis', 'stellar', 'files', 'initialize')
 
 
-
-
-
 class PaymentBundle(ContainerBundle):
     """Configure after render; every component owns an emulated IP address."""
 
-    @staticmethod
-    def getAgentTools():
-        """Export service-owned tool source without importing an agent framework."""
-        return {'name':'payment','source':Path(__file__).parent/'tools'}
+    def getAgentTools(self):
+        """Export tools and this instance's private routing configuration."""
+        wallets = {group['code']: {user['email']: self.getInitialAccountId(group['code'], user['email'])
+                                   for user in group['users']}
+                   for group in (self._initial_configuration or {}).get('groups', [])}
+        return {'name': 'payment', 'source': Path(__file__).parent / 'tools',
+                'configuration': {self._name: {'name': self._name.replace('-', ' ').title(),
+                                               'url': self.getURL(), 'wallets': wallets}}}
 
-    def __init__(self, emulator=None, images=None, name='payment'):
+    def __init__(self, emulator=None, images=None, name='payment', resolver=None):
         if not re.fullmatch(r'[a-z][a-z0-9-]{0,31}', name):
             raise ValueError('bundle name requires 1 to 32 lowercase letters, digits or hyphens')
         super().__init__(emulator=emulator)
@@ -58,31 +59,25 @@ class PaymentBundle(ContainerBundle):
         self._images = dict(DEFAULT_IMAGES)
         for role, image in (images or {}).items():
             self.setImage(role, image)
-        self._admin_email = 'admin@payment.example'
-        self._admin_password = secrets.token_urlsafe(24)
-        self._admin_explicit = False
+        self._admin_email = 'admin@payment.com'
+        self._admin_password = 'PaymentAdmin123!'
         self._initial_data = None
         self._initial_configuration = None
         self._state_path = None
         self._host_port = None
+        self._hostname = None
+        self._host_url_mappings = {}
+        self._resolver = str(IPv4Address(resolver)) if resolver is not None else None
         self._addresses = {}
         self._configured = False
         self._application_options = {}
+        self._banks = []
+        self._mail_sources = []
+        self._mail = None
         self._required_internal_address_count = len(ROLES)
         for role in ROLES:
-            container = PreparedContainer(name=name+'-'+role, emulator=self._emulator)
+            container = PreparedContainer(name=name + '-' + role, emulator=self._emulator)
             self._containers[role] = container
-
-    def setAdminCredentials(self, email, password):
-        if not re.fullmatch(r'[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+', email):
-            raise ValueError('invalid payment administrator email')
-        if len(password) < 8 or any(c in password for c in '\x00\n\r'):
-            raise ValueError('administrator password requires at least 8 characters and no newlines')
-        if self._initial_configuration is not None:
-            load_configuration(self._initial_configuration, email)
-        self._admin_email, self._admin_password = email, password
-        self._admin_explicit = True
-        return self
 
     def setInitialConfiguration(self, configuration: str | Path | dict) -> PaymentBundle:
         """Set groups, currencies, users and trustlines from JSON or a mapping.
@@ -94,6 +89,13 @@ class PaymentBundle(ContainerBundle):
         self._initial_configuration = load_configuration(configuration, self._admin_email)
         self._initial_data = None
         return self
+
+    def addUser(self, group, user):
+        """Add one initial wallet to an existing community before compilation."""
+        groups = [dict(community) for community in self._initial_configuration['groups']]
+        community = next(community for community in groups if community['code'] == group)
+        community['users'] = [*community['users'], user]
+        return self.setInitialConfiguration({**self._initial_configuration, 'groups': groups})
 
     def setInitialData(self, bundle):
         """Select an existing migration ZIP instead of JSON configuration."""
@@ -111,18 +113,26 @@ class PaymentBundle(ContainerBundle):
         self._state_path = Path(path).expanduser().resolve()
         return self
 
-    def enableHostAccess(self, port=8443):
+    def setHostname(self, hostname):
+        """Choose the canonical hostname used by emulated clients."""
+        self._hostname = urls.hostname(hostname)
+        return self
+
+    def enableHostAccess(self, port=8443, url_mappings=None):
         if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
             raise ValueError('host access port must be an integer between 1 and 65535')
-        if port in {443,2023,2025,2026,2028,9191}:
+        if port in {80, 2023, 2025, 2026, 2028, 9191}:
             raise ValueError('host access port conflicts with a gateway API port')
         self._host_port = port
+        if url_mappings is not None:
+            self._host_url_mappings = {urls.origin(source): urls.origin(
+                target) for source, target in url_mappings.items()}
         return self
 
     def setImage(self, role, image):
         if role not in DEFAULT_IMAGES:
             raise ValueError(f'unknown payment image role: {role}')
-        if not isinstance(image,str) or not image or any(c.isspace() for c in image):
+        if not isinstance(image, str) or not image or any(c.isspace() for c in image):
             raise ValueError('payment image reference must be nonempty and contain no whitespace')
         self._images[role] = image
         return self
@@ -136,10 +146,66 @@ class PaymentBundle(ContainerBundle):
         return self._addresses[role]
 
     def getURL(self):
-        return 'https://' + self.getAddress()
+        return 'http://' + (self._hostname or self.getAddress())
+
+    def getAuthorizationCallbacks(self):
+        """Export browser callbacks for registering an external funding client."""
+        callbacks = [self.getURL() + '/bank-accounts']
+        if self._host_port:
+            callbacks.extend(f'http://{host}:{self._host_port}/bank-accounts'
+                             for host in ('localhost', '127.0.0.1'))
+        return callbacks
+
+    def getClientId(self):
+        return self._name + '-wallet'
+
+    def connectBank(self, bank):
+        """Record a bank partnership without configuring either application."""
+        if self._configured:
+            raise RuntimeError('connect banks before compilation')
+        if bank not in self._banks:
+            self._banks.append(bank)
+        bank.connectPayment(self)
+        return self
+
+    def connectEmail(self, email, username=None):
+        """Use a partner mailbox for registration and notification emails."""
+        if self._configured:
+            raise RuntimeError('connect email before compilation')
+        if (email, username) not in self._mail_sources:
+            self._mail_sources.append((email, username))
+        return self
+
+    def _configureFundingProviders(self):
+        if not self._banks:
+            return
+        providers, dependencies = [], []
+        for bank in self._banks:
+            connection = bank.getOpenBankingConnection(self.getClientId())
+            for group in self._initial_configuration['groups']:
+                if group['currency']['symbol'] not in connection['currencies']:
+                    continue
+                provider = {key: connection[key] for key in
+                            ('apiURL', 'browserURL', 'clientId', 'clientSecret', 'redirectURIs')}
+                provider.update(id=connection['id'], name=connection['name'], group=group['code'],
+                                currency=group['currency']['symbol'])
+                providers.append(provider)
+            dependencies.extend(connection['readyServices'])
+            if connection.get('hostURL'):
+                self._host_url_mappings[connection['browserURL']] = connection['hostURL']
+        options = self._application_options.get('accounting', {})
+        self.configureApplication('accounting',
+                                  environment={
+                                      **options.get('environment', {}), 'BANK_PROVIDER_CONFIG': '/payment-config/providers.json'},
+                                  files={**options.get('files', {}),
+                                         'providers.json': json.dumps(providers) + '\n'},
+                                  dependencies=[*options.get('dependencies', []), *dependencies])
+        options = self._application_options.get('app', {})
+        self.configureApplication('app', environment={**options.get('environment', {}), 'BANK_FUNDING_ENABLED': 'true'},
+                                  files=options.get('files'), dependencies=options.get('dependencies', []))
 
     def getAdminCredentials(self):
-        return {'email':self._admin_email,'password':self._admin_password}
+        return {'email': self._admin_email, 'password': self._admin_password}
 
     def getInitialAccountId(self, group, email):
         """Resolve a wallet defined by setInitialConfiguration, before compilation."""
@@ -151,11 +217,10 @@ class PaymentBundle(ContainerBundle):
         raise ValueError('wallet is not defined in the initial payment configuration')
 
     def configureApplication(self, role, *, environment=None, files=None,
-                             trusted_certificates=(), dependencies=()):
+                             dependencies=()):
         """Configure an application without depending on another bundle's type.
 
         Files contain text and are mounted read-only under /payment-config.
-        Certificate paths are relative to compiler output or absolute paths.
         Dependencies are Compose service names that must become healthy first.
         """
         if self._configured:
@@ -168,10 +233,10 @@ class PaymentBundle(ContainerBundle):
                 raise ValueError('application files require a simple filename and text content')
         env = dict(environment or {})
         if any(not re.fullmatch(r'[A-Z][A-Z0-9_]*', name) for name in env):
-            raise ValueError('application environment names must use uppercase letters, digits or underscores')
+            raise ValueError(
+                'application environment names must use uppercase letters, digits or underscores')
         self._application_options[role] = {
             'environment': env, 'files': content,
-            'certificates': [str(path) for path in trusted_certificates],
             'dependencies': list(dependencies),
         }
         return self
@@ -182,44 +247,45 @@ class PaymentBundle(ContainerBundle):
         if self._emulator is None or not self._emulator.rendered():
             raise RuntimeError('Render the emulator before configuring PaymentBundle')
         super().configure()
-        networks = self.getInternalNetworks()
-        if len(networks) != 1:
-            raise ValueError('Configure one emulated network with addInternalNetwork()')
-        net = networks[0]
+        net, = self.getInternalNetworks()
         for (role, container), address in zip(self._containers.items(), net['ip_addresses']):
             container.joinInternalNetwork(net['asn'], net['network_name'], address,
                                           container.getHostname(), net['default_route'])
             self._addresses[role] = address
+        self._configureFundingProviders()
+        if self._mail_sources:
+            provider, username = self._mail_sources[0]
+            self._mail = provider.getMailConnection(
+                username or self._name + '@' + provider.getDomains()[0])
         if self._initial_configuration is not None:
-            self._initial_data = prepare_bundle(self._initial_configuration, self._admin_email, self._state_path)
+            self._initial_data = prepare_bundle(
+                self._initial_configuration, self._admin_email, self._state_path)
         self._secrets = self._credentials()
         self._configured = True
 
-
-
-
     def _credentials(self):
-        identity = {'layout':'independent-containers-v1','addresses':self._addresses,'admin_email':self._admin_email}
+        identity = {'layout': 'independent-containers-v1',
+                    'addresses': self._addresses, 'admin_email': self._admin_email}
         if self._state_path:
-            self._state_path.mkdir(parents=True,exist_ok=True,mode=0o700)
-            file = self._state_path/'credentials.json'
+            self._state_path.mkdir(parents=True, exist_ok=True, mode=0o700)
+            file = self._state_path / 'credentials.json'
             if file.exists():
                 saved = json.loads(file.read_text())
                 if saved.get('identity') != identity:
-                    raise ValueError('saved payment state uses a different network layout or administrator; use a new state directory')
+                    raise ValueError(
+                        'saved payment state uses a different network layout or administrator; use a new state directory')
                 if file.stat().st_mode & 0o077:
                     raise ValueError('saved payment credentials must have mode 0600')
-                if self._admin_explicit and self._admin_password != saved['admin_password']:
+                if self._admin_password != saved['admin_password']:
                     raise ValueError('administrator password does not match saved payment state')
-                self._admin_password = saved['admin_password']
                 return saved
             if any(self._state_path.iterdir()):
                 raise ValueError('payment state has data but no matching credentials.json')
-        values = {'identity':identity,'admin_password':self._admin_password}
-        for key in ('auth','social','accounting','notifications','master','salt','stellar','db'):
+        values = {'identity': identity, 'admin_password': self._admin_password}
+        for key in ('auth', 'social', 'accounting', 'notifications', 'master', 'salt', 'stellar', 'db'):
             values[key] = secrets.token_urlsafe(32)
         if self._state_path:
-            file.write_text(json.dumps(values,indent=2)+'\n')
+            file.write_text(json.dumps(values, indent=2) + '\n')
             file.chmod(0o600)
         return values
 
@@ -246,7 +312,8 @@ class PaymentBundle(ContainerBundle):
                 if len(set(names)) != len(names):
                     raise ValueError('duplicate initialization package filenames')
                 if any(not name.endswith('.zip') for name in bundles) or (after and not after.endswith('.mjs')):
-                    raise ValueError('initialization package expects ZIP bundles and an optional MJS hook')
+                    raise ValueError(
+                        'initialization package expects ZIP bundles and an optional MJS hook')
                 if set(archive.namelist()) != {marker, *names}:
                     raise ValueError('initialization package contains unexpected files')
                 if sum(info.file_size for info in archive.infolist()) > 100 * 1024 * 1024:
@@ -265,145 +332,149 @@ class PaymentBundle(ContainerBundle):
         if not self._configured:
             raise RuntimeError('configure PaymentBundle before installing it')
         root = Path(self._name)
-        config = root/'config'
-        config.mkdir(parents=True,mode=0o755)
+        config = root / 'config'
+        config.mkdir(parents=True, mode=0o755)
         key = self._secrets
         state = self._state_path or Path(tempfile.mkdtemp(prefix='seedemu-payment-'))
-        state.mkdir(parents=True,exist_ok=True,mode=0o700)
-        if self._state_path:
-            for name in ('server.crt','server.key'):
-                if (state/name).exists(): shutil.copy2(state/name,config/name)
-        if not (config/'server.crt').exists():
-            subprocess.run(['openssl','req','-x509','-nodes','-newkey','rsa:2048','-days','365',
-                '-keyout',str(config/'server.key'),'-out',str(config/'server.crt'),
-                '-subj','/CN=SEED PaymentBundle','-addext',
-                f'subjectAltName=IP:{self.getAddress()},DNS:localhost,DNS:host.docker.internal,IP:127.0.0.1'],
-                check=True,capture_output=True)
-        (config/'server.key').chmod(0o600)
-        if self._state_path:
-            for name in ('server.crt','server.key'): shutil.copy2(config/name,state/name)
-        for name,content in [('database.sh',DATABASE_START),('backend.sh',BACKEND_START),
-                             ('initialize.mjs',INITIALIZE),('browser-links.mjs',BROWSER_LINKS),
-                             ('nginx.conf',nginx_config(self._addresses,self._host_port))]:
-            (config/name).write_text(content)
-            (config/name).chmod(0o755 if name.endswith('.sh') else 0o600)
+        state.mkdir(parents=True, exist_ok=True, mode=0o700)
+        for name, content in [('database.sh', DATABASE_START), ('backend.sh', BACKEND_START),
+                              ('initialize.mjs', INITIALIZE), ('browser-links.mjs', BROWSER_LINKS),
+                              ('nginx.conf', nginx_config(self._addresses, self._host_port, self.getURL(), self._host_url_mappings))]:
+            (config / name).write_text(content)
+            (config / name).chmod(0o755 if name.endswith('.sh') else 0o600)
         fingerprint = ''
         if self._initial_data is not None:
-            data = self._initial_data.read_bytes() if isinstance(self._initial_data,Path) else self._initial_data
+            data = self._initial_data.read_bytes() if isinstance(
+                self._initial_data, Path) else self._initial_data
             fingerprint = hashlib.sha256(data).hexdigest()
             if self._state_path:
-                saved = state/'initial-data.zip'
-                if saved.exists() and hashlib.sha256(saved.read_bytes()).hexdigest()!=fingerprint:
-                    raise ValueError('initial data differs from saved payment state; use a new state directory')
+                saved = state / 'initial-data.zip'
+                if saved.exists() and hashlib.sha256(saved.read_bytes()).hexdigest() != fingerprint:
+                    raise ValueError(
+                        'initial data differs from saved payment state; use a new state directory')
                 saved.write_bytes(data)
                 saved.chmod(0o600)
-            (config/'initial.zip').write_bytes(data)
-            (config/'initial.zip').chmod(0o600)
-            self._write_import_plan(config,data)
+            (config / 'initial.zip').write_bytes(data)
+            (config / 'initial.zip').chmod(0o600)
+            self._write_import_plan(config, data)
         mount = f'./{self._name}/config:/payment-config:ro'
         images = self._images
         public = self.getURL()
-        url = lambda role,port: f'http://{self.getAddress(role)}:{port}'
+        url = lambda role, port: f'http://{self.getAddress(role)}:{port}'
         name = lambda role: self.getContainer(role).getHostname()
 
         services = {}
 
-        def create(role,image,command,environment=None,dependencies=(),**kwargs):
+        def create(role, image, command, environment=None, dependencies=(), **kwargs):
             container = self.getContainer(role)
-            value = {'image':image,'command':command,
-                     'cap_add':['NET_ADMIN'],'restart':'unless-stopped','volumes':[mount],
-                     'labels':{'org.emuvista.bundle':'PaymentBundle','org.emuvista.component':role}}
+            value = {'image': image, 'command': command,
+                     'cap_add': ['NET_ADMIN'], 'restart': 'unless-stopped', 'volumes': [mount],
+                     'labels': {'org.emuvista.bundle': 'PaymentBundle', 'org.emuvista.component': role}}
+            if self._resolver:
+                value['dns'] = [self._resolver]
             if dependencies:
-                value['depends_on'] = {name(dep):{'condition':'service_healthy'} for dep in dependencies}
+                value['depends_on'] = {name(dep): {'condition': 'service_healthy'}
+                                       for dep in dependencies}
             if environment:
-                value['environment'] = {k:str(v).replace('$','$$') for k,v in environment.items()}
+                value['environment'] = {k: str(v).replace('$', '$$')
+                                        for k, v in environment.items()}
             value.update(kwargs)
             container.setFile('/application-start.sh', '#!/bin/sh\nexec "$@"\n')
             container.setEntrypointWrapper('/application-start.sh', [])
             services[role] = value
             return value
 
-        def volume(value,role,target):
-            directory = state/role
-            directory.mkdir(exist_ok=True,mode=0o755)
+        def volume(value, role, target):
+            directory = state / role
+            directory.mkdir(exist_ok=True, mode=0o755)
             value['volumes'].append(f'{directory}:{target}')
 
-        def health(port,path='/health'):
-            return {'test':['CMD','node','-e',f'fetch("http://127.0.0.1:{port}{path}").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'],
-                    'interval':'3s','timeout':'5s','retries':120}
+        def health(port, path='/health'):
+            return {'test': ['CMD', 'node', '-e', f'fetch("http://127.0.0.1:{port}{path}").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'],
+                    'interval': '3s', 'timeout': '5s', 'retries': 120}
 
-        for role,user in [('db-auth','auth'),('db-social','social'),('db-accounting','accounting'),('db-notifications','notifications')]:
-            env = {'PGDATA':'/var/lib/postgresql/data','PGPORT':5432,
-                   'POSTGRES_USER':'postgres','POSTGRES_DB':'postgres','POSTGRES_PASSWORD':key['db'],
-                   'POSTGRES_APP_USER':user,'POSTGRES_APP_PASSWORD':key['db'],'WALG_ENABLE':'false',
-                   'POSTGRES_APP_EXTENSIONS':'postgis,vector,pg_trgm,btree_gin,unaccent' if user=='social' else ''}
-            value = create(role,images['database'],['/bin/bash','/payment-config/database.sh'],env,
-                healthcheck={'test':['CMD','pg_isready','-h','127.0.0.1','-p','5432','-U','postgres'],'interval':'3s','timeout':'5s','retries':120})
-            volume(value,role,'/var/lib/postgresql/data')
-        value = create('redis',images['redis'],['docker-entrypoint.sh','redis-server','--bind','0.0.0.0','--appendonly','yes'],
-            healthcheck={'test':['CMD','redis-cli','ping'],'interval':'3s','timeout':'5s','retries':60})
-        volume(value,'redis','/data')
-        value = create('stellar',images['stellar'],['/start','--local','--enable','core,horizon'],
-            {'STELLAR_MODE':'persistent','POSTGRES_PASSWORD':key['stellar']},
-            healthcheck={'test':['CMD','curl','-fsS','http://127.0.0.1:8000/'],'interval':'3s','timeout':'5s','retries':180})
-        volume(value,'stellar','/opt/stellar')
-        value = create('files',images['files'],['node','/s3/node_modules/s3rver/bin/s3rver.js','-d','/data','-a','0.0.0.0','-p','9090','--configure-bucket','komunitin'],
-            healthcheck=health(9090,'/komunitin'))
-        volume(value,'files','/data')
+        for role, user in [('db-auth', 'auth'), ('db-social', 'social'), ('db-accounting', 'accounting'), ('db-notifications', 'notifications')]:
+            env = {'PGDATA': '/var/lib/postgresql/data', 'PGPORT': 5432,
+                   'POSTGRES_USER': 'postgres', 'POSTGRES_DB': 'postgres', 'POSTGRES_PASSWORD': key['db'],
+                   'POSTGRES_APP_USER': user, 'POSTGRES_APP_PASSWORD': key['db'], 'WALG_ENABLE': 'false',
+                   'POSTGRES_APP_EXTENSIONS': 'postgis,vector,pg_trgm,btree_gin,unaccent' if user == 'social' else ''}
+            value = create(role, images['database'], ['/bin/bash', '/payment-config/database.sh'], env,
+                           healthcheck={'test': ['CMD', 'pg_isready', '-h', '127.0.0.1', '-p', '5432', '-U', 'postgres'], 'interval': '3s', 'timeout': '5s', 'retries': 120})
+            volume(value, role, '/var/lib/postgresql/data')
+        value = create('redis', images['redis'], ['docker-entrypoint.sh', 'redis-server', '--bind', '0.0.0.0', '--appendonly', 'yes'],
+                       healthcheck={'test': ['CMD', 'redis-cli', 'ping'], 'interval': '3s', 'timeout': '5s', 'retries': 60})
+        volume(value, 'redis', '/data')
+        value = create('stellar', images['stellar'], ['/start', '--local', '--enable', 'core,horizon'],
+                       {'STELLAR_MODE': 'persistent', 'POSTGRES_PASSWORD': key['stellar']},
+                       healthcheck={'test': ['CMD', 'curl', '-fsS', 'http://127.0.0.1:8000/'], 'interval': '3s', 'timeout': '5s', 'retries': 180})
+        volume(value, 'stellar', '/opt/stellar')
+        value = create('files', images['files'], ['node', '/s3/node_modules/s3rver/bin/s3rver.js', '-d', '/data', '-a', '0.0.0.0', '-p', '9090', '--configure-bucket', 'komunitin'],
+                       healthcheck=health(9090, '/komunitin'))
+        volume(value, 'files', '/data')
 
-        issuer = public+':2026'
-        common = {'AUTH_JWKS_URL':url('auth',3026)+'/.well-known/jwks.json','AUTH_JWT_ISSUER':issuer,'AUTH_JWT_AUDIENCE':'urn:komunitin:api'}
-        db = lambda user,role: f'postgresql://{user}:{key["db"]}@{self.getAddress(role)}:5432/{user}?schema=public'
-        backend = lambda role,env,deps,port,path='/health': create(role,images[role],['/bin/sh','/payment-config/backend.sh'],env,deps,healthcheck=health(port,path))
-        backend('auth',{'PORT':3026,'DATABASE_URL':db('auth','db-auth'),'JWT_ISSUER':issuer,'JWT_AUDIENCE':'urn:komunitin:api',
-            'NOTIFICATIONS_URL':url('notifications-ts',3023),'AUTH_CLIENT_SECRET':key['auth'],
-            'NOTIFICATIONS_CLIENT_SECRET':key['notifications'],'SOCIAL_CLIENT_SECRET':key['social'],
-            'ACCOUNTING_CLIENT_SECRET':key['accounting'],'ADMIN_EMAIL':self._admin_email},['db-auth'],3026,'/.well-known/openid-configuration')
-        value = backend('accounting',{**common,'PORT':3025,'DATABASE_URL':db('accounting','db-accounting'),
-            'MASTER_PASSWORD':key['master'],'MASTER_PASSWORD_SALT':key['salt'],'STELLAR_NETWORK':'local',
-            'STELLAR_HORIZON_URL':url('stellar',8000),'STELLAR_FRIENDBOT_URL':url('stellar',8000)+'/friendbot',
-            'STELLAR_CHANNEL_ACCOUNTS_ENABLED':'true','DOMAIN':self.getAddress(),'AUTH_URL':url('auth',3026),
-            'ACCOUNTING_CLIENT_SECRET':key['accounting'],'NOTIFICATIONS_API_URL':url('notifications-ts',3023),
-            'API_BASE_URL':public+':2025','APP_URL':public,'SPONSOR_PRIVATE_KEY':'','DOCKER':'false',
-            'NODE_OPTIONS':'--import=/payment-config/browser-links.mjs',
-            'PAYMENT_GATEWAY_ADDRESS':self.getAddress(),'PAYMENT_BROWSER_PORT':self._host_port or '',
-            'PAYMENT_ACCOUNTING_INTERNAL_URL':url('accounting',3025),
-            'NODE_EXTRA_CA_CERTS':'/payment-config/server.crt'},['db-accounting','auth','stellar'],3025,'/')
-        value = backend('notifications-ts',{**common,'PORT':3023,'DATABASE_URL':db('notifications','db-notifications'),
-            'REDIS_URL':'redis://'+self.getAddress('redis')+':6379','KOMUNITIN_AUTH_URL':url('auth',3026),
-            'KOMUNITIN_SOCIAL_URL':url('social',3028),'KOMUNITIN_SOCIAL_PUBLIC_URL':public+':2028',
-            'KOMUNITIN_ACCOUNTING_URL':url('accounting',3025),'KOMUNITIN_APP_URL':public,
-            'NOTIFICATIONS_CLIENT_SECRET':key['notifications'],'SMTP_HOST':'','SMTP_PORT':587,'SMTP_USER':'','SMTP_PASS':'',
-            'DEV_SAVE_EMAILS':'true','FLAVOR':'komunitin','ADMIN_EMAIL':self._admin_email,'APP_EMAIL':'payments@payment.example',
-            'PUSH_NOTIFICATIONS_VAPID_PUBLIC_KEY':'','PUSH_NOTIFICATIONS_VAPID_PRIVATE_KEY':''},['db-notifications','redis','auth'],3023)
-        volume(value,'mail','/app/tmp')
-        backend('social',{**common,'PORT':3028,'DATABASE_URL':db('social','db-social'),'API_BASE_URL':public+':2028',
-            'ACCOUNTING_URL':url('accounting',3025),'AUTH_URL':url('auth',3026),'SOCIAL_CLIENT_SECRET':key['social'],
-            'NOTIFICATIONS_API_URL':url('notifications-ts',3023),'UPLOAD_S3_PREFIX':'s3://komunitin/uploads',
-            'UPLOAD_S3_ENDPOINT':url('files',9090),'UPLOAD_S3_REGION':'us-east-1','UPLOAD_S3_ACCESS_KEY':'S3RVER',
-            'UPLOAD_S3_SECRET_KEY':'S3RVER','UPLOAD_S3_FORCE_PATH_STYLE':'true','UPLOAD_PUBLIC_URL':public+':9191/komunitin/uploads'},
-            ['db-social','auth','accounting','notifications-ts','files'],3028)
-        create('app',images['app'],['/docker-entrypoint.sh','nginx','-g','daemon off;'],
-            {'MOCK_ENABLE':'false','AUTH_URL':issuer,'SOCIAL_URL':public+':2028','FILES_URL':public+':2028',
-             'ACCOUNTING_URL':public+':2025','NOTIFICATIONS_URL':public+':2023','FEEDBACK_URL':'','DOCS_URL':'',
-             'PRIVACY_URL':'','TERMS_URL':'','COOKIES_URL':'','GTAG_ID':'','MATOMO_URL':'','MATOMO_SITE_ID':'',
-             'PUSH_NOTIFICATIONS_VAPID_PUBLIC_KEY':''},
-            healthcheck={'test':['CMD','wget','-q','--spider','http://127.0.0.1/'],'interval':'3s','timeout':'5s','retries':60})
-        value = create('initialize',images['cli'],['node','/payment-config/initialize.mjs'],
-            {'ADMIN_EMAIL':self._admin_email,'ADMIN_PASSWORD':self._admin_password,'KOMUNITIN_AUTH_URL':url('auth',3026),
-             'KOMUNITIN_SOCIAL_URL':url('social',3028),'KOMUNITIN_ACCOUNTING_URL':url('accounting',3025),
-             'KOMUNITIN_NOTIFICATIONS_SECRET':key['notifications'],'INITIAL_DATA_SHA256':fingerprint},
-            ['auth','social','accounting','notifications-ts'],restart='on-failure:3')
-        volume(value,'initialization','/payment-state')
-        value = create('gateway',images['gateway'],['/docker-entrypoint.sh','nginx','-c','/payment-config/nginx.conf','-g','daemon off;'],
-            dependencies=['app'],healthcheck={'test':['CMD','wget','-q','--no-check-certificate','--spider','https://127.0.0.1/healthz'],
-                                             'interval':'3s','timeout':'5s','retries':60})
-        value['depends_on'][name('initialize')] = {'condition':'service_completed_successfully'}
+        issuer = public + ':2026'
+        common = {'AUTH_JWKS_URL': url('auth', 3026) + '/.well-known/jwks.json',
+                  'AUTH_JWT_ISSUER': issuer, 'AUTH_JWT_AUDIENCE': 'urn:komunitin:api'}
+        db = lambda user, role: f'postgresql://{user}:{key["db"]}@{self.getAddress(role)}:5432/{user}?schema=public'
+        backend = lambda role, env, deps, port, path='/health': create(
+            role, images[role], ['/bin/sh', '/payment-config/backend.sh'], env, deps, healthcheck=health(port, path))
+        backend('auth', {'PORT': 3026, 'DATABASE_URL': db('auth', 'db-auth'), 'JWT_ISSUER': issuer, 'JWT_AUDIENCE': 'urn:komunitin:api',
+                         'NOTIFICATIONS_URL': url('notifications-ts', 3023), 'AUTH_CLIENT_SECRET': key['auth'],
+                         'NOTIFICATIONS_CLIENT_SECRET': key['notifications'], 'SOCIAL_CLIENT_SECRET': key['social'],
+                         'ACCOUNTING_CLIENT_SECRET': key['accounting'], 'ADMIN_EMAIL': self._admin_email}, ['db-auth'], 3026, '/.well-known/openid-configuration')
+        value = backend('accounting', {**common, 'PORT': 3025, 'DATABASE_URL': db('accounting', 'db-accounting'),
+                                       'PAYMENT_SOCIAL_INTERNAL_URL': url('social', 3028),
+                                       'MASTER_PASSWORD': key['master'], 'MASTER_PASSWORD_SALT': key['salt'], 'STELLAR_NETWORK': 'local',
+                                       'STELLAR_HORIZON_URL': url('stellar', 8000), 'STELLAR_FRIENDBOT_URL': url('stellar', 8000) + '/friendbot',
+                                       'STELLAR_CHANNEL_ACCOUNTS_ENABLED': 'true', 'DOMAIN': self.getAddress(), 'AUTH_URL': url('auth', 3026),
+                                       'ACCOUNTING_CLIENT_SECRET': key['accounting'], 'NOTIFICATIONS_API_URL': url('notifications-ts', 3023),
+                                       'API_BASE_URL': public + ':2025', 'APP_URL': public, 'SPONSOR_PRIVATE_KEY': '', 'DOCKER': 'false',
+                                       'NODE_OPTIONS': '--import=/payment-config/browser-links.mjs',
+                                       'PAYMENT_GATEWAY_ADDRESS': self._hostname or self.getAddress(), 'PAYMENT_BROWSER_PORT': self._host_port or '',
+                                       'PAYMENT_ACCOUNTING_INTERNAL_URL': url('accounting', 3025)}, ['db-accounting', 'auth', 'stellar'], 3025, '/')
+        mail = self._mail or {}
+        value = backend('notifications-ts', {**common, 'PORT': 3023, 'DATABASE_URL': db('notifications', 'db-notifications'),
+                                             'REDIS_URL': 'redis://' + self.getAddress('redis') + ':6379', 'KOMUNITIN_AUTH_URL': url('auth', 3026),
+                                             'KOMUNITIN_SOCIAL_URL': url('social', 3028), 'KOMUNITIN_SOCIAL_PUBLIC_URL': public + ':2028',
+                                             'KOMUNITIN_ACCOUNTING_URL': url('accounting', 3025),
+                                             'KOMUNITIN_APP_URL': f'http://localhost:{self._host_port}' if self._host_port else public,
+                                             'NOTIFICATIONS_CLIENT_SECRET': key['notifications'], 'SMTP_HOST': mail.get('host', ''),
+                                             'SMTP_PORT': mail.get('port', 587), 'SMTP_USER': mail.get('username', ''), 'SMTP_PASS': mail.get('password', ''),
+                                             'DEV_SAVE_EMAILS': 'false' if mail else 'true', 'FLAVOR': 'komunitin', 'ADMIN_EMAIL': self._admin_email,
+                                             'APP_EMAIL': mail.get('username', 'payment@mail.com'),
+                                             'PUSH_NOTIFICATIONS_VAPID_PUBLIC_KEY': '', 'PUSH_NOTIFICATIONS_VAPID_PRIVATE_KEY': ''},
+                        ['db-notifications', 'redis', 'auth'], 3023)
+        if mail:
+            value['depends_on'][mail['initializer']] = {
+                'condition': 'service_completed_successfully'}
+        volume(value, 'mail', '/app/tmp')
+        backend('social', {**common, 'PORT': 3028, 'DATABASE_URL': db('social', 'db-social'), 'API_BASE_URL': public + ':2028',
+                           'ACCOUNTING_URL': url('accounting', 3025), 'AUTH_URL': url('auth', 3026), 'SOCIAL_CLIENT_SECRET': key['social'],
+                           'NOTIFICATIONS_API_URL': url('notifications-ts', 3023), 'UPLOAD_S3_PREFIX': 's3://komunitin/uploads',
+                           'UPLOAD_S3_ENDPOINT': url('files', 9090), 'UPLOAD_S3_REGION': 'us-east-1', 'UPLOAD_S3_ACCESS_KEY': 'S3RVER',
+                           'UPLOAD_S3_SECRET_KEY': 'S3RVER', 'UPLOAD_S3_FORCE_PATH_STYLE': 'true', 'UPLOAD_PUBLIC_URL': public + ':9191/komunitin/uploads'},
+                ['db-social', 'auth', 'accounting', 'notifications-ts', 'files'], 3028)
+        create('app', images['app'], ['/docker-entrypoint.sh', 'nginx', '-g', 'daemon off;'],
+               {'MOCK_ENABLE': 'false', 'AUTH_URL': issuer, 'SOCIAL_URL': public + ':2028', 'FILES_URL': public + ':2028',
+                'ACCOUNTING_URL': public + ':2025', 'NOTIFICATIONS_URL': public + ':2023', 'FEEDBACK_URL': '', 'DOCS_URL': '',
+                'PRIVACY_URL': '', 'TERMS_URL': '', 'COOKIES_URL': '', 'GTAG_ID': '', 'MATOMO_URL': '', 'MATOMO_SITE_ID': '',
+                'PUSH_NOTIFICATIONS_VAPID_PUBLIC_KEY': ''},
+               healthcheck={'test': ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1/'], 'interval': '3s', 'timeout': '5s', 'retries': 60})
+        value = create('initialize', images['cli'], ['node', '/payment-config/initialize.mjs'],
+                       {'ADMIN_EMAIL': self._admin_email, 'ADMIN_PASSWORD': self._admin_password, 'KOMUNITIN_AUTH_URL': url('auth', 3026),
+                        'KOMUNITIN_SOCIAL_URL': url('social', 3028), 'KOMUNITIN_ACCOUNTING_URL': url('accounting', 3025),
+                        'KOMUNITIN_NOTIFICATIONS_SECRET': key['notifications'], 'INITIAL_DATA_SHA256': fingerprint},
+                       ['auth', 'social', 'accounting', 'notifications-ts'], restart='on-failure:3')
+        volume(value, 'initialization', '/payment-state')
+        value = create('gateway', images['gateway'], ['/docker-entrypoint.sh', 'nginx', '-c', '/payment-config/nginx.conf', '-g', 'daemon off;'],
+                       dependencies=['app'], healthcheck={'test': ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1/healthz'],
+                                                          'interval': '3s', 'timeout': '5s', 'retries': 60})
+        value['depends_on'][name('initialize')] = {'condition': 'service_completed_successfully'}
         if self._host_port is not None:
             value['ports'] = [f'127.0.0.1:{self._host_port}:{self._host_port}/tcp']
-        (root/'deployment.json').write_text(json.dumps({'url':public,'addresses':self._addresses,'images':images,
-            'initial_data_sha256':fingerprint,'state_path':str(state),'persistent':self._state_path is not None},indent=2)+'\n')
-        Path('docker-compose.yml').touch(mode=0o600,exist_ok=True)
+        (root / 'deployment.json').write_text(json.dumps({'url': public, 'addresses': self._addresses, 'images': images,
+                                                         'initial_data_sha256': fingerprint, 'state_path': str(state), 'persistent': self._state_path is not None}, indent=2) + '\n')
+        Path('docker-compose.yml').touch(mode=0o600, exist_ok=True)
         Path('docker-compose.yml').chmod(0o600)
         written = set()
         for role, options in self._application_options.items():
@@ -411,19 +482,11 @@ class PaymentBundle(ContainerBundle):
             value.setdefault('environment', {}).update({
                 key: str(item).replace('$', '$$') for key, item in options['environment'].items()})
             for filename, content in options['files'].items():
-                if filename in written or (config/filename).exists():
-                    raise ValueError('duplicate application configuration filename: '+filename)
+                if filename in written or (config / filename).exists():
+                    raise ValueError('duplicate application configuration filename: ' + filename)
                 written.add(filename)
-                (config/filename).write_text(content)
-                (config/filename).chmod(0o600)
-            for index, certificate in enumerate(options['certificates']):
-                value['volumes'].append(f'{certificate}:/application-ca/{index}.pem:ro')
-            if options['certificates']:
-                if role in ('app', 'initialize'):
-                    raise ValueError('additional certificate trust requires a backend application')
-                value['environment']['APPLICATION_CA_FILES'] = ' '.join(
-                    f'/application-ca/{index}.pem' for index in range(len(options['certificates'])))
-                value['environment']['NODE_EXTRA_CA_CERTS'] = '/tmp/application-ca.pem'
+                (config / filename).write_text(content)
+                (config / filename).chmod(0o600)
             for dependency in options['dependencies']:
                 value.setdefault('depends_on', {})[dependency] = {'condition': 'service_healthy'}
         for role, value in services.items():

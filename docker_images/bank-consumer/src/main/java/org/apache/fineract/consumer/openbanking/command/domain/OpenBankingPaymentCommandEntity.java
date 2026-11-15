@@ -24,10 +24,16 @@ public class OpenBankingPaymentCommandEntity {
     @Column(nullable = false, precision = 19, scale = 2) private BigDecimal amount;
     @Column(nullable = false, length = 3) private String currency;
     @Column(nullable = false, length = 31) private String status;
-    private Long transferId;
+    private Long transactionId;
+    private String platform;
+    private String payeeId;
+    private String payeeName;
+    @Column(length = 500) private String description;
+    private java.time.Instant createdAt;
 
     public static OpenBankingPaymentCommandEntity requested(UUID id, UUID consentId, String tppClientId,
-            Long fromAccountId, UUID bankCardId, BigDecimal amount, String currency) {
+            Long fromAccountId, UUID bankCardId, BigDecimal amount, String currency,
+            String platform, String payeeId, String payeeName, String description) {
         OpenBankingPaymentCommandEntity payment = new OpenBankingPaymentCommandEntity();
         payment.id = id;
         payment.consentId = consentId;
@@ -36,12 +42,17 @@ public class OpenBankingPaymentCommandEntity {
         payment.bankCardId = bankCardId;
         payment.amount = amount;
         payment.currency = currency;
+        payment.platform = platform;
+        payment.payeeId = payeeId;
+        payment.payeeName = payeeName;
+        payment.description = description;
+        payment.createdAt = java.time.Instant.now();
         payment.status = "pending";
         return payment;
     }
 
-    public void complete(Long transferId) {
-        this.transferId = transferId;
+    public void complete(Long transactionId) {
+        this.transactionId = transactionId;
         status = "completed";
     }
 

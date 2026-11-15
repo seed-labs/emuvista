@@ -11,8 +11,6 @@ RUN corepack enable && corepack prepare pnpm@10.26.1 --activate \
     && pnpm --dir src-ssg install --frozen-lockfile
 COPY src/ src/
 COPY public/config.template.js public/config.template.js
-RUN mkdir -p /certs && openssl req -x509 -newkey rsa:2048 -noenc -days 365 \
-    -keyout /certs/localhost-key.pem -out /certs/localhost.pem -subj /CN=localhost
 RUN pnpm run build
 FROM ${BASE_IMAGE}
 COPY --from=build /app/dist/ssg /usr/share/nginx/html

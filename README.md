@@ -11,7 +11,7 @@ Agents run inside the simulated network and interact with world services through
 - [docs](docs/): design and development notes.
 
 [H99](examples/H99_virtual_world/) combines email, payment and banks.
-[E99](experiments/E99_virtual_world/) adds five agents using a replaceable LangChain
+[E99](experiments/E99_virtual_world_with_agents/) adds five agents using a replaceable LangChain
 adapter and per-agent tool permissions. Fill the experiment .env with your LLM API.
 
 Requires a working SEED Emulator installation, Python dependencies from

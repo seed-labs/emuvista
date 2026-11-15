@@ -13,4 +13,4 @@ emu = build_emulator()
 ```
 
 [H99_virtual_world](H99_virtual_world/) combines email, payment and banks.
-[E99](../experiments/E99_virtual_world/) adds five agents to H99.
+[E99](../experiments/E99_virtual_world_with_agents/) adds five agents to H99.

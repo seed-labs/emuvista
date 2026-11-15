@@ -6,4 +6,5 @@ import org.apache.fineract.consumer.openbanking.command.domain.OpenBankingPaymen
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface OpenBankingPaymentCommandRepository extends JpaRepository<OpenBankingPaymentCommandEntity, UUID> {
+    java.util.List<OpenBankingPaymentCommandEntity> findByFromAccountIdInOrderByCreatedAtDesc(java.util.Collection<Long> accounts);
 }

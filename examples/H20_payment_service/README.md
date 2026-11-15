@@ -4,14 +4,14 @@ Deploys Komunitin on the shared [H00 mini Internet](../H00_mini_internet/) using
 
 ## Configure
 
-Edit `groups.json` to define communities, currencies, users and initial balances. For one community without exchange, keep one group and set `trustlines` to `[]`.
+Edit `groups.json` to define communities, currencies, users and initial balances. For one community without exchange, keep one group and omit `trustlines`.
 
 | Community | Login | Initial balance |
 | --- | --- | --- |
-| North (`NORT`, NC) | `alice@north.example` | 100 NC |
-| North (`NORT`, NC) | `bob@north.example` | 50 NC |
-| South (`SOUT`, SC) | `carol@south.example` | 50 SC |
-| South (`SOUT`, SC) | `dave@south.example` | 20 SC |
+| North (`NORT`, NC) | `alice@mail.com` | 100 NC |
+| North (`NORT`, NC) | `bob@mail.com` | 50 NC |
+| South (`SOUT`, SC) | `carol@mail.com` | 50 SC |
+| South (`SOUT`, SC) | `dave@mail.com` | 20 SC |
 
 All passwords are `payment-demo`. Each community has its own treasury and transaction history. Users are active immediately and cannot spend below zero.
 
@@ -28,9 +28,9 @@ docker compose build
 docker compose up -d
 ```
 
-Open <https://localhost:8443/login-mail>, accept the self-signed certificate and log in as Alice. This also works from the Windows host with WSL.
+Open <http://localhost:8443/login-mail> and log in as Alice. This also works from the Windows host with WSL.
 
-Internet Map: <http://localhost:8080>. Run one mini Internet example at a time.
+Internal payment URL: <http://payment.com>. Internet Map: <http://localhost:8080>. Run one mini Internet example at a time.
 
 ## Try payments
 
@@ -45,13 +45,13 @@ Log in as Bob or Carol to check the receipts. A payment of **10 SC** from Carol 
 
 The backend permits one login to own wallets in multiple communities, but the current web app selects only the first membership and has no wallet switcher. This example uses separate users so every wallet is usable from the browser without modifying Komunitin.
 
-Administrator: `admin@h20.example` / `seed1234`. Community accounts and transactions are available at `/groups/NORT/admin/accounts` and `/groups/NORT/admin/transactions`; replace `NORT` with `SOUT` for South.
+The built-in administrator is `admin@payment.com` / `PaymentAdmin123!`; its credentials are fixed. Community accounts and transactions are available at `/groups/NORT/admin/accounts` and `/groups/NORT/admin/transactions`; replace `NORT` with `SOUT` for South.
 
 ## Network and initialization
 
-PaymentBundle is configured after `emu.render()` and registered with the Docker compiler. Each component owns an emulated IP (`10.150.0.10`–`10.150.0.23`). Only the web gateway maps to the host at `127.0.0.1:8443`. Emulated clients use `https://10.150.0.10`, with API ports 2026 for authentication and 2025 for accounting.
+PaymentBundle is configured after `emu.render()` and registered with the Docker compiler. Each component owns an emulated IP (`10.150.0.10`–`10.150.0.23`). Only the web gateway maps to the host at `127.0.0.1:8443`. Emulated clients use `http://payment.com` (`10.150.0.10`), with API ports 2026 for authentication and 2025 for accounting.
 
-The example passes `groups.json` to `payment.setInitialConfiguration(...)`. PaymentBundle handles validation, initial data generation and exchange setup automatically. An empty `trustlines` list skips exchange setup.
+The example passes `groups.json` to `payment.setInitialConfiguration(...)`. PaymentBundle handles validation, initial data generation and exchange setup automatically. Omitting `trustlines` skips exchange setup.
 
 ## Options
 
@@ -60,7 +60,7 @@ The example passes `groups.json` to `payment.setInitialConfiguration(...)`. Paym
 | `--config PATH` | Community configuration; defaults to `groups.json` beside the script |
 | `--output PATH` | Compilation directory; defaults to `output/` |
 | `--state PATH` | Optional directory to save and resume payment state |
-| `--host-port PORT` | Host browser HTTPS port; defaults to `8443` |
+| `--host-port PORT` | Host browser HTTP port; defaults to `8443` |
 | `--images PATH` | JSON overrides for prebuilt images |
 | `--initial-data PATH` | Advanced: supply a Komunitin ZIP instead of generating it from JSON |
 

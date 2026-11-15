@@ -27,13 +27,14 @@
         </q-item>
         <q-item v-if="!sources.length"><q-item-section>No bank cards linked.</q-item-section></q-item>
       </q-list>
-      <h2 class="text-h6">Bank transfers</h2>
+      <h2 class="text-h6">Card payments and incoming credits</h2>
       <q-card v-for="payment in payments" :key="payment.id" class="q-mb-md">
         <q-card-section>
           <div>{{ payment.description }} · {{ payment.status }}</div>
+          <div>Recipient: {{ payment.payeeName }} · {{ (payment.amountMinor / 100).toFixed(2) }} {{ payment.currency }}</div>
           <div class="text-caption">Transfer: {{ payment.id }}</div>
-          <div v-if="payment.bankTransferId">Bank transfer: {{ payment.bankTransferId }}</div>
-          <div v-if="payment.transferId">Wallet transfer: {{ payment.transferId }}</div>
+          <div v-if="payment.bankTransactionId">Bank debit: {{ payment.bankTransactionId }}</div>
+          <div v-if="payment.ledgerHash">Ledger credit: {{ payment.ledgerHash }}</div>
           <p v-if="payment.error">{{ payment.error }}</p>
         </q-card-section>
       </q-card>

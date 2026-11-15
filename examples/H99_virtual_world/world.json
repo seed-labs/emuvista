@@ -1,444 +1,95 @@
 {
-  "payment": {
-    "groups": [
-      {
-        "code": "SEED",
-        "name": "SEED Payments",
-        "currency": {
-          "name": "US Dollar",
-          "symbol": "USD",
-          "rate": 1
-        },
-        "users": [
-          {
-            "name": "Alice",
-            "email": "alice@seed.example",
-            "password": "PaymentDemo123!",
-            "balance": 100
-          },
-          {
-            "name": "Bob",
-            "email": "bob@seed.example",
-            "password": "PaymentDemo123!",
-            "balance": 50
-          },
-          {
-            "name": "SEED Shop",
-            "email": "shop@seed.example",
-            "password": "PaymentDemo123!",
-            "balance": 0
-          },
-          {
-            "name": "Bank settlement",
-            "email": "settlement@seed.example",
-            "password": "PaymentDemo123!",
-            "balance": 10000
-          },
-          {
-            "name": "North Bank settlement",
-            "email": "north-settlement@seed.example",
-            "password": "PaymentDemo123!",
-            "balance": 10000
-          },
-          {
-            "name": "Carol",
-            "email": "carol@seed.example",
-            "password": "PaymentDemo123!",
-            "balance": 200
-          },
-          {
-            "name": "Dave",
-            "email": "dave@seed.example",
-            "password": "PaymentDemo123!",
-            "balance": 200
-          },
-          {
-            "name": "Erin",
-            "email": "erin@seed.example",
-            "password": "PaymentDemo123!",
-            "balance": 200
-          }
-        ]
-      }
-    ],
-    "trustlines": []
-  },
-  "banks": [
-    {
-      "id": "seed-bank",
-      "name": "SEED Bank",
-      "asn": 151,
-      "port": 8444,
-      "staffPort": 8446,
-      "configuration": {
-        "email": {
-          "address": "bank@seed.example",
+  "email": {
+    "hostname": "mail.com",
+    "asn": 150,
+    "port": 8445,
+    "configuration": {
+      "domains": [
+        "mail.com"
+      ],
+      "users": [
+        {
+          "email": "bank@mail.com",
           "password": "BankMailDemo123!"
         },
-        "savingsProducts": [
-          {
-            "id": "USDC",
-            "name": "USD Checking",
-            "currency": "USD",
-            "interestRate": 0
-          }
-        ],
-        "customers": [
-          {
-            "id": "alice",
-            "firstName": "Alice",
-            "lastName": "Example",
-            "email": "alice@seed.example",
-            "password": "BankDemoPass123!",
-            "emailPassword": "EmailDemo123!",
-            "accounts": [
-              {
-                "id": "alice-checking",
-                "name": "Alice Checking",
-                "product": "USDC",
-                "balance": 1000
-              },
-              {
-                "id": "alice-savings",
-                "name": "Alice Savings",
-                "product": "USDC",
-                "balance": 600
-              }
-            ],
-            "cards": [
-              {
-                "id": "alice-salary",
-                "name": "Salary card",
-                "account": "alice-checking",
-                "number": "9900010000000019",
-                "expires": "2035-12"
-              },
-              {
-                "id": "alice-savings",
-                "name": "Savings card",
-                "account": "alice-savings",
-                "number": "9900010000000027",
-                "expires": "2035-12"
-              },
-              {
-                "id": "alice-blocked",
-                "name": "Blocked card",
-                "account": "alice-checking",
-                "number": "9900010000000035",
-                "expires": "2035-12",
-                "status": "blocked"
-              },
-              {
-                "id": "alice-expired",
-                "name": "Expired card",
-                "account": "alice-checking",
-                "number": "9900010000000043",
-                "expires": "2020-01"
-              }
-            ]
-          },
-          {
-            "id": "bob",
-            "firstName": "Bob",
-            "lastName": "Example",
-            "email": "bob@seed.example",
-            "password": "BankDemoPass123!",
-            "emailPassword": "EmailDemo123!",
-            "accounts": [
-              {
-                "id": "bob-checking",
-                "name": "Bob Checking",
-                "product": "USDC",
-                "balance": 500
-              }
-            ],
-            "cards": [
-              {
-                "id": "bob-card",
-                "name": "Bob card",
-                "account": "bob-checking",
-                "number": "9900010000000050",
-                "expires": "2035-12"
-              }
-            ]
-          },
-          {
-            "id": "settlement",
-            "firstName": "Settlement",
-            "lastName": "Reserve",
-            "accounts": [
-              {
-                "id": "settlement-usd",
-                "name": "Settlement USD",
-                "product": "USDC",
-                "balance": 10000
-              }
-            ]
-          },
-          {
-            "id": "carol",
-            "firstName": "Carol",
-            "lastName": "Example",
-            "email": "carol@seed.example",
-            "password": "BankDemoPass123!",
-            "emailPassword": "EmailDemo123!",
-            "accounts": [
-              {
-                "id": "carol-checking",
-                "name": "Carol Checking",
-                "product": "USDC",
-                "balance": 500
-              }
-            ],
-            "cards": [
-              {
-                "id": "carol-card",
-                "name": "Carol card",
-                "account": "carol-checking",
-                "number": "9900010000000068",
-                "expires": "2035-12"
-              }
-            ]
-          },
-          {
-            "id": "dave",
-            "firstName": "Dave",
-            "lastName": "Example",
-            "email": "dave@seed.example",
-            "password": "BankDemoPass123!",
-            "emailPassword": "EmailDemo123!",
-            "accounts": [
-              {
-                "id": "dave-checking",
-                "name": "Dave Checking",
-                "product": "USDC",
-                "balance": 500
-              }
-            ],
-            "cards": [
-              {
-                "id": "dave-card",
-                "name": "Dave card",
-                "account": "dave-checking",
-                "number": "9900010000000076",
-                "expires": "2035-12"
-              }
-            ],
-            "loans": [
-              {
-                "id": "dave-alice-loan",
-                "currency": "USD",
-                "principal": 500
-              }
-            ]
-          },
-          {
-            "id": "erin",
-            "firstName": "Erin",
-            "lastName": "Example",
-            "email": "erin@seed.example",
-            "password": "BankDemoPass123!",
-            "emailPassword": "EmailDemo123!",
-            "accounts": [
-              {
-                "id": "erin-checking",
-                "name": "Erin Checking",
-                "product": "USDC",
-                "balance": 500
-              }
-            ],
-            "cards": [
-              {
-                "id": "erin-card",
-                "name": "Erin card",
-                "account": "erin-checking",
-                "number": "9900010000000084",
-                "expires": "2035-12"
-              }
-            ]
-          }
-        ]
-      },
-      "connection": {
-        "group": "SEED",
-        "currency": "USD",
-        "settlementEmail": "settlement@seed.example",
-        "settlementBankAccount": "settlement-usd"
-      }
-    },
-    {
-      "id": "north-bank",
-      "name": "North Bank",
-      "asn": 153,
-      "port": 8447,
-      "staffPort": 8448,
-      "configuration": {
-        "email": {
-          "address": "north-bank@seed.example",
-          "password": "BankMailDemo123!"
-        },
-        "savingsProducts": [
-          {
-            "id": "USDC",
-            "name": "USD Checking",
-            "currency": "USD",
-            "interestRate": 0
-          }
-        ],
-        "customers": [
-          {
-            "id": "alice",
-            "firstName": "Alice",
-            "lastName": "Example",
-            "email": "alice@seed.example",
-            "password": "BankDemoPass123!",
-            "emailPassword": "EmailDemo123!",
-            "accounts": [
-              {
-                "id": "alice-checking",
-                "name": "Alice North Checking",
-                "product": "USDC",
-                "balance": 800
-              }
-            ],
-            "cards": [
-              {
-                "id": "alice-north",
-                "name": "North card",
-                "account": "alice-checking",
-                "number": "9900020000000018",
-                "expires": "2035-12"
-              }
-            ]
-          },
-          {
-            "id": "bob",
-            "firstName": "Bob",
-            "lastName": "Example",
-            "email": "bob@seed.example",
-            "password": "BankDemoPass123!",
-            "emailPassword": "EmailDemo123!",
-            "accounts": [
-              {
-                "id": "bob-checking",
-                "name": "Bob Checking",
-                "product": "USDC",
-                "balance": 500
-              }
-            ],
-            "cards": [
-              {
-                "id": "bob-north",
-                "name": "Bob North card",
-                "account": "bob-checking",
-                "number": "9900020000000026",
-                "expires": "2035-12"
-              }
-            ]
-          },
-          {
-            "id": "settlement",
-            "firstName": "Settlement",
-            "lastName": "Reserve",
-            "accounts": [
-              {
-                "id": "settlement-usd",
-                "name": "Settlement USD",
-                "product": "USDC",
-                "balance": 10000
-              }
-            ]
-          },
-          {
-            "id": "carol",
-            "firstName": "Carol",
-            "lastName": "Example",
-            "email": "carol@seed.example",
-            "password": "BankDemoPass123!",
-            "emailPassword": "EmailDemo123!",
-            "accounts": [
-              {
-                "id": "carol-checking",
-                "name": "Carol Checking",
-                "product": "USDC",
-                "balance": 500
-              }
-            ],
-            "cards": [
-              {
-                "id": "carol-card",
-                "name": "Carol card",
-                "account": "carol-checking",
-                "number": "9900020000000067",
-                "expires": "2035-12"
-              }
-            ]
-          },
-          {
-            "id": "dave",
-            "firstName": "Dave",
-            "lastName": "Example",
-            "email": "dave@seed.example",
-            "password": "BankDemoPass123!",
-            "emailPassword": "EmailDemo123!",
-            "accounts": [
-              {
-                "id": "dave-checking",
-                "name": "Dave Checking",
-                "product": "USDC",
-                "balance": 500
-              }
-            ],
-            "cards": [
-              {
-                "id": "dave-card",
-                "name": "Dave card",
-                "account": "dave-checking",
-                "number": "9900020000000075",
-                "expires": "2035-12"
-              }
-            ],
-            "loans": [
-              {
-                "id": "dave-alice-loan",
-                "currency": "USD",
-                "principal": 500
-              }
-            ]
-          },
-          {
-            "id": "erin",
-            "firstName": "Erin",
-            "lastName": "Example",
-            "email": "erin@seed.example",
-            "password": "BankDemoPass123!",
-            "emailPassword": "EmailDemo123!",
-            "accounts": [
-              {
-                "id": "erin-checking",
-                "name": "Erin Checking",
-                "product": "USDC",
-                "balance": 500
-              }
-            ],
-            "cards": [
-              {
-                "id": "erin-card",
-                "name": "Erin card",
-                "account": "erin-checking",
-                "number": "9900020000000083",
-                "expires": "2035-12"
-              }
-            ]
-          }
-        ]
-      },
-      "connection": {
-        "group": "SEED",
-        "currency": "USD",
-        "settlementEmail": "north-settlement@seed.example",
-        "settlementBankAccount": "settlement-usd"
-      }
+        {
+          "email": "payment@mail.com",
+          "password": "PaymentMailDemo123!"
+        }
+      ]
     }
-  ]
+  },
+  "payment": {
+    "hostname": "payment.com",
+    "asn": 152,
+    "port": 8443,
+    "configuration": {
+      "groups": [
+        {
+          "code": "SEED",
+          "name": "Payments",
+          "currency": {
+            "name": "US Dollar",
+            "symbol": "USD",
+            "rate": 1
+          }
+        }
+      ]
+    },
+    "connections": {
+      "bank": [
+        "south-bank",
+        "north-bank"
+      ],
+      "email": [
+        "email"
+      ]
+    }
+  },
+  "south-bank": {
+    "name": "South Bank",
+    "hostname": "southbank.com",
+    "asn": 151,
+    "port": 8444,
+    "staffPort": 8446,
+    "configuration": {
+      "savingsProducts": [
+        {
+          "id": "USDC",
+          "name": "USD",
+          "currency": "USD",
+          "interestRate": 0
+        }
+      ],
+      "sender": "bank@mail.com"
+    },
+    "connections": {
+      "email": [
+        "email"
+      ]
+    }
+  },
+  "north-bank": {
+    "name": "North Bank",
+    "hostname": "northbank.com",
+    "asn": 153,
+    "port": 8447,
+    "staffPort": 8448,
+    "configuration": {
+      "savingsProducts": [
+        {
+          "id": "USDC",
+          "name": "USD",
+          "currency": "USD",
+          "interestRate": 0
+        }
+      ],
+      "sender": "bank@mail.com"
+    },
+    "connections": {
+      "email": [
+        "email"
+      ]
+    }
+  }
 }

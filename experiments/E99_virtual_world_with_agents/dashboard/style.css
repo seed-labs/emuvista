@@ -328,7 +328,7 @@ h2 {
   background:#e7f4ec;
   color:#25805b
 }
-.status.waiting,.status.starting,.status.paused {
+.status.waiting,.status.starting,.status.paused,.status.resting,.status.recovering {
   background:#faf2e3;
   color:#a57b2a
 }
@@ -413,6 +413,7 @@ h2 {
 }
 .filters {
   display:flex;
+  flex-wrap:wrap;
   align-items:center;
   justify-content:space-between;
   padding:13px 22px;
@@ -757,3 +758,14 @@ footer {
     padding:17px 15px
   }
 }
+
+.call-inspector h3 { font-size:11px; margin:16px 0 8px; color:#596d60 }
+.mail-message { border:1px solid var(--border); border-radius:8px; padding:12px; margin:12px 0; background:#fff }
+.mail-message h3 { margin-top:0 }
+.mail-meta { color:var(--muted); font-size:10px; overflow-wrap:anywhere; line-height:1.7 }
+.call-inspector .mail-body { white-space:pre-wrap; overflow-wrap:anywhere; font-family:inherit; font-size:12px; line-height:1.7; max-height:340px; background:#fff; margin:10px 0 0 }
+.shop-activity { margin-bottom:24px }
+.sales-list { padding:0 22px 14px }
+.sales-empty { color:var(--muted); font-size:12px; line-height:1.7 }
+.sale-row { display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:14px 0; border-top:1px solid var(--border); font-size:11px; overflow-wrap:anywhere }
+.sale-row strong { color:var(--green) }

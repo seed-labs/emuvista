@@ -25,6 +25,7 @@ import { TranslatePipe } from '../../core/adapters';
 import { BankCardsComponent } from '../cards/bank-cards.component';
 import { PageHeaderComponent } from '../../shared/ui/page-header.component';
 import { StatusBadgeComponent } from '../../shared/ui/status-badge.component';
+import { OpenAccountComponent } from '../opening/open-account.component';
 import { SavingsStore } from './savings.store';
 
 @Component({
@@ -38,11 +39,13 @@ import { SavingsStore } from './savings.store';
     TranslatePipe,
     PageHeaderComponent,
     BankCardsComponent,
+    OpenAccountComponent,
     StatusBadgeComponent,
   ],
   template: `
     <app-page-header [title]="'savings.list.title' | appTranslate" />
 
+    <app-open-account (opened)="store.loadAccounts()" />
     <app-bank-cards />
 
     <ion-card>
