@@ -84,7 +84,7 @@
   {
     "name": "minecraft.stop",
     "handler": "handlers:stop",
-    "description": "Cancel active movement or digging. Already executed changes are not undone. Non-cancellable actions (equip, consume, place, craft, attack, drop) cannot be safely cancelled; stopped=false means wait for their result.",
+    "description": "Cancel active movement, digging, attack or hunt_entity, stopping pursuit and future swings. Already executed actions are not undone. Inventory/window operations cannot be safely cancelled; stopped=false means wait for action_status pending=false.",
     "input_schema": {
       "type": "object",
       "properties": {},
@@ -341,13 +341,46 @@
   {
     "name": "minecraft.attack",
     "handler": "handlers:attack",
-    "description": "Call native bot.attack once on a tracked entity using the held item. No auto-walk, auto-equip, extra range or visibility checks. entity_id comes from observe. Completion means submitted, not confirmed damage or kill.",
+    "description": "Follow the selected entity_id from observe, approach within 2.5 blocks (position distance), then submit one attack with the currently held item. Equip your chosen weapon first. Uses native pathfinder movements; navigation may change terrain/inventory. Tracks the same entity while it moves; never selects another target. timeout_seconds defaults to 30, range 1..120. Pursuit stays within 128 blocks of its starting position. No line-of-sight guarantee or damage guarantee. Returns an action ID; waits locally up to 10 seconds. If running, use action_status or stop. Result separates submitted attacks, target hurt events and observed target death; events do not identify the attacker. Target loss is not death. No automatic drop collection.",
     "input_schema": {
       "type": "object",
       "properties": {
         "entity_id": {
           "type": "integer",
           "minimum": 0
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        }
+      },
+      "required": [
+        "entity_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.hunt_entity",
+    "handler": "handlers:hunt_entity",
+    "description": "Pursue one chosen entity_id and repeatedly approach and attack using the same primitive as attack. Equip a weapon first; no automatic target or weapon selection. At least 1 second between submitted swings; this is not a weapon-specific full-cooldown guarantee. timeout_seconds defaults to 30 (1..120); max_attacks defaults to 20 (1..100). Stops on observed target death, target loss, pursuit beyond 128 blocks from start, timeout, attack limit or stop. Native pathfinder defaults apply and may change terrain/inventory. No line-of-sight or hit guarantee. Waits locally up to 10 seconds; query action_status if still running. completed can mean the attack limit was reached, not a kill: inspect end_reason, attacks_submitted and target_death_observed. Hurt/death events do not prove this agent caused them. Target disappearance is not death. No automatic drop collection; inspect inventory.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "entity_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        },
+        "max_attacks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
         }
       },
       "required": [
@@ -470,7 +503,216 @@
   {
     "name": "minecraft.close_container",
     "handler": "handlers:close_container",
-    "description": "Close the current container after inspecting or transferring items and before leaving. If no window is open, succeeds without doing anything. Wait for any pending transfer to finish before closing. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if still running or pending, query action_status. On timeout or failure, wait for pending=false and inspect_container/observe before retrying, since changes may already have occurred.",
+    "description": "Close the current storage, furnace or other GUI window. Closing a furnace does not remove its contents or cancel server-side smelting. Close the current container after inspecting or transferring items and before leaving. If no window is open, succeeds without doing anything. Wait for any pending transfer to finish before closing. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if still running or pending, query action_status. On timeout or failure, wait for pending=false and inspect_container/observe before retrying, since changes may already have occurred.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.open_furnace",
+    "handler": "handlers:open_furnace",
+    "description": "Open a loaded furnace, blast_furnace or smoker at integer coordinates. Find it and move within interaction reach first; no auto-walk. Close any current window with close_container first. Returns input, fuel_item, output and client-known progress; null means unknown. Opening does not start smelting. Use put_furnace_input, put_furnace_fuel, inspect_furnace and take_furnace_item; close_container also closes furnaces. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if running or pending, query action_status. After failure or timeout, wait for pending=false and inspect state before retrying; partial effects may already have occurred.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "z": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.inspect_furnace",
+    "handler": "handlers:inspect_furnace",
+    "description": "Read the furnace opened with open_furnace: input, fuel_item, output, fuel_fraction, progress_fraction, fuel_seconds, remaining_seconds and player_inventory. Progress is client-known and null until available, not a guarantee of completion. Optional wait_seconds (0..10, omitted=0) polls locally until any output exists or the deadline; existing output returns immediately. A deadline is not an error and does not imply that input is invalid. Does not wait for a whole batch. Other players can change contents.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "wait_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.put_furnace_input",
+    "handler": "handlers:put_furnace_input",
+    "description": "Transfer count items by registry name from player inventory into the input slot of the currently open furnace. Count 1..64; native Mineflayer handles slot capacity and transfer errors. Server rules decide valid ingredients, fuels and furnace types; insertion alone does not prove a recipe exists or that smelting finished. Inspect output and progress. Does not select items by components or custom names. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if running or pending, query action_status. After failure or timeout, wait for pending=false and inspect state before retrying; partial effects may already have occurred.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string",
+          "description": "Item registry name, such as wheat_seeds, stone_hoe or coal."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      },
+      "required": [
+        "item",
+        "count"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.put_furnace_fuel",
+    "handler": "handlers:put_furnace_fuel",
+    "description": "Transfer count items by registry name from player inventory into the fuel slot of the currently open furnace. Count 1..64; native Mineflayer handles slot capacity and transfer errors. Server rules decide valid ingredients, fuels and furnace types; insertion alone does not prove a recipe exists or that smelting finished. Inspect output and progress. Does not select items by components or custom names. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if running or pending, query action_status. After failure or timeout, wait for pending=false and inspect state before retrying; partial effects may already have occurred.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string",
+          "description": "Item registry name, such as wheat_seeds, stone_hoe or coal."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      },
+      "required": [
+        "item",
+        "count"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.take_furnace_item",
+    "handler": "handlers:take_furnace_item",
+    "description": "Take the entire currently present stack from the selected input, fuel or output slot into player inventory. Requires open_furnace and inventory space; empty slots return an error. Use output to collect products, input/fuel to recover remaining supplies. Inspect before retrying; processing and other players may change the stack. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if running or pending, query action_status. After failure or timeout, wait for pending=false and inspect state before retrying; partial effects may already have occurred.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "slot": {
+          "type": "string",
+          "enum": [
+            "input",
+            "fuel",
+            "output"
+          ]
+        }
+      },
+      "required": [
+        "slot"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.use_on_block",
+    "handler": "handlers:use_on_block",
+    "description": "Right-click a loaded block face, optionally equipping item in the main hand first. Omit item to empty the main hand. Move within reach first; no auto-walk. face defaults to up. Supports ordinary held-item interactions such as hoeing dirt, planting seeds on farmland, applying bone meal and using doors/buttons, subject to server rules. For planting target the farmland top, not the air above. For storage/furnaces use open_container/open_furnace; for normal construction use place_block. Native return only confirms submission: inspect_block and observe to verify changes before retrying. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if running or pending, query action_status. After failure or timeout, wait for pending=false and inspect state before retrying; partial effects may already have occurred.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "z": {
+          "type": "integer"
+        },
+        "face": {
+          "type": "string",
+          "enum": [
+            "up",
+            "down",
+            "north",
+            "south",
+            "east",
+            "west"
+          ]
+        },
+        "item": {
+          "type": "string",
+          "description": "Item registry name, such as wheat_seeds, stone_hoe or coal."
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.interact_entity",
+    "handler": "handlers:interact_entity",
+    "description": "Right-click a client-known entity_id, optionally equipping item first (for example food for an animal). Omit item to empty the main hand. Obtain the ID with observe and move within reach first; no auto-walk. Server rules decide the effect. Native return does not verify feeding, breeding, taming or item delivery; observe state/inventory before retrying. This tool does not implement villager trading or specialized GUI operations. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if running or pending, query action_status. After failure or timeout, wait for pending=false and inspect state before retrying; partial effects may already have occurred.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "entity_id": {
+          "type": "integer"
+        },
+        "item": {
+          "type": "string",
+          "description": "Item registry name, such as wheat_seeds, stone_hoe or coal."
+        }
+      },
+      "required": [
+        "entity_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.sleep",
+    "handler": "handlers:sleep",
+    "description": "Try to sleep in a bed at integer coordinates using native Mineflayer. Find a bed and move within reach first. Native checks/server rules decide whether sleeping is possible. Returns is_sleeping; does not wait until morning and cannot guarantee other players sleep. Use wake to leave the bed. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if running or pending, query action_status. After failure or timeout, wait for pending=false and inspect state before retrying; partial effects may already have occurred.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "z": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.wake",
+    "handler": "handlers:wake",
+    "description": "Leave the bed using native Mineflayer. Only use when sleeping; returns is_sleeping. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if running or pending, query action_status. After failure or timeout, wait for pending=false and inspect state before retrying; partial effects may already have occurred.",
     "input_schema": {
       "type": "object",
       "properties": {},

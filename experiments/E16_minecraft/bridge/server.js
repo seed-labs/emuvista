@@ -2,14 +2,36 @@
 'use strict'
 const { createToolApi, serve } = require('./tool_api')
 const { randomUUID } = require('node:crypto')
-// Thin conversion only: Mineflayer decides how to perform the attack.
-function attackOnce (bot, id, check) {
-  if (!Number.isSafeInteger(id) || id < 0) throw new Error('entity_id must be a nonnegative integer from observe')
-  const target = bot.entities[id]
-  if (!target || target === bot.entity) throw new Error('Target is missing or is self; observe again')
+// One shared approach-and-swing primitive; the caller owns cancellation and limits.
+async function attackOnce (bot, target, check, { GoalFollow, ended, job }) {
   check()
-  bot.attack(target)
-  return { entity_id: id, submitted: true, damage_confirmed: false, kill_confirmed: false }
+  let following = false
+  while (true) {
+    check()
+    const reason = ended()
+    if (reason) return reason
+    if (bot.entity.position.distanceTo(target.position) <= 2.5) {
+      bot.pathfinder.setGoal(null)
+      following = false
+      job.phase = 'aiming'
+      await bot.lookAt(target.position.offset(0, (target.height || 1) * 0.8, 0), true)
+      check()
+      const reasonAfterLook = ended()
+      if (reasonAfterLook) return reasonAfterLook
+      if (bot.entity.position.distanceTo(target.position) <= 2.5) {
+        job.phase = 'attacking'
+        bot.attack(target)
+        job.attacks_submitted++
+        return 'attack_submitted'
+      }
+    }
+    job.phase = 'approaching'
+    if (!following) {
+      bot.pathfinder.setGoal(new GoalFollow(target, 1), true)
+      following = true
+    }
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
 }
 
 // Observe protocol updates, not blockUpdate events: digging also emits those locally.
@@ -99,7 +121,7 @@ async function digBatch ({ bot, targets, job, alive }) {
 }
 
 // 通过依赖注入创建桥接对象，便于测试时替换 Mineflayer；连接、聊天和任务状态在闭包内共享。
-function createBridge ({ createBot, pathfinder, Movements, GoalNear, options, chatRadius = 32 }) {
+function createBridge ({ createBot, pathfinder, Movements, GoalNear, GoalFollow, options, chatRadius = 32 }) {
   if (!Number.isFinite(chatRadius) || chatRadius < 0) throw new Error('MC_CHAT_RADIUS must be a finite nonnegative number')
   let bot, connected = false, lastError = null, closing = false, retry, active = null
   let pendingInventory = null
@@ -121,6 +143,8 @@ function createBridge ({ createBot, pathfinder, Movements, GoalNear, options, ch
   // 结束当前任务并保留历史记录；这里只更新状态，停止寻路需另行调用 setGoal(null)。
   function finish (state, error) {
     if (!active) return
+    if (['attack', 'hunt_entity'].includes(active.job.kind) && !active.job.end_reason) active.job.end_reason = state
+    if (active.cleanup) active.cleanup()
     if (active.job.kind === 'dig_blocks') bot.pathfinder.setGoal(null)
     clearTimeout(active.timer)
     active.job.status = state
@@ -269,7 +293,7 @@ function createBridge ({ createBot, pathfinder, Movements, GoalNear, options, ch
       .map(block => ({ name: block.name, position: block.position, distance: block.position.distanceTo(position) }))
       .sort((a, b) => a.distance - b.distance)
     return { connected: true, version: '26.1', username: bot.username, position,
-      health: bot.health, food: bot.food,
+      health: bot.health, food: bot.food, is_sleeping: bot.isSleeping,
       time_of_day: bot.time?.timeOfDay, raining: bot.isRaining, dimension: bot.game?.dimension,
       yaw: bot.entity.yaw, pitch: bot.entity.pitch,
       held_item: bot.heldItem ? { name: bot.heldItem.name, count: bot.heldItem.count } : null,
@@ -286,7 +310,7 @@ function createBridge ({ createBot, pathfinder, Movements, GoalNear, options, ch
     get active () { return active }, set active (value) { active = value }
   }, { messages, notifications, notificationEpoch, jobs, ready, observe, finish, inventoryAction,
     inventoryItem, inventorySnapshot, itemDefinition, nearbyTable, recipeKey, attackOnce, digBatch,
-    GoalNear, watchServerBlock })
+    GoalNear, GoalFollow, watchServerBlock })
   // 主动关闭时取消重连和任务计时器，再退出游戏，避免退出事件触发重连。
   function close () {
     closing = true
@@ -307,8 +331,8 @@ if (require.main === module) {
   const username = process.env[prefix + 'USERNAME']?.trim()
   if (!username) throw new Error(`Set ${prefix}USERNAME in E16 .env`)
   const mineflayer = require('mineflayer')
-  const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathfinder')
-  const bridge = createBridge({ createBot: mineflayer.createBot, pathfinder, Movements, GoalNear,
+  const { pathfinder, Movements, goals: { GoalNear, GoalFollow } } = require('mineflayer-pathfinder')
+  const bridge = createBridge({ createBot: mineflayer.createBot, pathfinder, Movements, GoalNear, GoalFollow,
     chatRadius: Number(process.env.MC_CHAT_RADIUS ?? 32),
     options: { host: process.env.MC_HOST || 'host.docker.internal', port: Number(process.env.MC_PORT),
       username, auth: process.env[prefix + 'AUTH'] || process.env.MC_AUTH || 'offline',

@@ -76,6 +76,10 @@ def attack(arguments, context):
     return _start_action(context, '/attack', arguments)
 
 
+def hunt_entity(arguments, context):
+    return _start_action(context, '/hunt', arguments)
+
+
 def equip(arguments, context):
     return _start_action(context, '/equip', arguments)
 
@@ -124,3 +128,53 @@ def close_container(arguments, context):
     return _start_action(context, '/container/close', arguments)
 
 
+def open_furnace(arguments, context):
+    return _start_action(context, '/furnace/open', arguments)
+
+
+def inspect_furnace(arguments, context):
+    """Bounded local waiting for output, without holding an HTTP request open."""
+    wait = arguments.get('wait_seconds', 0)
+    if isinstance(wait, bool) or not isinstance(wait, int) or not 0 <= wait <= 10:
+        raise ValueError('wait_seconds must be an integer between 0 and 10')
+    deadline = time.monotonic() + wait
+    window_id = None
+    while True:
+        result = _call(context, '/furnace')
+        if 'error' in result:
+            return result
+        if window_id is not None and result.get('id') != window_id:
+            return {'error': 'Furnace window changed while waiting; inspect again.'}
+        window_id = result.get('id')
+        remaining = deadline - time.monotonic()
+        if result.get('output') or remaining <= 0:
+            return result
+        time.sleep(min(0.5, remaining))
+
+
+def put_furnace_input(arguments, context):
+    return _start_action(context, '/furnace/input', arguments)
+
+
+def put_furnace_fuel(arguments, context):
+    return _start_action(context, '/furnace/fuel', arguments)
+
+
+def take_furnace_item(arguments, context):
+    return _start_action(context, '/furnace/take', arguments)
+
+
+def use_on_block(arguments, context):
+    return _start_action(context, '/use-on-block', arguments)
+
+
+def interact_entity(arguments, context):
+    return _start_action(context, '/interact-entity', arguments)
+
+
+def sleep(arguments, context):
+    return _start_action(context, '/sleep', arguments)
+
+
+def wake(arguments, context):
+    return _start_action(context, '/wake', arguments)

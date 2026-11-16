@@ -77,10 +77,73 @@ docker compose exec alice tail -f /home/emuvista-agent/agent.log
 | `find_blocks`、`inspect_block` | 按名称查找方块、检查坐标 |
 | `equip`、`consume`、`drop_item` | 按物品名称装备、进食与丢弃 |
 | `get_recipes`、`craft` | 按名称查看配方并合成 |
-| `place_block`、`dig_blocks`、`attack` | 放置、批量挖掘与单次攻击 |
+| `place_block`、`dig_blocks` | 放置、批量挖掘 |
+| `attack`、`hunt_entity` | 跟随指定实体并攻击一次，或有次数和时间限制地持续追击 |
+| `open_container`、`inspect_container`、`deposit_item`、`withdraw_item`、`close_container` | 储物容器与物品转移；关闭也适用于熔炉窗口 |
+| `open_furnace`、`inspect_furnace` | 打开熔炉、高炉、烟熏炉，查看槽位、燃料与烧炼进度 |
+| `put_furnace_input`、`put_furnace_fuel`、`take_furnace_item` | 放入原料、燃料，取出指定槽位的整堆物品 |
+| `use_on_block`、`interact_entity` | 手持物品右键方块或实体，用于耕种、施肥、动物交互等 |
+| `sleep`、`wake` | 尝试睡觉与起床；`observe.is_sleeping` 查看当前睡眠状态 |
 
-以上均带 `minecraft.` 前缀，共 15 个工具。模型不再获得底层 `_call`、
+以上均带 `minecraft.` 前缀，共 30 个工具。模型不再获得底层 `_call`、
 `native_call` 或 `native_methods` 工具；monitor 直接显示具体封装工具名称。
+
+### 基础生存流程
+
+打猎由 agent 自己选择目标和武器：`observe → equip → attack/hunt_entity → action_status`。
+`attack({"entity_id": 123, "timeout_seconds": 30})` 根据实体 ID 跟随同一目标，
+位置距离不超过 2.5 格后攻击一次。`hunt_entity({"entity_id": 123, "timeout_seconds": 30, "max_attacks": 20})`
+在 bridge 内重复调用同一个接近与攻击函数，不需要模型每挥击一次都调用工具。
+两者使用原生 `GoalFollow` 动态寻路，不修改 pathfinder 默认移动规则，寻路可能挖掘或放置方块。
+持续攻击之间至少间隔 1 秒；此间隔不保证每种武器都完成冷却，距离检查也不保证没有遮挡或命中。
+超时范围 1～120 秒，持续攻击次数 1～100；目标或自身离起点超过 128 格时终止追击。
+
+`stop` 可以取消这两类动作，结束后会清除寻路与事件监听。
+`action_status` 保留攻击次数 `attacks_submitted`、当前阶段 `phase` 和结束原因 `end_reason`：
+`attack_submitted`（单次攻击已提交）、`max_attacks`、`target_died`、`target_lost`、
+`pursuit_limit`、`timeout`、`cancelled` 或错误状态。
+达到攻击次数上限也会结束任务，但不代表击杀。`target_death_observed` 只表示收到目标死亡事件；
+`target_hurt_events` 也不证明伤害来自该 agent。目标消失按丢失处理，不推断死亡。
+工具不会自动收集掉落物，需自行接近掉落物并检查背包。
+
+手动测试攻击时，可分别检查静止目标的单次攻击、移动目标的追赶、较小 `max_attacks` 限制、
+追击过程中的 `stop` 与超时，以及目标离开加载范围时是否返回 `target_lost` 而非击杀成功。
+
+采集仍使用 `find_blocks → move_to → equip → dig_blocks → observe`，确认实际拾取的物品；
+合成使用 `get_recipes → craft`，需要工作台的配方先放置工作台并走近。
+`get_recipes` 仅包含合成配方，目前没有烧炼配方查询；不能把查询不到合成配方理解为不能烧炼。
+
+烧炼时先走近炉子，关闭其他窗口，再调用：
+
+1. `open_furnace({"x": ..., "y": ..., "z": ...})`。
+2. `put_furnace_input({"item": "raw_iron", "count": 1})`、`put_furnace_fuel({"item": "coal", "count": 1})`。
+3. `inspect_furnace({"wait_seconds": 10})`：最多本地等待 10 秒，有任意产物即返回；已有产物时立即返回，不等待整批完成。
+4. 确认 `output` 后，`take_furnace_item({"slot": "output"})` 取出当前整堆产物；`slot` 也支持 `input`、`fuel`，用于回收剩余物品。
+5. 查看返回的炉子槽位和背包，再 `close_container({})`。关闭窗口不会取消服务器端烧炼。
+
+输入数量限制为 1～64，容量、合法燃料和配方以原生 API 与服务器规则为准。
+`progress_fraction`、`fuel_fraction` 以及秒数来自客户端窗口状态，未收到时为 `null`。
+投料返回不代表烧炼成功；读到产物不代表已经取入背包。多人同时操作可能改变槽位。
+动作返回 `running` 或 `pending=true` 时，先查询 `action_status`；失败后等 `pending=false` 并检查状态，再决定是否重试。
+
+农作时可用 `use_on_block` 携带锄头右键泥土，再携带种子右键耕地顶面（`face="up"`），
+施肥时携带骨粉右键作物。成熟后用现有挖掘工具收获，并检查掉落与背包。
+`interact_entity` 使用 `observe` 返回的实体 ID，可携带食物右键动物。
+两种交互工具省略 `item` 时会清空主手；不会自动走近，返回仅表示原生调用结束，
+需要检查方块、实体与背包确认效果，不能自动宣称播种、繁殖或驯服成功。
+实体交互不包含村民交易等专用 GUI 流程。睡觉调用返回不表示已经跳过夜晚。
+
+工具实现遵循项目锁定的 [Mineflayer 4.39.0 API](https://github.com/PrismarineJS/mineflayer/blob/4.39.0/docs/api.md)，
+熔炉状态与转移使用其 [原生炉子插件](https://github.com/PrismarineJS/mineflayer/blob/4.39.0/lib/plugins/furnace.js)。
+
+手动验证时，先准备炉子、原料、燃料与空余背包，按上述顺序检查输入槽、燃料进度、产物槽及取出后的背包。
+另检查空槽取出、原料不足、窗口已关闭时会报错；耕地与播种需要在游戏内确认方块变化。
+新增工具修改的是源码，需在 E16 目录重新运行 `python3 experiment.py` 生成构建目录，再构建镜像并重建容器后生效：
+
+```bash
+cd output
+docker compose up -d --build --no-deps --force-recreate alice bob carol dave eve
+```
 
 ```bash
 docker compose exec --user emuvista-agent alice agentctl list

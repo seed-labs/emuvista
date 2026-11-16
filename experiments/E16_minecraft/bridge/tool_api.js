@@ -2,6 +2,27 @@
 const http = require('node:http')
 const { randomUUID } = require('node:crypto')
 
+const FACES = { up: [0, 1, 0], down: [0, -1, 0], north: [0, 0, -1], south: [0, 0, 1], east: [1, 0, 0], west: [-1, 0, 0] }
+
+function furnaceWindow (bot) {
+  const w = bot.currentWindow
+  if (!w || typeof w.inputItem !== 'function' || typeof w.putFuel !== 'function') {
+    throw new Error('Use open_furnace first; a generic container window is not sufficient')
+  }
+  return w
+}
+
+function furnaceInfo (bot) {
+  const w = furnaceWindow(bot)
+  const item = i => i ? { name: i.name, type: i.type, count: i.count, slot: i.slot } : null
+  const number = n => Number.isFinite(n) ? n : null
+  return { id: w.id, type: w.type, input: item(w.inputItem()), fuel_item: item(w.fuelItem()),
+    output: item(w.outputItem()), fuel_fraction: number(w.fuel), progress_fraction: number(w.progress),
+    fuel_seconds: number(w.fuelSeconds), remaining_seconds: number(w.progressSeconds),
+    player_inventory: w.slots.slice(w.inventoryStart, w.inventoryEnd).filter(Boolean).map(item),
+    observation_scope: 'client-known window; null progress means unknown; output may change concurrently' }
+}
+
 // Public native methods only. JSON references are converted to live objects; no eval
 // or arbitrary bot/private-property lookup is exposed.
 function nativeMethods (bot) {
@@ -112,7 +133,7 @@ function nativeMethods (bot) {
 function createToolApi (state, dependencies) {
   const { messages, notifications = [], notificationEpoch, jobs, ready, observe, finish, inventoryAction,
     inventoryItem, inventorySnapshot, itemDefinition, nearbyTable, recipeKey, attackOnce, digBatch,
-    GoalNear, watchServerBlock } = dependencies
+    GoalNear, GoalFollow, watchServerBlock } = dependencies
   return function dispatch (method, path, args = {}) {
     // Named tools use a fixed method route and flat arguments; never take method from model input.
     if (method === 'POST' && path.startsWith('/native/')) {
@@ -187,12 +208,161 @@ function createToolApi (state, dependencies) {
           guidance: 'Native return does not prove server acceptance, damage, or item delivery.' }
       }, timeout)
     }
-    if (method === 'POST' && path === '/attack') {
-      return inventoryAction('attack', { entity_id: args.entity_id },
-        (actor, check) => attackOnce(actor, args.entity_id, check), 5)
+    if (method === 'POST' && ['/attack', '/hunt'].includes(path)) {
+      if (state.active || pendingInventory) throw new Error('An action is running; wait or stop it first')
+      if (bot.currentWindow) throw new Error('Close the current window before attacking')
+      if (!Number.isSafeInteger(args.entity_id) || args.entity_id < 0) throw new Error('Use an entity_id from observe')
+      const target = bot.entities[args.entity_id]
+      if (!target || target === bot.entity) throw new Error('Target is missing or is self; observe again')
+      const seconds = args.timeout_seconds ?? 30
+      const limit = path === '/hunt' ? (args.max_attacks ?? 20) : 1
+      if (!Number.isInteger(seconds) || seconds < 1 || seconds > 120) throw new Error('timeout_seconds must be 1..120')
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('max_attacks must be 1..100')
+      const actor = bot, origin = actor.entity.position.clone()
+      if (target.position.distanceTo(origin) > 128) throw new Error('Target must be within 128 blocks')
+      const job = { id: randomUUID(), kind: path === '/hunt' ? 'hunt_entity' : 'attack', status: 'running',
+        cancellable: true, entity_id: target.id, phase: 'approaching', attacks_submitted: 0,
+        target_hurt_events: 0, target_death_observed: false, kill_attribution: 'unknown',
+        drops_collected_verified: false, max_attacks: limit }
+      const alive = () => state.connected && state.bot === actor && state.active?.job === job
+      const check = () => { if (!alive()) throw new Error('Action no longer active') }
+      const ended = () => job.target_death_observed ? 'target_died'
+        : actor.entities[target.id] !== target ? 'target_lost'
+          : target.position.distanceTo(origin) > 128 || actor.entity.position.distanceTo(origin) > 128 ? 'pursuit_limit' : null
+      const hurt = entity => { if (alive() && entity === target) job.target_hurt_events++ }
+      const dead = entity => { if (alive() && entity === target) job.target_death_observed = true }
+      const cleanup = () => {
+        actor.removeListener('entityHurt', hurt)
+        actor.removeListener('entityDead', dead)
+        actor.pathfinder.setGoal(null)
+        actor.clearControlStates()
+      }
+      jobs.set(job.id, job)
+      if (jobs.size > 100) jobs.delete(jobs.keys().next().value)
+      const timer = setTimeout(() => {
+        if (!alive()) return
+        job.end_reason = 'timeout'
+        finish('failed', 'Pursuit timed out; inspect target and inventory before retrying')
+      }, seconds * 1000)
+      state.active = { job, timer, cleanup }
+      actor.on('entityHurt', hurt)
+      actor.on('entityDead', dead)
+      ;(async () => {
+        let reason
+        while (alive()) {
+          reason = await attackOnce(actor, target, check, { GoalFollow, ended, job })
+          check()
+          if (reason !== 'attack_submitted') break
+          // Leave time for server feedback and prevent rapid repeated attack packets.
+          job.phase = 'waiting'
+          const until = Date.now() + 1000
+          while (Date.now() < until && !ended()) {
+            await new Promise(resolve => setTimeout(resolve, 100))
+            check()
+          }
+          reason = ended()
+          if (reason) break
+          if (job.attacks_submitted >= limit) {
+            reason = path === '/hunt' ? 'max_attacks' : 'attack_submitted'
+            break
+          }
+        }
+        check()
+        job.end_reason = reason
+        job.phase = 'finished'
+        job.result = { end_reason: reason, attacks_submitted: job.attacks_submitted,
+          target_hurt_events: job.target_hurt_events, target_death_observed: job.target_death_observed,
+          kill_attribution: 'unknown', drops_collected_verified: false, inventory: inventorySnapshot(actor),
+          guidance: 'Submitted attacks do not prove hits. Target hurt/death events do not identify the attacker. Target loss is not death; verify drops in inventory.' }
+        finish(['target_lost', 'pursuit_limit'].includes(reason) ? 'failed' : 'completed')
+      })().catch(error => {
+        if (alive()) {
+          job.end_reason = 'error'
+          finish('failed', error.message)
+        }
+      })
+      return { ...job }
     }
     if (pendingInventory && method === 'POST' && path !== '/chat') {
       throw new Error('Inventory operation still pending; wait for action_status before another action')
+    }
+    if (method === 'GET' && path === '/furnace') return furnaceInfo(bot)
+    if (method === 'POST' && path === '/furnace/open') {
+      if (bot.currentWindow) throw new Error('Close the current window first')
+      if (!['x', 'y', 'z'].every(k => Number.isSafeInteger(args[k]))) throw new Error('Integer block coordinates required')
+      const position = bot.entity.position.clone()
+      Object.assign(position, { x: args.x, y: args.y, z: args.z })
+      const block = bot.blockAt(position)
+      if (!block || !['furnace', 'blast_furnace', 'smoker'].includes(block.name)) throw new Error('Expected a loaded furnace, blast_furnace or smoker')
+      return inventoryAction('open_furnace', { position }, async (actor, check) => {
+        await actor.openFurnace(block)
+        check()
+        return furnaceInfo(actor)
+      })
+    }
+    if (method === 'POST' && ['/furnace/input', '/furnace/fuel', '/furnace/take'].includes(path)) {
+      const w = furnaceWindow(bot)
+      const taking = path === '/furnace/take'
+      const methods = { input: 'takeInput', fuel: 'takeFuel', output: 'takeOutput' }
+      let definition
+      if (taking) {
+        if (!Object.hasOwn(methods, args.slot)) throw new Error('slot must be input, fuel or output')
+      } else {
+        definition = itemDefinition(args.item)
+        if (!Number.isSafeInteger(args.count) || args.count < 1 || args.count > 64) throw new Error('count must be 1..64')
+      }
+      const kind = taking ? 'take_furnace_item' : path.endsWith('/input') ? 'put_furnace_input' : 'put_furnace_fuel'
+      return inventoryAction(kind, taking ? { slot: args.slot } : { item: args.item, count: args.count }, async (actor, check) => {
+        if (actor.currentWindow !== w) throw new Error('Furnace window changed; open it again')
+        if (taking) {
+          if (!w[args.slot + 'Item']()) throw new Error('Selected furnace slot is empty; inspect_furnace before retrying')
+          await w[methods[args.slot]]()
+        } else {
+          const available = w.slots.slice(w.inventoryStart, w.inventoryEnd)
+            .filter(i => i && i.type === definition.id).reduce((sum, i) => sum + i.count, 0)
+          if (available < args.count) throw new Error('Insufficient items in player inventory')
+          await w[path.endsWith('/input') ? 'putInput' : 'putFuel'](definition.id, null, args.count)
+        }
+        check()
+        if (actor.currentWindow !== w) throw new Error('Furnace window changed; inspect state before retrying')
+        return { completion_basis: 'mineflayer_promise_resolved', furnace: furnaceInfo(actor),
+          guidance: 'Transfer returned; inspect slots and inventory. This does not prove smelting completed.' }
+      })
+    }
+    if (method === 'POST' && ['/use-on-block', '/interact-entity', '/sleep', '/wake'].includes(path)) {
+      if (bot.currentWindow) throw new Error('Close the current window first')
+      const position = { x: args.x, y: args.y, z: args.z }
+      if (['/use-on-block', '/sleep'].includes(path) && !Object.values(position).every(Number.isSafeInteger)) {
+        throw new Error('Integer block coordinates required')
+      }
+      const face = args.face ?? 'up'
+      if (path === '/use-on-block' && !Object.hasOwn(FACES, face)) throw new Error('Invalid block face')
+      if (path === '/interact-entity' && (!Number.isSafeInteger(args.entity_id) || !bot.entities[args.entity_id])) throw new Error('Unknown entity_id; observe again')
+      if (args.item !== undefined) inventoryItem(args.item)
+      const kind = { '/use-on-block': 'use_on_block', '/interact-entity': 'interact_entity', '/sleep': 'sleep', '/wake': 'wake' }[path]
+      const details = path === '/interact-entity' ? { entity_id: args.entity_id, item: args.item }
+        : path === '/wake' ? {} : { position, item: args.item, face }
+      return inventoryAction(kind, details, async (actor, check) => {
+        // Omitted item explicitly means empty main hand, never an accidental held tool.
+        if (path === '/use-on-block' || path === '/interact-entity') {
+          if (args.item !== undefined) await actor.equip(inventoryItem(args.item), 'hand')
+          else await actor.unequip('hand')
+          check()
+        }
+        const native = nativeMethods(actor)
+        if (path === '/use-on-block') {
+          const [x, y, z] = FACES[face]
+          await native.activateBlock.run({ position, direction: { x, y, z },
+            cursor: { x: 0.5 + x * 0.5, y: 0.5 + y * 0.5, z: 0.5 + z * 0.5 } })
+        } else if (path === '/interact-entity') {
+          await native.activateEntity.run({ entity_id: args.entity_id })
+        } else if (path === '/sleep') await native.sleep.run({ position })
+        else await native.wake.run({})
+        check()
+        return { completion_basis: 'native_call_returned', effect_verified: false,
+          is_sleeping: actor.isSleeping, inventory: inventorySnapshot(actor),
+          guidance: 'Inspect target and inventory before claiming a world effect or retrying. Sleeping does not mean the night has passed.' }
+      })
     }
     if (method === 'GET' && path === '/container') {
       return nativeMethods(bot).currentWindow.run({})
