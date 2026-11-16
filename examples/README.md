@@ -14,3 +14,7 @@ emu = build_emulator()
 
 [H99_virtual_world](H99_virtual_world/) combines email, payment and banks.
 [E99](../experiments/E99_virtual_world_with_agents/) adds five agents to H99.
+
+[H98_virtual_company](H98_virtual_company/) deploys company applications on H00's
+AS164 campus. It currently reuses CloudDriveService, with separate application,
+database, and object-storage nodes.
