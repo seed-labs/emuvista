@@ -19,14 +19,14 @@ Use a Python environment that can import `seedemu` and `DomainService`, with Doc
 available. Run from this example directory:
 
 ```bash
-python domain_name_purchase.py
+../../.venv/bin/python domain_name_purchase.py
 cd output
 docker compose build
 docker compose up -d
 cd ..
 ```
 
-The scenario always includes all four services. `domain_name_purchase.py` only generates
+The H12 entry point includes Registry, FOSSBilling, DNS Hosting and FakePayment. `domain_name_purchase.py` only generates
 deployment files in `output`; build and start the containers manually from that directory.
 Existing image layers may use the build cache. Uncached dependency installation requires
 network access.
@@ -55,7 +55,7 @@ clients, and product prices are preserved. Startup does not pay invoices or retr
 ## Generation Options
 
 The Python entry point generates configuration without building or starting Docker.
-Generation accepts `--output PATH`, `--platform amd`, and `--platform arm`.
+Generation accepts `--output PATH` and `--platform amd|arm`.
 
 ## Automated Tests
 
@@ -100,6 +100,8 @@ After startup and initialization, open these URLs in the Docker host's browser:
 
 | Endpoint | URL |
 | --- | --- |
+| Internet Map topology | <http://localhost:8080/> |
+| Internet Map geographic view | <http://localhost:8082/> |
 | FOSSBilling client portal | <http://localhost:18080/> |
 | FOSSBilling administration | <http://localhost:18080/admin> |
 | Registry control panel | <http://localhost:18081/> |
@@ -113,8 +115,8 @@ Select fakePayment on a FOSSBilling invoice to confirm a simulated payment and v
 result inside the invoice page. Refresh the invoice afterward to check payment status.
 The checkout `/pay` endpoint accepts signed POST requests only; opening it in the address
 bar returns 404. DNS Hosting is purchased and managed through the client portal, with no
-separate management website. The [H13 example](../H13_browser_agent/README.md) provides
-the browser and agent chat interface.
+separate management website. The [H13 example](../H13_domain_agent/README.md) provides
+the agent chat interface using Bundle tools.
 
 Configure host ports with `setPortForwarding(host_port)`; pass `None` to disable forwarding.
 FOSSBilling derives its local URL from the forwarded port, preserving localhost in links
@@ -183,7 +185,7 @@ domain_data.importFile(HERE / 'domains.example.yaml')
 From this example directory, generate a separate deployment:
 
 ```bash
-python domain_name_purchase.py --output output-import
+../../.venv/bin/python domain_name_purchase.py --output output-import
 ```
 
 `clients` maps file-local identifiers to `email`, `password`, and a `contact`
@@ -230,3 +232,7 @@ Run offline checks from the workspace root:
 ```bash
 emuvista/.venv/bin/python emuvista/examples/H12_domain_name_purchase/test_domain_import.py
 ```
+
+InternetMap is registered by H12's shared `configure_bundles()` function, so H13
+also includes it. Port 8081 is reserved for traffic observer control. Map components
+use the upstream InternetMap Bundle and its default external bridge network.

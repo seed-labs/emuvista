@@ -15,9 +15,16 @@ class DomainDataService(Service):
         super().__init__()
         self._documents = []
         self._names = set()
+        self._targets = {}
         self.addDependency('Base', False, False)
-        for layer in ('DomainNameService', 'NamingoRegistryService', 'FossBillingRegistrarService'):
-            self.addDependency(layer, True, False)
+        self.addDependency('DomainNameService', True, False)
+
+    def addTarget(self, name, server):
+        """Register an external application's import configuration by scenario name."""
+        if name in self._targets:
+            raise ValueError(f'Duplicate domain import target: {name}')
+        self._targets[name] = server
+        return self
 
     def importFile(self, path):
         """Read YAML now; resolve scenario references and dispatch during configure."""
@@ -84,8 +91,11 @@ class DomainDataService(Service):
                 if name.count('.') != 1:
                     raise ValueError(f'{name}: expected a registrable name under a single-label TLD')
                 registration, account = item['registration'], item['registrar']
-                registry = emulator.getServerByVirtualNodeName(registration['registry'])
-                registrar = emulator.getServerByVirtualNodeName(account['server'])
+                registry_name, registrar_name = registration['registry'], account['server']
+                registry = (self._targets[registry_name] if registry_name in self._targets
+                            else emulator.getServerByVirtualNodeName(registry_name))
+                registrar = (self._targets[registrar_name] if registrar_name in self._targets
+                             else emulator.getServerByVirtualNodeName(registrar_name))
                 if registrar.getRegistry() != registration['registry']:
                     raise ValueError(f'{name}: Registrar is connected to a different Registry')
                 contact = deepcopy(document['contacts'][item['registrant']])

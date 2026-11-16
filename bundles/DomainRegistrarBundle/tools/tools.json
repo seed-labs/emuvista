@@ -1,0 +1,291 @@
+[
+  {
+    "name": "domain_purchase.purchase",
+    "handler": "handlers:purchase",
+    "description": "Register one second-level .com or .net domain for ONE year through the configured FOSSBilling account and FakePayment simulation. Creates an order/invoice and confirms simulated payment up to max_amount_minor (USD cents in E15). Use only for an explicitly requested domain. Does not buy DNS hosting or create DNS records. Repeated calls for the same account/domain return the local journal, never a second checkout. If incomplete or outcome_unknown=true, use domain_purchase.status, not another purchase. Success requires paid invoice and active registrar order; does not prove DNS propagation.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 127
+        },
+        "max_amount_minor": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000,
+          "description": "Maximum simulated payment in currency minor units (USD cents); an over-limit order remains unpaid"
+        }
+      },
+      "required": [
+        "domain",
+        "max_amount_minor"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "domain_purchase.status",
+    "handler": "handlers:status",
+    "description": "Read the current account's locally recorded purchase and verify its invoice/order status with FOSSBilling. Does not create orders or submit payments. If checkout lost its response before an order ID was saved, inspect the portal manually. no_local_order is not evidence a domain is available.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 127
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "domain_purchase.set_nameservers",
+    "handler": "handlers:set_nameservers",
+    "description": "Replace the nameservers of your own active domain registration order (order_id from domain_purchase.status or the registrar portal, not a hosting order). Provide two to four distinct existing nameserver hostnames. Does not create registry host/glue objects, buy hosting, create records or prove DNS propagation. On outcome_unknown inspect the portal and DNS before retrying.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "order_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "nameservers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 254
+          },
+          "description": "Two to four distinct nameserver hostnames, e.g. ns1.example.com and ns2.example.com"
+        }
+      },
+      "required": [
+        "order_id",
+        "nameservers"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "domain_purchase.hosting_purchase",
+    "handler": "handlers:hosting_purchase",
+    "description": "Order DNS Hosting for an explicitly requested domain through your configured FOSSBilling account. This is DNS zone hosting, not web hosting. Requires exactly one offered DNS product. Supports free checkout or signed FakePayment simulation up to max_amount_minor. Checkout may create an unpaid order before budget validation. Active order and paid invoice (or no invoice for free checkout) are required for success. Does not change NS or add records. Repeated calls reuse a separate persistent hosting journal; use hosting_status for incomplete or uncertain outcomes. Do not invoke concurrently with another purchase for the same customer.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 127
+        },
+        "max_amount_minor": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Maximum simulated payment in USD cents; zero permits free hosting only"
+        }
+      },
+      "required": [
+        "domain",
+        "max_amount_minor"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "domain_purchase.hosting_status",
+    "handler": "handlers:hosting_status",
+    "description": "Read your locally recorded DNS Hosting purchase and query its current FOSSBilling order and invoice. Never submits orders or payments. An active order is not proof of DNS propagation. no_local_order only means no hosting journal exists. If checkout lost its response, reconcile through the customer portal.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 127
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "domain_purchase.dns_list",
+    "handler": "handlers:dns_list",
+    "description": "List DNS Hosting records including id, host, type, value, ttl and priority. This reads the registrar service, not a DNS resolver. Uses the configured customer account and checks the active hosting order matches domain. Does not change delegation, buy hosting, or verify DNS propagation.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 127,
+          "description": "Zone domain, e.g. seed.com, not www.seed.com"
+        },
+        "order_id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Active DNS Hosting order ID from hosting_status or customer portal; NOT domain registration order ID"
+        }
+      },
+      "required": [
+        "domain",
+        "order_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "domain_purchase.dns_add",
+    "handler": "handlers:dns_add",
+    "description": "Add one DNS record after listing existing records to avoid duplicates. Successful means the API accepted the write; records_readback indicates whether the resulting list was fetched. On outcome_unknown, list records before any retry. Uses the configured customer account and checks the active hosting order matches domain. Does not change delegation, buy hosting, or verify DNS propagation.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 127,
+          "description": "Zone domain, e.g. seed.com, not www.seed.com"
+        },
+        "order_id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Active DNS Hosting order ID from hosting_status or customer portal; NOT domain registration order ID"
+        },
+        "record_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "description": "Relative name such as www, or @ for the zone apex"
+        },
+        "record_type": {
+          "type": "string",
+          "enum": [
+            "A",
+            "AAAA",
+            "CNAME",
+            "MX",
+            "TXT",
+            "NS",
+            "SRV",
+            "CAA"
+          ]
+        },
+        "record_value": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "record_ttl": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "record_priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "MX priority only; optional on update to preserve existing priority"
+        }
+      },
+      "required": [
+        "domain",
+        "order_id",
+        "record_name",
+        "record_type",
+        "record_value",
+        "record_ttl"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "domain_purchase.dns_update",
+    "handler": "handlers:dns_update",
+    "description": "Update an existing record value and TTL, with optional MX priority. First use dns_list to select record_id. Name and type cannot be changed. On outcome_unknown, list records before any retry. Uses the configured customer account and checks the active hosting order matches domain. Does not change delegation, buy hosting, or verify DNS propagation.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 127,
+          "description": "Zone domain, e.g. seed.com, not www.seed.com"
+        },
+        "order_id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Active DNS Hosting order ID from hosting_status or customer portal; NOT domain registration order ID"
+        },
+        "record_id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Record id returned by dns_list for this hosting order"
+        },
+        "record_value": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "record_ttl": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "record_priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "MX priority only; optional on update to preserve existing priority"
+        }
+      },
+      "required": [
+        "domain",
+        "order_id",
+        "record_id",
+        "record_value",
+        "record_ttl"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "domain_purchase.dns_delete",
+    "handler": "handlers:dns_delete",
+    "description": "Delete only the record selected by record_id from dns_list. Requires user authorization. On outcome_unknown, list records before any retry. Uses the configured customer account and checks the active hosting order matches domain. Does not change delegation, buy hosting, or verify DNS propagation.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 127,
+          "description": "Zone domain, e.g. seed.com, not www.seed.com"
+        },
+        "order_id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Active DNS Hosting order ID from hosting_status or customer portal; NOT domain registration order ID"
+        },
+        "record_id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Record id returned by dns_list for this hosting order"
+        }
+      },
+      "required": [
+        "domain",
+        "order_id",
+        "record_id"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

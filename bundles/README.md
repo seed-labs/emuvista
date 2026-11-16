@@ -31,3 +31,7 @@ from bundles.PaymentBundle import PaymentBundle
 ```
 
 SEED service layers remain in [services](../services/).
+
+- [DomainRegistryBundle](DomainRegistryBundle/): Namingo Registry, EPP and parent-zone publication.
+- [DomainRegistrarBundle](DomainRegistrarBundle/): FOSSBilling and domain purchase tools.
+- [MastodonBundle](MastodonBundle/): Mastodon and social media tools.

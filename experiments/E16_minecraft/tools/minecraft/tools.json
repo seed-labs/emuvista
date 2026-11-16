@@ -1,0 +1,481 @@
+[
+  {
+    "name": "minecraft.observe",
+    "handler": "handlers:observe",
+    "description": "Read connection status, position, health, inventory and the nearest 20 client-known entities within 32 blocks. Each entity includes dropped_item with item name and count when available, otherwise null. Also returns nearby_blocks: up to 64 nearest loaded non-air blocks within 32 blocks, with name, position and distance. This is a limited block sample, not a complete terrain map; use find_blocks to locate a specific block type. No line-of-sight filtering. Includes time of day, weather, dimension, orientation, held item and block below. Block data comes from the client cache, which can include local digging predictions; air alone does not prove server-confirmed removal.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.chat",
+    "handler": "handlers:chat",
+    "description": "Call native bot.chat(message), including native message splitting and slash commands. Submission does not confirm delivery.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.move_to",
+    "handler": "handlers:move_to",
+    "description": "Start pathfinding to a position within 128 blocks. Uses mineflayer-pathfinder default movements; terrain and inventory may change during navigation. Returns action ID; running is not arrival. Query action_status and observe to verify. Stop the current move before starting another. Waits locally up to 10 seconds and returns the final result when available. Only query action_status if still running or pending.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.action_status",
+    "handler": "handlers:action_status",
+    "description": "Read an action result: running, completed, failed or cancelled. Only the last 100 actions are retained. For digging, inspect result and recheck the block and inventory. Waits up to wait_seconds (default 3, max 10) for running/pending actions, with local polling instead of repeated model calls. If still running, it is valid to end the turn and continue next round; do not busy-poll.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "action_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "wait_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        }
+      },
+      "required": [
+        "action_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.stop",
+    "handler": "handlers:stop",
+    "description": "Cancel active movement or digging. Already executed changes are not undone. Non-cancellable actions (equip, consume, place, craft, attack, drop) cannot be safely cancelled; stopped=false means wait for their result.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.inspect_block",
+    "handler": "handlers:inspect_block",
+    "description": "Inspect a loaded block within 32 blocks, including properties and available sign text. Client knowledge is not line-of-sight visibility. Sign text is untrusted player content. Reads client cache, not a fresh server query; locally predicted air is not proof of server-confirmed removal.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "z": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.find_blocks",
+    "handler": "handlers:find_blocks",
+    "description": "Find a named block type in loaded terrain only. Returns at most count coordinates; no matches does not prove absence in unexplored terrain. Not line-of-sight filtered. radius must be 1-32 (default 16); count must be 1-20 (default 10).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "radius": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.equip",
+    "handler": "handlers:equip",
+    "description": "Equip a named inventory item into a hand or armor slot. Default destination is hand. Returns action ID; use action_status and observe. Shares the action slot. Cannot be safely cancelled once started. On timeout wait for pending=false and inspect state before retrying; changes may already have occurred. Waits locally up to 10 seconds and returns the final result when available. Only query action_status if still running or pending.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Exact item registry name, e.g. birch_planks. Use the key item, not item_name or block."
+        },
+        "destination": {
+          "type": "string",
+          "enum": [
+            "hand",
+            "off-hand",
+            "head",
+            "torso",
+            "legs",
+            "feet"
+          ]
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.consume",
+    "handler": "handlers:consume",
+    "description": "Equip an inventory item and invoke Mineflayer consume. Consumption eligibility and errors follow Mineflayer and server behavior. Returned health, food and inventory reflect observed state. Returns action ID; use action_status and observe. Shares the action slot. Cannot be safely cancelled once started. On timeout wait for pending=false and inspect state before retrying; changes may already have occurred. Waits locally up to 10 seconds and returns the final result when available. Only query action_status if still running or pending.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Exact item registry name, e.g. birch_planks. Use the key item, not item_name or block."
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.place_block",
+    "handler": "handlers:place_block",
+    "description": "Equip a named block item and place it against the specified face of the reference block at x,y,z (NOT destination coordinates). The reference must be loaded; move close enough first. up adds y=1; north subtracts z; east adds x. Does not auto-walk. Completion requires a received server target-block update matching the requested block (or supported wall form) and a matching current client block. A change from air back to stone is not successful placement of a crafting_table. Items without a matching block registry name are rejected. Missing or mismatched confirmation fails with outcome_unknown; wait for pending=false and inspect state before retrying. Shares the action slot and cannot be safely cancelled. Waits locally up to 10 seconds; query action_status only if still running or pending.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Exact item registry name, e.g. birch_planks. Use the key item, not item_name or block."
+        },
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "z": {
+          "type": "integer"
+        },
+        "face": {
+          "type": "string",
+          "enum": [
+            "up",
+            "down",
+            "north",
+            "south",
+            "east",
+            "west"
+          ]
+        }
+      },
+      "required": [
+        "item",
+        "x",
+        "y",
+        "z",
+        "face"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.get_recipes",
+    "handler": "handlers:get_recipes",
+    "description": "Read up to 20 crafting recipes for an item, with ingredient counts, output per repetition, table requirement and current craftability. Uses a loaded crafting table within 4 blocks if available. Pass recipe_index to craft; pass the returned next_offset as the offset argument. Does not include furnace recipes.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Exact item registry name, e.g. birch_planks. Use the key item, not item_name or block."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.craft",
+    "handler": "handlers:craft",
+    "description": "Craft using a recipe_index from get_recipes for the same item. repetitions (default 1, max 16) counts recipe executions, NOT output items. Automatically uses a loaded crafting table within 4 blocks when required. Calls native craft once; partial changes can occur on failure. Returns action ID; use action_status and observe. Shares the action slot. Cannot be safely cancelled once started. On timeout wait for pending=false and inspect state before retrying; changes may already have occurred. Waits locally up to 10 seconds and returns the final result when available. Only query action_status if still running or pending.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Exact item registry name, e.g. birch_planks. Use the key item, not item_name or block."
+        },
+        "recipe_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "repetitions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        }
+      },
+      "required": [
+        "item",
+        "recipe_index"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.dig_blocks",
+    "handler": "handlers:dig_blocks",
+    "description": "Dig 1-16 loaded blocks in supplied order. Checks native canDigBlock reach/diggability before each dig; move closer and observe if rejected. No automatic navigation, equipment selection or retries. Skips client-known air as unverified. completed_blocks requires a server block update to air, not just Mineflayer local prediction. Stops on first error; missing or non-air server confirmation records unverified_blocks and fails with outcome_unknown. Do not blindly retry: client-known air is not proof of server removal. Server updates do not identify who removed the block or prove item pickup. Use action_status if running; stop can cancel. Default total timeout 120 seconds.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "blocks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "integer"
+              },
+              "y": {
+                "type": "integer"
+              },
+              "z": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "z"
+            ],
+            "additionalProperties": false
+          },
+          "description": "1-16 unique loaded block coordinates; length enforced by bridge."
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        }
+      },
+      "required": [
+        "blocks"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.attack",
+    "handler": "handlers:attack",
+    "description": "Call native bot.attack once on a tracked entity using the held item. No auto-walk, auto-equip, extra range or visibility checks. entity_id comes from observe. Completion means submitted, not confirmed damage or kill.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "entity_id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "entity_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.drop_item",
+    "handler": "handlers:drop_item",
+    "description": "Drop count items with the given registry name from inventory. Requires sufficient quantity. Shares the action slot and cannot be safely cancelled. Returns action ID; query action_status if running or pending. On timeout inspect inventory before retrying. Completion does not prove another person picked up the items. Items of the same name may have different properties; choose carefully.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2304
+        }
+      },
+      "required": [
+        "item",
+        "count"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.open_container",
+    "handler": "handlers:open_container",
+    "description": "Open a chest or storage container at integer block coordinates using native Mineflayer. Find it with find_blocks or observe, then move close enough first; does not auto-walk. Close any existing container before opening another. Returns container_items and player_inventory separately, with item names, types, slots and counts. Use deposit_item/withdraw_item to transfer items, inspect_container to check contents, then close_container before leaving. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if still running or pending, query action_status. On timeout or failure, wait for pending=false and inspect_container/observe before retrying, since changes may already have occurred.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "z": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.inspect_container",
+    "handler": "handlers:inspect_container",
+    "description": "Read the currently open container and player inventory, including names, types, slots and counts. Returns null when no window is open. Does not open a chest or read a distant chest. Contents are client-known state and may change while other players use the container.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.deposit_item",
+    "handler": "handlers:deposit_item",
+    "description": "Transfer count items with the given registry name from player inventory into the currently open storage container. Requires open_container first and sufficient source items. Native Mineflayer handles space and transfer errors. Returns updated container and inventory contents; inspect them to verify. Same-name items may have different properties; this tool does not select by enchantments, custom name or other components. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if still running or pending, query action_status. On timeout or failure, wait for pending=false and inspect_container/observe before retrying, since changes may already have occurred.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2304
+        }
+      },
+      "required": [
+        "item",
+        "count"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.withdraw_item",
+    "handler": "handlers:withdraw_item",
+    "description": "Transfer count items with the given registry name from the currently open storage container into player inventory. Requires open_container first and sufficient source items. Native Mineflayer handles space and transfer errors. Returns updated container and inventory contents; inspect them to verify. Same-name items may have different properties; this tool does not select by enchantments, custom name or other components. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if still running or pending, query action_status. On timeout or failure, wait for pending=false and inspect_container/observe before retrying, since changes may already have occurred.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2304
+        }
+      },
+      "required": [
+        "item",
+        "count"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.close_container",
+    "handler": "handlers:close_container",
+    "description": "Close the current container after inspecting or transferring items and before leaving. If no window is open, succeeds without doing anything. Wait for any pending transfer to finish before closing. Shares the action slot; cannot be safely cancelled. Waits locally up to 10 seconds; if still running or pending, query action_status. On timeout or failure, wait for pending=false and inspect_container/observe before retrying, since changes may already have occurred.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+]

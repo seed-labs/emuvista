@@ -1,6 +1,7 @@
 """Native DNS subclass with hosting APIs and dynamic update authorization."""
 import base64
 import json
+from ipaddress import IPv4Address
 from pathlib import Path
 import secrets
 import shlex
@@ -48,7 +49,8 @@ def install_from_mirror(node):
 def apt_install(packages):
     """Update indexes and install packages in one Docker layer."""
     options = '-o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 '
-    return ('apt-get ' + options + 'update && '
+    # The PHP mirror's gzip index can lag behind its signed release metadata.
+    return ('apt-get -o Acquire::CompressionTypes::Order=xz -o APT::Update::Error-Mode=any ' + options + 'update && '
             'DEBIAN_FRONTEND=noninteractive apt-get ' + options + 'install -y '
             + ' '.join(shlex.quote(package) for package in packages.split()))
 
@@ -69,6 +71,7 @@ class _DnsHostingPair:
         self._secondary = 'hosted-dns-secondary'
         self._domain = 'example.com'
         self._api_clients = []
+        self._api_client_addresses = []
 
     def setNameServers(self, primary, secondary, domain='example.com'):
         """Select DNS virtual nodes and their existing static zone."""
@@ -86,6 +89,11 @@ class _DnsHostingPair:
     def getSettings(self):
         """Return resolved public DNS connection settings."""
         return dict(self._settings)
+
+    def addAddressToRateLimitWhitelist(self, address):
+        """Exempt an external registrar's IPv4 address; API authentication still applies."""
+        self._api_client_addresses.append(str(IPv4Address(address)))
+        return self
 
     def getConfiguration(self):
         """Return DNS settings and independent copies of API credentials."""
@@ -134,7 +142,13 @@ class DnsServer(DomainNameServer):
         node.setDisplayName(settings['ns1' if role == 'primary' else 'ns2'])
         node.addSoftware('ca-certificates software-properties-common git unzip')
         for command in (
-            'add-apt-repository --no-update -y ppa:ondrej/php',
+            (
+                'mkdir -p /usr/share/keyrings && '
+                'curl -fLsS --connect-timeout 10 --max-time 60 https://ppa.setup-php.com/keys/ondrej/php.gpg -o /usr/share/keyrings/ondrej-php.gpg && '
+                "echo '46865863bccffcf614bf1c8603492c6a5465dcc8d774f0020e7518378ba53466  /usr/share/keyrings/ondrej-php.gpg' | sha256sum -c - && "
+                '. /etc/os-release && '
+                'printf \'deb [signed-by=/usr/share/keyrings/ondrej-php.gpg] https://ppa.setup-php.com/ondrej/php/ubuntu/ %s main\\n\' "$VERSION_CODENAME" > /etc/apt/sources.list.d/ondrej-php.list'
+            ),
             apt_install('composer'),
             apt_install('php8.5-cli php8.5-sqlite3 php8.5-swoole php8.5-mbstring '
                         'php8.5-xml php8.5-curl php8.5-gmp php8.5-intl'),
@@ -394,6 +408,7 @@ zone "{zone}" {{
             secondary = emulator.getBindingFor(hosting._secondary)
             client_ips = [str(emulator.getBindingFor(name).getInterfaces()[0].getAddress())
                           for name in hosting._api_clients]
+            client_ips.extend(hosting._api_client_addresses)
             pair = (primary, secondary)
             if any(id(node) in dns_nodes for node in pair):
                 raise ValueError('DNS hosting pairs must not overlap')

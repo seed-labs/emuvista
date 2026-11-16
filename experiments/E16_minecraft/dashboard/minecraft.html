@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>E16 · Minecraft 状态</title>
+  <link rel="stylesheet" href="/minecraft.css">
+  <script src="/minecraft.js" defer></script>
+</head>
+<body>
+  <main>
+    <nav><a class="brand" href="/">EmuVista <span>/ E16</span></a><a href="/">← Agent 活动面板</a></nav>
+    <header><div><p class="eyebrow">MINECRAFT OBSERVATORY</p><h1>居民的游戏状态</h1><p class="subtitle">生命、饱食度与随身物品，每 2 秒自动刷新。</p></div><div class="connection" role="status"><span id="connection">正在连接…</span><small id="updated">等待首次采集</small></div></header>
+    <p id="error" class="notice" role="alert" hidden></p>
+    <section id="agents" aria-label="Minecraft agents"><p class="placeholder">正在读取 agent 状态…</p></section>
+    <footer>只读监控 · 数值来自 Minecraft 客户端 · 关闭页面不会停止 agent</footer>
+  </main>
+</body>
+</html>

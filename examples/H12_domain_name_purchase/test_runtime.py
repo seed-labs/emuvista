@@ -158,8 +158,8 @@ def main() -> int:
     from seedemu.testing import ComposeRuntimeTest
 
     test = ComposeRuntimeTest(__file__)
-    registrar = test.require_service(150, "host_0")
-    registry = test.require_service(151, "host_0")
+    registrar = test.require_service(150, "fossbilling")
+    registry = test.require_service(151, "registry")
     payment = test.require_service(160, "host_0")
     primary = test.require_service(170, "host_0")
     secondary = test.require_service(170, "host_1")

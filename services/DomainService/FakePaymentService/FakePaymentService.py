@@ -44,7 +44,8 @@ class FakePaymentServer(Server):
         if self._notify_origin is not None and self._notify_origin != origin:
             raise ValueError('Each checkout supports one callback origin')
         self._notify_origin = origin
-        self._settings['notify_origin'] = origin
+        if self._settings is not None:
+            self._settings['notify_origin'] = origin
 
     def getConnectionSettings(self):
         """Return a copy of the resolved checkout settings."""

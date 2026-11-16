@@ -1,0 +1,50 @@
+id: h14-socialmedia
+name: H16 Mastodon with DNS and CA-issued HTTPS
+description: Runtime validation for DNS, CA trust, Mastodon processes and public APIs.
+runner: internet
+script: socialmedia.py
+platform: amd
+features:
+  - socialmedia
+  - dns
+  - pki
+
+compile:
+  enabled: true
+  output: output
+  clean:
+    - output
+  expected:
+    - output/docker-compose.yml
+  timeout: 300
+
+build:
+  enabled: true
+  timeout: 7200
+
+runtime:
+  compose: output/docker-compose.yml
+  readiness:
+    - name: H16 service and client containers are running
+      type: compose-ps
+      services:
+        - hnode_151_dns
+        - hnode_151_dns-secondary
+        - hnode_151_local-dns
+        - hnode_151_ca
+        - h14-mastodon
+        - hnode_151_alice
+        - hnode_151_bob
+      retries: 30
+      interval: 2
+    - name: Mastodon HTTPS initialization completed
+      type: exec
+      service: h14-mastodon
+      command: curl --connect-timeout 3 --max-time 10 -fsS https://mastodon.com:18443/api/v2/instance >/dev/null
+      retries: 120
+      interval: 5
+
+test_programs:
+  - name: H16 custom runtime validation
+    script: test_runtime.py
+    timeout: 3600

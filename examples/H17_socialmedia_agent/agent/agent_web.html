@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>H17 · Social Media Agent</title>
+<style>
+body{font:16px/1.6 system-ui,sans-serif;background:#f4f6f8;color:#172536;margin:0}
+main{max-width:980px;margin:32px auto;padding:0 20px}h1{margin-bottom:4px}
+section,details{background:white;border:1px solid #dce2e8;border-radius:10px;padding:18px;margin:16px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}label{display:block;font-size:14px}
+input,textarea,button{font:inherit;box-sizing:border-box}input,textarea{width:100%;padding:9px;border:1px solid #b9c5d1;border-radius:6px}
+button{padding:8px 18px;border:0;border-radius:6px;background:#175b91;color:white;cursor:pointer}button:disabled{opacity:.5;cursor:wait}
+.secondary{background:#566779}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 monospace}
+.message{border-bottom:1px solid #e5e9ed;padding:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.label{font-weight:650;color:#175b91}#notice{color:#596b7d}#error{color:#ad2525}
+@media(max-width:650px){.grid{grid-template-columns:1fr}}
+</style>
+<main>
+<h1>H17 · Social Media Agent</h1>
+<div id="notice">正在连接 tool-service…</div>
+<section><label>最大轮数<input id="rounds" type="number" min="1" max="30" value="12"></label></section>
+<section><button id="reset" class="secondary">新对话</button><div id="history"></div></section>
+<section><form id="chat"><label>消息<textarea id="message" rows="4" placeholder="请 ping 10.151.0.9 三次，并说明结果。" required></textarea></label>
+<button id="send" type="submit">发送</button> <span id="progress"></span></form><div id="error"></div></section>
+<details><summary>本次对话工具调用记录</summary><div id="trace"></div></details>
+</main>
+<script>
+const $=id=>document.getElementById(id);let session=null;
+async function api(path,options={}){const response=await fetch(path,options);const body=await response.json();if(!response.ok)throw new Error(typeof body.detail==='string'?body.detail:JSON.stringify(body.detail));return body;}
+function message(who,text){const node=document.createElement('div');node.className='message';const label=document.createElement('div');label.className='label';label.textContent=who;const content=document.createElement('div');content.textContent=text;node.append(label,content);$('history').append(node);}
+async function refresh(){const config=await api('/api/config');$('notice').textContent=`Model ${config.model} · Tool Service ${config.tool_service_url} · source ${config.source}`;}
+// Append each turn so later responses cannot overwrite earlier tool evidence.
+let turnNumber=0;
+function appendCalls(calls,turn){if(!calls?.length)return;const group=document.createElement('details');const title=document.createElement('summary');title.textContent=`第 ${turn} 轮 · ${calls.length} 次工具调用`;group.append(title);for(const call of calls){const record=document.createElement('pre');record.textContent=JSON.stringify(call,null,2);group.append(record);}$('trace').append(group);}
+async function reset(){if(session)await api('/api/sessions/'+session,{method:'DELETE'});session=(await api('/api/sessions',{method:'POST'})).session_id;$('history').replaceChildren();$('trace').replaceChildren();turnNumber=0;}
+$('reset').onclick=()=>reset().catch(e=>$('error').textContent=e.message);
+$('chat').onsubmit=async event=>{event.preventDefault();$('error').textContent='';const text=$('message').value;if(!text.trim()){$('error').textContent='请输入消息。';return;}$('send').disabled=$('reset').disabled=true;$('progress').textContent='执行中，请勿重复提交…';const turn=++turnNumber;message('你',text);$('message').value='';try{if(!session)session=(await api('/api/sessions',{method:'POST'})).session_id;const body=await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:session,message:text,max_rounds:Number($('rounds').value)})});message('Agent',body.answer);appendCalls(body.calls,turn);}catch(e){$('error').textContent=e.message;}finally{$('send').disabled=$('reset').disabled=false;$('progress').textContent='';}};
+refresh().catch(e=>$('error').textContent=e.message);
+</script>
+</html>

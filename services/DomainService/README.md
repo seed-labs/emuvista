@@ -1,18 +1,16 @@
 # DomainService
 
-DomainService provides composable domain registration, customer purchases, DNS hosting,
-and simulated payments for the emulation network.
+DomainService provides DNS hosting, initial domain-data import and simulated payments.
+Registry and customer billing are owned by [DomainRegistryBundle](../../bundles/DomainRegistryBundle/)
+and [DomainRegistrarBundle](../../bundles/DomainRegistrarBundle/).
 
 | Service | Purpose |
 | --- | --- |
-| `NamingoRegistryService` | Registry, TLDs, EPP registrar access, and parent-zone delegation publication |
-| `FossBillingRegistrarService` | Client portal, domain products, orders, and invoices |
 | `DnsService` | Primary/secondary authoritative DNS, dynamic update authorization, hosting APIs, and DNS products |
 | `FakePaymentService` | Independent simulated checkout endpoint |
 
 [H12](../../examples/H12_domain_name_purchase/README.md) provides the complete purchase
-environment. [H13](../../examples/H13_browser_agent/README.md) adds a browser and agent in
-one container. H12 uses `domain_name_purchase.py`; H13 uses `browser_agent.py`. These generate
+environment. [H13](../../examples/H13_domain_agent/README.md) adds an interactive agent using Bundle tools. H12 uses `domain_name_purchase.py`; H13 uses `domain_agent.py`. These generate
 deployment files. Build and start manually from `output`; services initialize automatically. See each example for cleanup instructions.
 
 ## DNS Extension
@@ -53,7 +51,7 @@ no cross-service installation Hook is used.
 
 Python source changes do not update existing images or containers. Follow the selected
 [H12](../../examples/H12_domain_name_purchase/README.md) or
-[H13](../../examples/H13_browser_agent/README.md) workflow to regenerate output, build,
+[H13](../../examples/H13_domain_agent/README.md) workflow to regenerate output, build,
 and start. Each render generates new TSIG keys: deploy Registry and the relevant
 TLD DNS containers from the same generation, rather than rebuilding only one side.
 Interface checks establish code availability; live publication still requires verification
@@ -61,32 +59,32 @@ of parent delegation and primary/secondary synchronization after deployment.
 
 ## Usage
 
-Use a Python environment that can import `DomainService` and `seedemu`. On an existing
-emulator `emu`, configure the service:
+Configure the Registry bundle before rendering, then attach its network and register it
+with the Docker compiler after rendering:
 
 ```python
-from DomainService import NamingoRegistryService
-from seedemu.core import Binding, Filter
+from bundles.DomainRegistryBundle import DomainRegistryBundle
+from seedemu.compiler import Docker
 
-registry = NamingoRegistryService()
-server = registry.install('registry')
+registry = DomainRegistryBundle(emu)
+server = registry.server
 server.setTlds(['com', 'net'])
 server.setAdminAccount('admin@example.com', '123456')
 server.setDatabasePassword('registry-demo-password')
 server.setPortForwarding(18081)
-emu.addLayer(registry)
-emu.addBinding(Binding('registry', filter=Filter(asn=151, nodeName='host_1')))
-# Finally call emu.render() and emu.compile(...).
+emu.render()
+registry.addInternalNetwork('151', 'net0', ['10.151.0.10'], '10.151.0.254')
+compiler = Docker()
+compiler.addContainerBundle(registry)
+emu.compile(compiler, 'output')
 ```
 
-The target host must exist and must not run conflicting applications. Rendering writes
-installation, configuration, and startup operations. `setEppPort(port)` sets the EPP port,
-defaulting to 700. The web panel listens on 8080; configure its host port with
-`setPortForwarding(host_port)`. Use the inherited `setDisplayName()` to change display names.
+The application image owns software installation. Bundle configuration and templates
+are mounted at startup. The web panel listens on 8080; `setEppPort()` defaults to 700.
 
 Registry uses a pinned upstream commit, PHP 8.5, `.com`/`.net` initialization, local MariaDB
 and Redis, the control panel, EPP TLS, DAS, and lifecycle jobs every five minutes. Defaults
-are in `NamingoRegistryService/NamingoRegistryService.py`; each Server can override credentials.
+are in `../../bundles/DomainRegistryBundle/server.py`; each Server can override credentials.
 `setAdminAccount(email, password)` and `setDatabasePassword(password)` configure initial
 installation, not password rotation on a running database.
 
@@ -187,27 +185,19 @@ authorized TLDs, with a default interval of 30 seconds.
 
 ## File Organization
 
-Service classes resolve virtual-node links and coordinate layer dependencies. Server
-instances own their settings and install only on their bound nodes. Their `install()`
-methods order private installation steps for software, configuration, and optional features.
-DNS Hosting follows the same ownership rule through its primary/secondary pair object;
-it resolves hosting after native DNS rendering, when NS records are available.
-FakePayment keeps its short installation sequence together.
-Each service stores templates directly in `templates/` and defines an on-demand
-`load_template(filename)` loader in its service file. For example:
+Registry and registrar bundles resolve application connections after network rendering.
+Their `server.py` modules hold configuration and template generation; `docker_images/`
+owns application builds. DNS and FakePayment remain service layers.
 
 ```text
-DomainService/
-└── NamingoRegistryService/
-    ├── NamingoRegistryService.py  # Interfaces, defaults, and installation
-    └── templates/             # SQL, PHP, shell, and Nginx templates
+bundles/DomainRegistryBundle/
+├── DomainRegistryBundle.py
+├── server.py
+└── templates/
 ```
 
-Templates use named `__PLACEHOLDER__` markers; Server instances supply account settings. PHP and SQL
-strings are escaped separately, and web database passwords are written as quoted dotenv
-values. `DomainService` exports classes such as `NamingoRegistryService` and `NamingoRegistryServer`;
-DNS authorization is provided by the emuvista subclass's
-`DnsService.authorizeZoneUpdates()`.
+Templates use named `__PLACEHOLDER__` markers. PHP and SQL strings are escaped
+separately. DNS authorization is supplied by `DnsService.authorizeZoneUpdates()`.
 
 Substantial PHP, SQL, shell, and Nginx files live in `templates/`, with names describing
 what they configure, initialize, or start. Short startup wrappers, INI settings, cron
@@ -215,34 +205,33 @@ entries, and small SQL/PHP snippets are written directly in the corresponding in
 method. For example, `create-nameserver-hosts.php` creates Registry host objects,
 `configure-dns-hosting-product.php` configures the registrar product, and
 `fake-payment-adapter.php` supplies FOSSBilling's required `FakePayment.php` adapter.
-`NamingoRegistryService.py` loads the templates, substitutes instance parameters with
+`bundles/DomainRegistryBundle/server.py` loads the templates, substitutes instance parameters with
 appropriate escaping, writes files, and schedules build/startup commands. JSON configuration
 is serialized with `json.dumps()`; resolved DNS keys are supplied by the authorization object.
 
-## FOSSBilling Registrar Service
+## FOSSBilling Registrar Bundle
 
 Like Registry, this service keeps installation methods on `FossBillingRegistrarServer`,
 with instance defaults in `__init__()` and separate `templates/`. It pins FOSSBilling 0.8.7 and the EPP installer.
 
 ```python
-from DomainService import FossBillingRegistrarService
+from bundles.DomainRegistrarBundle import DomainRegistrarBundle
 
-registrar_service = FossBillingRegistrarService()
-registrar = registrar_service.install('fossbilling')
+registrar_bundle = DomainRegistrarBundle(emu)
+registrar = registrar_bundle.server
 registrar.setRegistry('registry')
 registrar.setTlds(['com', 'net'])
 registrar.setTldPrice('com', registration='11.99', renewal='11.99', transfer='11.99')
 registrar.setAdminAccount('admin@example.com', 'Aa123456')
 registrar.setClientAccount('user@example.com', 'Aa123456')
 registrar.setReservedDomains(['google.com', 'twitter.com', 'example.com'])
-emu.addLayer(registrar_service)
-emu.addBinding(Binding('fossbilling', filter=Filter(asn=150, nodeName='host_1')))
 registrar.setPortForwarding(18080)
 ```
 
-`setRegistry()` accepts a Registry virtual node and optional `username`, `password`, and
-`prefix`. Rendering derives addresses from bindings and the EPP port from Registry to
-configure the connection and source-IP allowlist. Registry and FOSSBilling require distinct
+`setRegistry()` accepts a Registry bundle name and optional `username`, `password`, and
+`prefix`. After rendering, attach both bundles to their internal networks, call
+`registrar_bundle.connectRegistry(registry_bundle)` and `connectPayment(payment_server)`,
+and register both bundles with the compiler. These calls resolve endpoints and access rules. Registry and FOSSBilling require distinct
 hosts; multiple registrars need distinct accounts and prefixes. Omitting `setTlds()` inherits
 Registry's TLDs; an explicit list must be a subset. Initial prices default to 11.99; existing
 prices and products are preserved. `setClientAccount(..., profile={...})` overrides default
@@ -367,7 +356,7 @@ resolution.
 ## FakePayment
 
 `FakePaymentService` provides an independent checkout for simulation only, without real funds.
-`FossBillingRegistrarService` owns its payment adapter, configuration, and gateway initialization. Its scenario entry point is
+`DomainRegistrarBundle` owns its payment adapter, configuration, and gateway initialization. Its scenario entry point is
 `examples/H12_domain_name_purchase/domain_name_purchase.py`.
 
 Selecting fakePayment displays confirmation and results in an embedded area of the invoice
@@ -435,17 +424,16 @@ container layers, and managed volumes. Images, generated files, external volumes
 bind-mount directories remain. Adjust the Compose path for custom output. Cleanup does not
 build or initialize services automatically.
 
-## H13: Browser and Agent in One Container
+## H13: Domain Agent
 
-[H13](../../examples/H13_browser_agent/README.md) combines the complete domain services with
-browser-agent. It joins AS154/net0 through `Docker.attachCustomContainer()` without consuming
-an existing host. The agent UI is at `http://localhost:18089/`; the agent and Chromium are
-installed in that container image.
+[H13](../../examples/H13_domain_agent/README.md) combines the complete domain services with
+domain-agent. It joins AS154/net0 through `Docker.attachCustomContainer()` without consuming
+an existing host. The agent UI is at `http://localhost:18089/`; the agent calls DomainRegistrarBundle tools directly without a browser.
 
 List egress destinations in H13's `egress_urls.txt`, one URL, domain, or IP per line. Startup
 configures DNS and routes automatically. After initial generation, build, and startup, address
-changes require only restarting browser-agent, not editing network scripts or rebuilding.
-From H13, run `python browser_agent.py`, then build and start inside `output`. Cleanup uses
+changes require only restarting domain-agent, not editing network scripts or rebuilding.
+From H13, run `python domain_agent.py`, then build and start inside `output`. Cleanup uses
 `docker compose -f output/docker-compose.yml down --remove-orphans --volumes`; adjust the
 path for custom output. H12 and H13 share the default project name and application ports,
 so run them as alternatives.

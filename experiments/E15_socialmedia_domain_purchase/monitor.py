@@ -5,7 +5,7 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1]))
-from experiments.E99_virtual_world.monitor import main
+from experiments.E99_virtual_world_with_agents.monitor import main
 
 if __name__ == '__main__':
     if not any(arg == '--output' or arg.startswith('--output=') for arg in sys.argv[1:]):

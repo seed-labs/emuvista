@@ -65,7 +65,7 @@ def result_summary(value):
     """Compact outcome alongside the full, sanitized tool observation."""
     if isinstance(value, dict):
         public = ('state', 'balanceMinor', 'currency', 'sent', 'recipient',
-                  'reachable', 'ready', 'status', 'agent', 'hostname')
+                  'reachable', 'ready', 'status', 'agent', 'hostname', 'error')
         summary = {key: value[key] for key in public if key in value and
                    (value[key] is None or isinstance(value[key], (str, int, float, bool)))}
         if isinstance(value.get('addresses'), list):

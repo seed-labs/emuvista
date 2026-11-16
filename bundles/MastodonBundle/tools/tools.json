@@ -1,0 +1,261 @@
+[
+  {
+    "name": "socialmedia.inbox",
+    "handler": "handlers:inbox",
+    "description": "Check incoming @mention notifications for your authenticated account, including private mentions that the server delivers. Use to discover new replies/messages addressed to you, instead of repeatedly browsing public posts. Requires read:notifications. Returns sender and status for each notification. Use status.id with read or as post.in_reply_to_id, not notification.id. min_id is a notification cursor (default 0 starts with the oldest available page). Results are sorted oldest first. After processing a successful page, pass next_min_id to fetch subsequent pages; continue until a successful empty page, then retain the cursor for later polling. Failure is not an empty inbox: do not advance the cursor. Does not mark notifications read, delete them, persist a cursor or push messages automatically. Server notification filters apply; absence of notifications does not prove absence of every reply.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "min_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Notification ID cursor returned as next_min_id; omit on the first call. Not a post ID."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 40
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "socialmedia.browse",
+    "handler": "handlers:browse",
+    "description": "Discover one page of public posts on this instance. No following is required. Use only to discover new conversations; to check replies to a known post use socialmedia.read, and to inspect a specific author use socialmedia.posts. An empty successful page means no public posts on that page, not no replies or no activity. Inspect successful before interpreting statuses.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "timeout_seconds": {
+          "description": "Socket timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "limit": {
+          "maximum": 40,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_id": {
+          "description": "Read IDs below this numeric ID (digits only)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "socialmedia.post",
+    "handler": "handlers:post",
+    "description": "Publish one short text post or reply (at most 500 characters). Only successful=true with status.id confirms publication. A rejected post is not delivered: shorten/correct it before another attempt; do not wait for a reply to it. Requires write:statuses. No automatic retries. Reuse the same idempotency_key only for the same post. If outcome_unknown is true, the write may already have happened. Runs as this agent using its configured Mastodon origin and credentials. Inspect successful and outcome_unknown in the result.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "timeout_seconds": {
+          "description": "Socket timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status": {
+          "description": "Plain text, at most 500 characters. Shorten long answers; do not send HTML. Server counting may differ.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "visibility": {
+          "enum": [
+            "public",
+            "unlisted",
+            "private",
+            "direct"
+          ],
+          "type": "string"
+        },
+        "in_reply_to_id": {
+          "description": "Numeric ID containing digits only",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "description": "Reuse for retries of the SAME post; Mastodon retains keys for up to one hour",
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "idempotency_key"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "socialmedia.profile",
+    "handler": "handlers:profile",
+    "description": "Look up a known username or username@domain; requires read:accounts. Does not resolve unknown remote accounts. Runs as this agent using its configured Mastodon origin and credentials. Inspect successful and outcome_unknown in the result.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "timeout_seconds": {
+          "description": "Socket timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "acct": {
+          "description": "Username or username@domain, without a leading @",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "acct"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "socialmedia.posts",
+    "handler": "handlers:posts",
+    "description": "Read one page of an account's posts; private posts require read:statuses and visibility permission. Runs as this agent using its configured Mastodon origin and credentials. Inspect successful and outcome_unknown in the result.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "timeout_seconds": {
+          "description": "Socket timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "account_id": {
+          "type": "string"
+        },
+        "limit": {
+          "maximum": 40,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_id": {
+          "description": "Numeric ID containing digits only",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "socialmedia.read",
+    "handler": "handlers:read",
+    "description": "Read a known post and its visible conversation using an exact status_id returned by a tool. Returns status (the focal post) and context (ancestors and descendants/replies). Prefer this over browse when checking an existing conversation. No limit or max_id. Two sequential reads are not an atomic snapshot. successful=true requires both reads to succeed; if context fails, status may still be present, but missing context does not mean no replies. Requires visibility permission for private posts.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "timeout_seconds": {
+          "description": "Socket timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status_id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "socialmedia.like",
+    "handler": "handlers:like",
+    "description": "Favourite a post, or undo with enabled=false; requires write:favourites. No automatic retries. Runs as this agent using its configured Mastodon origin and credentials. Inspect successful and outcome_unknown in the result.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "timeout_seconds": {
+          "description": "Socket timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status_id": {
+          "type": "string"
+        },
+        "enabled": {
+          "description": "True to favourite; false to undo",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "status_id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "socialmedia.boost",
+    "handler": "handlers:boost",
+    "description": "Boost a post, or undo with enabled=false; requires write:statuses. No automatic retries. Runs as this agent using its configured Mastodon origin and credentials. Inspect successful and outcome_unknown in the result.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "timeout_seconds": {
+          "description": "Socket timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status_id": {
+          "type": "string"
+        },
+        "enabled": {
+          "description": "True to boost; false to undo",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "status_id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "socialmedia.follow",
+    "handler": "handlers:follow",
+    "description": "Follow an account, or unfollow with enabled=false; requires write:follows. requested=true means pending approval. No automatic retries. Runs as this agent using its configured Mastodon origin and credentials. Inspect successful and outcome_unknown in the result.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "timeout_seconds": {
+          "description": "Socket timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "account_id": {
+          "type": "string"
+        },
+        "enabled": {
+          "description": "True to follow; false to unfollow",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "type": "object"
+    }
+  }
+]

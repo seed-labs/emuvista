@@ -14,7 +14,7 @@ from .events import result_summary
 from .clock import ClockClient
 
 
-def validate(value, schema):
+def validate(value, schema, path='argument'):
     supported = {'type', 'properties', 'required', 'additionalProperties', 'items',
                  'description', 'enum', 'minimum', 'maximum', 'minLength', 'maxLength'}
     if set(schema) - supported:
@@ -36,10 +36,10 @@ def validate(value, schema):
             raise ValueError('unknown argument')
         for key, item in value.items():
             if key in props:
-                validate(item, props[key])
+                validate(item, props[key], f'{path}.{key}')
     if kind == 'array':
-        for item in value:
-            validate(item, schema['items'])
+        for index, item in enumerate(value):
+            validate(item, schema['items'], f'{path}[{index}]')
     if kind in ('number', 'integer'):
         if type(value) is float and not math.isfinite(value):
             raise ValueError('number must be finite')
@@ -47,7 +47,10 @@ def validate(value, schema):
             raise ValueError('number is outside its allowed range')
     if kind == 'string':
         if len(value) < schema.get('minLength', 0) or len(value) > schema.get('maxLength', len(value)):
-            raise ValueError('string length is outside its allowed range')
+            minimum = schema.get('minLength', 0)
+            maximum = schema.get('maxLength', 'unbounded')
+            raise ValueError(f'{path} length is {len(value)}; allowed range is {minimum}–{maximum} characters. '
+                             'Adjust this argument to fit the allowed range.')
 
 
 class AgentContext:
@@ -114,7 +117,8 @@ class ToolRegistry:
                               status='denied' if isinstance(error, PermissionError) else 'error',
                               error=str(error))
             raise
-        self.context.emit('tool_finished', tool=name, call_id=call_id, status='success',
+        failed = isinstance(result, dict) and (bool(result.get('error')) or result.get('status') == 'failed')
+        self.context.emit('tool_finished', tool=name, call_id=call_id, status='error' if failed else 'success',
                           source=source,
                           duration_ms=round((time.monotonic() - started) * 1000),
                           result=result, summary=result_summary(result), detail_version=2)
