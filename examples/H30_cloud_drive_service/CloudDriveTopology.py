@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""H14: two DSH agents, Cloud Drive, DNS and PKI; generated only via SEED APIs."""
+"""H30: two DSH agents, Cloud Drive, DNS and PKI; generated only via SEED APIs."""
 from __future__ import annotations
 
+import argparse
 import os
 from pathlib import Path
 import sys
@@ -16,50 +17,14 @@ from seedemu.core import Action, Binding, Emulator, Filter
 from seedemu.layers import Base, Routing
 from seedemu.services import CAService, DomainNameService, RootCAStore
 from services.CloudDriveService import CloudDriveService
+from services.DshAgentService import DshAgentService
 
-ASN = 154
-PREFIX = "10.154.0."
-DOMAIN = "cloud.seedvista.test"
+ASN = 158
+PREFIX = "10.158.0."
+DOMAIN = "cloud.h30.seedvista.test"
 RUNTIME = HERE / ".runtime"
 OUTPUT = HERE / "output"
-DSH_RUNTIME_IMAGE = "seedemu-dsh-runtime:0.2.0-rc.2"
-CLOUD_HTTPS_PORT = 18444
-# Optional route to a host-only proxy; set to an empty string when not needed.
-HOST_ONLY_NETWORK = "192.168.56.0/24"
-# Claw packages are built for demonstration stage two, not loaded by default.
-PLUGIN_PACKAGES = ("cloud-client", "claw")
-BUNDLE_PACKAGES = ("cloud-bundle", "claw-bundle")
-
-AGENT_INITIALIZATION = r"""#!/bin/bash
-set -Eeuo pipefail
-mkdir -p /run/emuvista
-trap 'touch /run/emuvista/initialization.failed' ERR
-exec 9>/run/emuvista/initialization.lock
-flock 9
-rm -f /run/emuvista/initialized /run/emuvista/initialization.failed
-export DSH_HOME=/root/.dsh
-profile="$DSH_HOME/profiles/demo"
-pending="$DSH_HOME/.h14-profile-initializing"
-mkdir -p "$DSH_HOME"
-# A pending marker lets an interrupted first installation resume.
-# An existing profile without this marker belongs to the user.
-if [ ! -d "$profile" ] || [ -f "$pending" ]; then
-    touch "$pending"
-    if [ ! -d "$profile" ]; then
-        dsh --profile demo --from-default-profile web --dump-config >/dev/null
-    fi
-    dsh plugin --profile demo add /opt/emuvista/agent-plugins/cloud-bundle
-    cp /opt/emuvista/demo.patch.yml "$profile/cordis.patch.yml"
-    touch "$profile/.h14-initialized"
-    rm -f "$pending"
-else
-    echo "Preserving existing demo profile"
-fi
-dsh --profile demo --dump-config >/dev/null
-rm -f /run/emuvista/initialization.failed
-awk '{print $22}' /proc/1/stat >/run/emuvista/initialized
-"""
-
+CLOUD_HTTPS_PORT = 18445
 CLOUD_INITIALIZATION = r"""#!/bin/bash
 set -Eeuo pipefail
 mkdir -p /run/emuvista
@@ -87,9 +52,6 @@ awk '{print $22}' /proc/1/stat >/run/emuvista/initialized
 """
 
 
-
-
-
 def initialize_on_start(node, name: str, script: str) -> None:
     """Declare idempotent initialization and readiness through the SEED API."""
     path = f"/opt/emuvista/initialize-{name}.sh"
@@ -101,9 +63,9 @@ def initialize_on_start(node, name: str, script: str) -> None:
         "rm -f /run/emuvista/initialized /run/emuvista/initialization.failed"
     )
     node.appendStartCommand(
-        f"bash {path} >/var/log/h14-initialize.log 2>&1 "
-        f"&& echo H14_{name.upper()}_INITIALIZED "
-        "|| { cat /var/log/h14-initialize.log >&2; false; }",
+        f"bash {path} >/var/log/h30-initialize.log 2>&1 "
+        f"&& echo H30_{name.upper()}_INITIALIZED "
+        "|| { cat /var/log/h30-initialize.log >&2; false; }",
         isPostConfigCommand=True,
     )
     node.addDockerCommand(
@@ -111,28 +73,6 @@ def initialize_on_start(node, name: str, script: str) -> None:
         "CMD test \"$(head -n 1 /run/emuvista/initialized 2>/dev/null)\" "
         "= \"$(awk '{print $22}' /proc/1/stat)\""
     )
-
-
-def install_agent_plugins(node) -> None:
-    """Import repository source and compile it as part of the node image."""
-    for package in (*PLUGIN_PACKAGES, *BUNDLE_PACKAGES):
-        source = (HERE / "bundles" if package in BUNDLE_PACKAGES else ROOT / "agent-plugins") / package
-        for entry in ("package.json", "pnpm-lock.yaml", "tsconfig.json", "cordis.patch.yml", "src", "tests"):
-            path = source / entry
-            files = sorted(path.rglob("*")) if path.is_dir() else [path]
-            for file in files:
-                if file.is_file():
-                    node.importFile(
-                        str(file), f"/opt/emuvista/agent-plugins/{package}/{file.relative_to(source)}"
-                    )
-    # This public API emits RUN after imported source files have been copied.
-    for package in (*PLUGIN_PACKAGES, *BUNDLE_PACKAGES):
-        directory = f"/opt/emuvista/agent-plugins/{package}"
-        node.addBuildCommandAtEnd(
-            f"cd {directory} && pnpm install --frozen-lockfile --ignore-workspace"
-        )
-        if package in ("cloud-client", "claw"):
-            node.addBuildCommandAtEnd(f"cd {directory} && pnpm run build")
 
 
 def build_emulator() -> Emulator:
@@ -161,47 +101,39 @@ def build_emulator() -> Emulator:
         node.appendStartCommand(
             f"ip route replace default via {PREFIX}1 dev net0", isPostConfigCommand=True
         )
-    if HOST_ONLY_NETWORK:
-        for node in (router, *nodes.values()):
-            node.appendStartCommand(
-                f"ip route replace {HOST_ONLY_NETWORK} via {PREFIX}1 dev net0",
-                isPostConfigCommand=True,
-            )
+    agents = DshAgentService()
     for name in ("alice", "bob"):
-        node = nodes[name]
-        node.addSoftware("curl jq ca-certificates coreutils")
-        node.addDockerCommand(f"COPY --from={DSH_RUNTIME_IMAGE} /usr/local/ /usr/local/")
-        install_agent_plugins(node)
         state = RUNTIME / name / "dsh"
         state.mkdir(parents=True, exist_ok=True)
-        node.addSharedFolder("/root/.dsh", str(state))
-        node.importFile(str(HERE / "agent/cordis.patch.yml"), "/opt/emuvista/demo.patch.yml")
-        initialize_on_start(node, "agent", AGENT_INITIALIZATION)
+        nodes[name].addSharedFolder(f"/var/lib/dshagent/{name}", str(state))
+        nodes[name].addSoftware("netcat-openbsd")
+        agents.install(name, bundles=[HERE / "bundles/cloud-tools.yml"])
+        emulator.addBinding(Binding(name, filter=Filter(asn=ASN, nodeName=f"^{name}$")))
     initialize_on_start(nodes["cloud"], "cloud", CLOUD_INITIALIZATION)
     nodes["cloud"].addPort(f"127.0.0.1:{CLOUD_HTTPS_PORT}", 443)
     dns = DomainNameService()
-    dns.install("h14-dns").addZone("seedvista.test.")
-    dns.getZone("seedvista.test.").resolveToVnode("cloud", "h14-drive")
-    dns.getZone("seedvista.test.").resolveToVnode("ca", "h14-ca")
+    dns.install("h30-dns").addZone("h30.seedvista.test.")
+    dns.getZone("h30.seedvista.test.").resolveToVnode("cloud", "h30-drive")
+    dns.getZone("h30.seedvista.test.").resolveToVnode("ca", "h30-ca")
     ca = CAService()
-    store = RootCAStore(caDomain="ca.seedvista.test")
-    ca_server = ca.install("h14-ca")
+    store = RootCAStore(caDomain="ca.h30.seedvista.test")
+    ca_server = ca.install("h30-ca")
     ca_server.setCAStore(store).setCertDuration("2160h").installCACert()
     cloud = CloudDriveService(saveState=True, savePath=str(RUNTIME / "cloud"))
-    cloud.createDatabase("h14-db").setDatabasePassword("h14-demo-postgres-password")
-    cloud.createObjectStorage("h14-objects").setCredentials("S3RVER", "S3RVER")
-    drive = cloud.createDrive("h14-drive")
-    drive.setDatabase("h14-db").setObjectStorage("h14-objects")
-    drive.setAdminCredentials("admin", "h14-demo-admin-password")
+    cloud.createDatabase("h30-db").setDatabasePassword("h30-demo-postgres-password")
+    cloud.createObjectStorage("h30-objects").setCredentials("S3RVER", "S3RVER")
+    drive = cloud.createDrive("h30-drive")
+    drive.setDatabase("h30-db").setObjectStorage("h30-objects")
+    drive.setAdminCredentials("admin", "h30-demo-admin-password")
     drive.setServerNames([DOMAIN]).setCAServer(ca_server).enableHTTPS()
-    for vnode, name in (("h14-dns", "dns"), ("h14-ca", "ca"), ("h14-drive", "cloud")):
+    for vnode, name in (("h30-dns", "dns"), ("h30-ca", "ca"), ("h30-drive", "cloud")):
         emulator.addBinding(Binding(vnode, action=Action.FIRST, filter=Filter(asn=ASN, nodeName=name)))
-    for layer in (base, routing, dns, ca, cloud):
+    for layer in (base, routing, dns, ca, cloud, agents):
         emulator.addLayer(layer)
     return emulator
 
 
-def compile_topology() -> None:
+def compile_topology(output: Path = OUTPUT) -> None:
     emulator = build_emulator()
     emulator.render()
     # DomainNameService is authoritative-only by default. Keep the local zone
@@ -210,8 +142,8 @@ def compile_topology() -> None:
     dns_node.setFile("/etc/bind/named.conf.options", """options {
     directory "/var/cache/bind";
     recursion yes;
-    allow-query { 127.0.0.0/8; 10.154.0.0/24; };
-    allow-recursion { 127.0.0.0/8; 10.154.0.0/24; };
+    allow-query { 127.0.0.0/8; 10.158.0.0/24; };
+    allow-recursion { 127.0.0.0/8; 10.158.0.0/24; };
     dnssec-validation no;
     empty-zones-enable no;
     forward only;
@@ -230,10 +162,12 @@ def compile_topology() -> None:
         )
     emulator.compile(
         Docker(platform=Platform.AMD64, internetMapEnabled=False),
-        str(OUTPUT), override=True,
+        str(output), override=True,
     )
-    print(f"CloudDrive topology compiled to {OUTPUT}")
+    print(f"CloudDrive topology compiled to {output}")
 
 
 if __name__ == "__main__":
-    compile_topology()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, default=OUTPUT)
+    compile_topology(parser.parse_args().output.resolve())

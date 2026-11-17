@@ -9,8 +9,8 @@ import subprocess
 import threading
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--alice-port", type=int, default=18081)
-parser.add_argument("--bob-port", type=int, default=18082)
+parser.add_argument("--alice-port", type=int, default=18311)
+parser.add_argument("--bob-port", type=int, default=18312)
 args = parser.parse_args()
 
 
@@ -18,8 +18,8 @@ class Tunnel(socketserver.BaseRequestHandler):
     def handle(self):
         lookup = subprocess.run(
             ["docker", "ps", "-q",
-             "--filter", "label=com.docker.compose.project=emuvista-h14",
-             "--filter", "label=com.docker.compose.service=hnode_154_" + self.server.role],
+             "--filter", "label=com.docker.compose.project=emuvista-h30",
+             "--filter", "label=com.docker.compose.service=hnode_158_" + self.server.role],
             capture_output=True, text=True, timeout=15, check=True,
         )
         cid = lookup.stdout.strip()
