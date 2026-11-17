@@ -65,6 +65,12 @@ Without `setSavePath`, recompilation creates fresh storage outside `output`. Sav
 
 Build the customized customer images from [docker_images](../../docker_images/README.md): `handsonsecurity/emuvista-bank-consumer:1.0` and `handsonsecurity/emuvista-bank-frontend:1.0`. Sources use revision `ce2621c0fe76c28f58de5cf5627c49f20f5980ca`. The core image remains `apache/fineract:4a61d7c218413eca8310d30b098722047e891bb7`.
 
+From the repository root:
+
+```sh
+docker compose -f docker_images/bank/compose.yml build
+```
+
 The staff website uses the public `openmf/web-app:1.14` image, pinned by digest in `DEFAULT_IMAGES`. It connects to the bundle's Fineract through its own HTTP proxy; no external demo backend is used. PostgreSQL, Redis, nginx and Python also use public images. Override references with `BankBundle(emu, images={role: reference})`. See [H22](../../examples/H22_bank_service/README.md) for browser operations and the complete bank and email example.
 
 Customers may include `cards`: each entry has a unique `id`, `number` (16–19 digit
