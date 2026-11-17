@@ -27,7 +27,8 @@ CLOUD_HTTPS_PORT = 18444
 # Optional route to a host-only proxy; set to an empty string when not needed.
 HOST_ONLY_NETWORK = "192.168.56.0/24"
 # Claw packages are built for demonstration stage two, not loaded by default.
-PLUGIN_PACKAGES = ("cloud-client", "cloud-bundle", "claw", "claw-bundle")
+PLUGIN_PACKAGES = ("cloud-client", "claw")
+BUNDLE_PACKAGES = ("cloud-bundle", "claw-bundle")
 
 AGENT_INITIALIZATION = r"""#!/bin/bash
 set -Eeuo pipefail
@@ -114,8 +115,8 @@ def initialize_on_start(node, name: str, script: str) -> None:
 
 def install_agent_plugins(node) -> None:
     """Import repository source and compile it as part of the node image."""
-    for package in PLUGIN_PACKAGES:
-        source = ROOT / "agent-plugins" / package
+    for package in (*PLUGIN_PACKAGES, *BUNDLE_PACKAGES):
+        source = (HERE / "bundles" if package in BUNDLE_PACKAGES else ROOT / "agent-plugins") / package
         for entry in ("package.json", "pnpm-lock.yaml", "tsconfig.json", "cordis.patch.yml", "src", "tests"):
             path = source / entry
             files = sorted(path.rglob("*")) if path.is_dir() else [path]
@@ -125,7 +126,7 @@ def install_agent_plugins(node) -> None:
                         str(file), f"/opt/emuvista/agent-plugins/{package}/{file.relative_to(source)}"
                     )
     # This public API emits RUN after imported source files have been copied.
-    for package in ("cloud-client", "claw", "cloud-bundle", "claw-bundle"):
+    for package in (*PLUGIN_PACKAGES, *BUNDLE_PACKAGES):
         directory = f"/opt/emuvista/agent-plugins/{package}"
         node.addBuildCommandAtEnd(
             f"cd {directory} && pnpm install --frozen-lockfile --ignore-workspace"
