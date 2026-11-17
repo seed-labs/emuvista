@@ -12,5 +12,9 @@ RUN corepack enable && corepack prepare pnpm@10.26.1 --activate \
 COPY src/ src/
 COPY public/config.template.js public/config.template.js
 RUN pnpm run build
-FROM ${BASE_IMAGE}
+FROM ${BASE_IMAGE} AS upstream
+FROM nginx:stable-bookworm@sha256:552e7481ca93ffccd046aa658dbbed22caefbc09c66fa7cd247cbb90b8a5c609
+RUN rm /etc/nginx/conf.d/default.conf
+COPY --from=upstream /etc/nginx/conf.d/ /etc/nginx/conf.d/
+COPY --from=upstream /docker-entrypoint.d/replace_env_vars.sh /docker-entrypoint.d/replace_env_vars.sh
 COPY --from=build /app/dist/ssg /usr/share/nginx/html

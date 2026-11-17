@@ -20,17 +20,18 @@ from .initialization import _identifier, load_configuration, prepare_bundle
 from .templates import BACKEND_START, BROWSER_LINKS, DATABASE_START, INITIALIZE, nginx_config
 
 
-REVISION = "124a87b639c37952dc9a029fc7056e523a10de5b"
 DEFAULT_IMAGES = {
-    **{role: f"h20-komunitin-{role}:{REVISION[:12]}" for role in
-       ("auth", "social", "notifications-ts", "cli")},
+    "auth": "komunitin/komunitin-auth@sha256:eeab8a10ac40524686708020029e40c211e0f0310222a558aa42933bbb4fc40e",
+    "social": "komunitin/komunitin-social@sha256:e1fd74796abb524faf054d3124ee239399d024174ba07e5995192ca4e3f5b0ba",
+    "notifications-ts": "komunitin/komunitin-notifications-ts@sha256:06b010dbcb63d88223d820bbd996261761c6adf346bf86d02b281932bb99fe9a",
+    "cli": "handsonsecurity/emuvista-payment-cli:1.0",
     "app": "handsonsecurity/emuvista-payment-app:1.0",
     "accounting": "handsonsecurity/emuvista-payment-accounting:1.0",
-    "database": f"h20-komunitin-db-auth:{REVISION[:12]}",
-    "redis": "redis:7-alpine",
-    "stellar": "h20-stellar-quickstart:core-horizon-beb4f2f",
-    "files": "h20-komunitin-s3:3.7.1",
-    "gateway": "nginx:stable-alpine",
+    "database": "handsonsecurity/emuvista-payment-database:1.0",
+    "redis": "redis:7-bookworm",
+    "stellar": "stellar/quickstart@sha256:58d3fba97b90a431d97c0efb135ea625ad62739ccfeb9e236c5e5fa16491b6d7",
+    "files": "handsonsecurity/emuvista-payment-files:1.0",
+    "gateway": "nginx:stable-bookworm",
 }
 
 

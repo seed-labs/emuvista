@@ -1,0 +1,20 @@
+services:
+  payment-app:
+    image: handsonsecurity/emuvista-payment-app:1.0
+    build: ./payment-app
+
+  payment-accounting:
+    image: handsonsecurity/emuvista-payment-accounting:1.0
+    build: ./payment-accounting
+
+  payment-database:
+    image: handsonsecurity/emuvista-payment-database:1.0
+    build: ./payment-database
+
+  payment-cli:
+    image: handsonsecurity/emuvista-payment-cli:1.0
+    build: ./payment-cli
+
+  payment-files:
+    image: handsonsecurity/emuvista-payment-files:1.0
+    build: ./payment-files
