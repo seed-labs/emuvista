@@ -1,26 +1,50 @@
-# Application images
+# Custom images
 
-Only customized applications are included. Each directory contains its
-Dockerfile, changed source files and required build inputs. Source builds fetch
-the fixed upstream revision during `docker build`; the repository contains no
-upstream checkout.
+Images are grouped by Bundle. Each group has a build-only `compose.yml`, with
+one subdirectory per custom image containing its Dockerfile and build inputs.
+Source builds fetch a fixed upstream revision; no upstream checkout is stored.
 
-Payment images extend published upstream images pinned by digest. Bank images
-compile from source and use the public Java and nginx runtime images. No build
-depends on an earlier H20 or H22 local image. Licenses accompany the changes.
+Images use public upstream bases. Bank images compile from source and use the
+public Java and nginx runtime images. No build depends on an earlier example's
+local image. Licenses accompany copied or modified upstream source.
 
-From this directory:
+From the repository root, build all custom images for a Bundle:
 
 ```sh
-docker build -t handsonsecurity/emuvista-payment-app:1.0 payment-app
-docker build -t handsonsecurity/emuvista-payment-accounting:1.0 payment-accounting
-docker build -t handsonsecurity/emuvista-bank-consumer:1.0 bank-consumer
-docker build -t handsonsecurity/emuvista-bank-frontend:1.0 bank-frontend
+docker compose -f docker_images/payment/compose.yml build
+docker compose -f docker_images/bank/compose.yml build
 ```
 
+Alternatively, enter a group directory and run `docker compose build`. Append
+an image service name, such as `payment-app`, to rebuild only that image.
+Use `DOCKER_BUILDKIT=0 docker compose build` for the legacy builder.
+
+| Bundle | Build configuration | Custom images |
+| --- | --- | --- |
+| PaymentBundle | [payment/compose.yml](payment/compose.yml) | payment-app, payment-accounting, payment-database, payment-cli, payment-files |
+| BankBundle | [bank/compose.yml](bank/compose.yml) | bank-consumer, bank-frontend |
+
+These files prepare images. Runtime configuration and startup remain in each
+example's generated `output/docker-compose.yml`, which also pulls unmodified
+upstream images. Bundles that use only upstream images need no build group.
+
+| Payment image | Changes or packaging |
+| --- | --- |
+| `payment-app` | Wallet UI changes; upstream nginx configuration on a Debian nginx runtime |
+| `payment-accounting` | Accounting API changes, including bank-funded payments |
+| `payment-database` | PostgreSQL 16 with PostGIS, pgvector and the upstream application-user initialization script |
+| `payment-cli` | Upstream initialization CLI and its dependencies; imports the upstream Social files it uses |
+| `payment-files` | Node with S3rver 3.7.1 for the simulated file store |
+
+The payment source revision is `124a87b639c37952dc9a029fc7056e523a10de5b`.
+The database initialization script comes from that revision's
+`shared/docker/db/init-app-db.sh`. Application and infrastructure bases are
+recorded directly in each Dockerfile. Debian runtimes support the current SEED
+ContainerBundle compiler's network-package installation.
+
 After a source change, rebuild that image and recreate its example container.
-Bundles reference these image names. Other application and infrastructure
-images keep their existing references.
+Bundles reference these image names. Unmodified payment components use upstream
+image references directly; they do not require a local build or image archive.
 
 To use your Docker Hub account, change the image tag and the matching Bundle
 image reference. Publishing with `docker push` is separate from local builds.

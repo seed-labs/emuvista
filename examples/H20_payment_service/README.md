@@ -1,6 +1,6 @@
 # Payment Bundle
 
-Deploys Komunitin on the shared [H00 mini Internet](../H00_mini_internet/) using [prebuilt images](../../bundles/PaymentBundle/README.md#images). Requires Linux AMD64, SEED Emulator's ContainerBundle API and the root [requirements.txt](../../requirements.txt). `bcrypt` hashes initial passwords.
+Deploys the payment system on the shared [H00 mini Internet](../H00_mini_internet/) using [upstream and custom images](../../bundles/PaymentBundle/README.md#images). Requires Linux AMD64, SEED Emulator's ContainerBundle API and the root [requirements.txt](../../requirements.txt). `bcrypt` hashes initial passwords.
 
 ## Configure
 
@@ -19,6 +19,8 @@ All passwords are `payment-demo`. Each community has its own treasury and transa
 
 ## Run
 
+First build the [custom payment images](../../bundles/PaymentBundle/README.md#images).
+Other components are pulled directly from their upstream registries.
 Stop any previous stack with `docker compose down` in its output directory. From this example directory:
 
 ```sh
