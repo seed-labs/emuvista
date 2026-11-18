@@ -1,0 +1,5 @@
+name: cloud-tools
+plugins:
+  - id: cloud
+    package: ../../../agent-plugins/cloud-client
+    preset: resident

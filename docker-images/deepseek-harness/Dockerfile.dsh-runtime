@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+ARG BASE_IMAGE=node:24-bookworm-slim
+FROM ${BASE_IMAGE}
+
+ARG DSH_VERSION=0.2.0-rc.2
+ARG PNPM_VERSION=11.7.0
+
+RUN current_dsh_version="$(node -p "try { require('/usr/local/lib/node_modules/@deepseek-ai/dsh/package.json').version } catch { '' }")" \
+    && if [ "$current_dsh_version" != "$DSH_VERSION" ]; then \
+         npm install --global \
+           --allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs \
+           "@deepseek-ai/dsh@${DSH_VERSION}"; \
+       fi \
+    && npm install --global "pnpm@${PNPM_VERSION}" \
+    && npm cache clean --force \
+    && node --version \
+    && npm --version \
+    && pnpm --version \
+    && command -v dsh \
+    && dsh --help >/dev/null
