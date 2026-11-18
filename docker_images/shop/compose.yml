@@ -1,0 +1,4 @@
+services:
+  shop-app:
+    image: handsonsecurity/emuvista-shop:1.0
+    build: ./shop-app

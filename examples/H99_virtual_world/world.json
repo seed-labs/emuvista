@@ -15,6 +15,10 @@
         {
           "email": "payment@mail.com",
           "password": "PaymentMailDemo123!"
+        },
+        {
+          "email": "shop@mail.com",
+          "password": "ShopMailDemo123!"
         }
       ]
     }
@@ -89,6 +93,22 @@
     "connections": {
       "email": [
         "email"
+      ]
+    }
+  },
+  "shop": {
+    "hostname": "shop.com",
+    "asn": 154,
+    "port": 8449,
+    "configuration": {
+      "currency": "USD"
+    },
+    "connections": {
+      "email": [
+        "email"
+      ],
+      "payment": [
+        "payment"
       ]
     }
   }

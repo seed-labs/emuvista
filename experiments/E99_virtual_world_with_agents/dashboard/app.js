@@ -79,14 +79,24 @@ function renderDetails() {
   if (!events.length) $('events').append(node('p','task','Execution events will appear here.'));
 }
 function renderSales() {
-  const sales=state.agents.flatMap(agent=>(agent.sales||[]).map(sale=>({...sale,agent:agent.name})));
+  const unique=new Map();
+  for(const agent of state.agents){
+    for(const sale of agent.sales||[]){
+      const key=sale.checkout||`${sale.shop||'shop'}:${sale.id}`;
+      const previous=unique.get(key);
+      unique.set(key,{...previous,...sale,agent:agent.name,sellers:sale.sellers?.length?sale.sellers:previous?.sellers||[]});
+    }
+  }
+  const sales=[...unique.values()].sort((a,b)=>(b.observed_at||'').localeCompare(a.observed_at||'')||Number(b.id)-Number(a.id));
   $('sale-count').textContent=sales.length+' sales';
   $('sales').replaceChildren(...sales.map(sale=>{
     const row=node('div','sale-row');
-    row.append(node('strong','',sale.title||sale.product),node('span','',sale.buyer+' → '+title(sale.agent)),node('span','mono',(sale.amountMinor/100).toFixed(2)+' '+sale.currency),node('span','mono',sale.transfer));
+    const buyer=title(sale.agent)||sale.buyer;
+    const sellers=sale.sellers.length?sale.sellers.join(', '):'Marketplace';
+    row.append(node('strong','',sale.title||sale.product),node('span','',buyer+' → '+sellers),node('span','mono',(sale.amountMinor/100).toFixed(2)+' '+sale.currency),node('span','mono','Order #' + sale.id));
     return row;
   }));
-  if(!sales.length)$('sales').append(node('p','sales-empty','No verified sales yet. Residents decide whether to buy; only confirmed payments and deliveries appear here.'));
+  if(!sales.length)$('sales').append(node('p','sales-empty','No verified sales yet. Residents decide whether to buy; only confirmed paid orders appear here.'));
 }
 function render() {
   if (!state.agents.some(agent=>agent.name===selectedAgent)) selectedAgent=state.agents[0]?.name;

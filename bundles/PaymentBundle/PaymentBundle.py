@@ -73,6 +73,7 @@ class PaymentBundle(ContainerBundle):
         self._configured = False
         self._application_options = {}
         self._banks = []
+        self._merchants = []
         self._mail_sources = []
         self._mail = None
         self._required_internal_address_count = len(ROLES)
@@ -159,6 +160,18 @@ class PaymentBundle(ContainerBundle):
 
     def getClientId(self):
         return self._name + '-wallet'
+
+    def connectMerchant(self, merchant):
+        """Record a merchant integration; shoppers authorize each purchase themselves."""
+        if merchant not in self._merchants:
+            self._merchants.append(merchant)
+        return self
+
+    def getMerchantConnection(self):
+        """Export canonical server endpoints and the browser-only host mapping."""
+        return {'url': self.getURL(), 'apiURL': self.getURL() + ':2025',
+                'authURL': self.getURL() + ':2026',
+                'browserURL': f'http://localhost:{self._host_port}' if self._host_port else self.getURL()}
 
     def connectBank(self, bank):
         """Record a bank partnership without configuring either application."""
@@ -254,6 +267,18 @@ class PaymentBundle(ContainerBundle):
                                           container.getHostname(), net['default_route'])
             self._addresses[role] = address
         self._configureFundingProviders()
+        if self._merchants:
+            for merchant in self._merchants:
+                registration = merchant.getPaymentRegistration()
+                browser = next((origin for origin in registration['returnOrigins'] if origin.startswith('http://localhost:')), None)
+                if browser:
+                    self._host_url_mappings[merchant.getURL()] = browser
+            options = self._application_options.get('accounting', {})
+            self.configureApplication('accounting',
+                environment={**options.get('environment', {}), 'PAYMENT_MERCHANT_CONFIG': '/payment-config/merchants.json'},
+                files={**options.get('files', {}), 'merchants.json': json.dumps([
+                    merchant.getPaymentRegistration() for merchant in self._merchants]) + '\n'},
+                dependencies=options.get('dependencies', []))
         if self._mail_sources:
             provider, username = self._mail_sources[0]
             self._mail = provider.getMailConnection(

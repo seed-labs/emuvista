@@ -167,3 +167,24 @@ stores these separately in `context.tool_config['payment']`. Personal
 selector; the email defaults to the person's mailbox. Tools resolve account IDs
 and API endpoints themselves. The model supplies a recipient email and amount;
 service routing data never enters its persona or prompt.
+
+## Merchant checkout
+
+`connectMerchant(merchant)` records a merchant's server credentials, allowed return
+origins and notification endpoint. ShopService calls it through
+`shop.connectPayment(payment)`. Configuration is generated during compilation;
+no customer cards are linked automatically.
+
+The accounting API provides `POST /<group>/checkout/merchants/<merchant>/sessions`
+and a merchant-authenticated receipt lookup at the same path with `/<id>`.
+A session fixes the order, recipients and amounts. Buyers open
+`/checkout/<group>/<id>` in the app, sign in and choose wallet balance or a
+linked card. `POST /<group>/checkout/sessions/<id>/pay` uses the buyer's JWT.
+The original transfer IDs are retained for retries. Multi-vendor sessions are
+confirmed only after every recipient payment completes; partial results stay
+pending for reconciliation. Shipping, fee distribution, refunds and
+cross-currency merchant checkout are not included in this version.
+
+Notifications contain the checkout ID. Merchants independently retrieve and
+verify the receipt before completing their order; a browser redirect alone
+cannot confirm payment. Rebuild both customized payment images when upgrading.
