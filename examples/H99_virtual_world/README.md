@@ -1,22 +1,23 @@
 # Virtual world
 
-Email, payment and two banks on the shared [H00 mini Internet](../H00_mini_internet/).
+Email, payment, two banks and a single-host marketplace on the shared [H00 mini Internet](../H00_mini_internet/).
 H00 supplies root, TLD, recursive and shared hosting DNS servers. `createworld`
 registers separate application zones and their A/MX records before rendering.
 Network placement stays in the example through SEED's
-native `addInternalNetwork()` API.
+native `addInternalNetwork()` API for Bundles and `Binding` for ShopService.
 Agents are added by [E99](../../experiments/E99_virtual_world_with_agents/).
-Use the application images already required by H20–H22; customized images are in [docker_images](../../docker_images/README.md).
+Use the application images already required by H20–H23; customized images are in [docker_images](../../docker_images/README.md).
 
 ```sh
 python3 virtual_world.py
 cd output
-docker compose build
+DOCKER_BUILDKIT=0 docker compose build
 docker compose up -d
 ```
 
 | Application | Host URL | Access |
 | --- | --- | --- |
+| Marketplace | http://localhost:8449 | `admin` / `ShopAdminDemo123!` |
 | Payment | http://localhost:8443/login-mail | Register in the Payments community |
 | South Bank | http://localhost:8444 | Register a new bank profile |
 | North Bank | http://localhost:8447 | Register a new bank profile |
@@ -110,29 +111,29 @@ URL with the same path and token. E99 remains the optional way to initialize peo
 and run Agents automatically.
 
 H99 loads `world.json` once. `createworld(state=None)` returns a native, unrendered
-SEED `Emulator` and a separate Bundle map. Additional services can be added before rendering:
+SEED `Emulator` and a separate system map. Additional services can be added before rendering:
 
 ```python
-emu, bundles = createworld()
+emu, systems = createworld()
 emu.render()
-emu.compile(createcompiler(bundles), "output", override=True)
+emu.compile(createcompiler(emu, systems), "output", override=True)
 ```
 
-World settings remain internal to H99. `createcompiler(bundles)` attaches containers to rendered
+World settings remain internal to H99. `createcompiler(emu, systems)` attaches containers to rendered
 networks and registers them with the native Docker compiler. `emu.compile()` then
 calls each Bundle's `configure()` and `install()`.
-E99 supplies personal accounts through `EmailBundle.addUser`, `PaymentBundle.addUser`
-and `BankBundle.addCustomer` before compilation. Agent setup,
-tool registration and the experimental shop are in E99.
+E99 supplies personal accounts through `EmailBundle.addUser`, `PaymentBundle.addUser`,
+`ShopServer.addUser` and `BankBundle.addCustomer` before compilation. Agent setup
+and tool registration are in E99; the marketplace runs on a native host through ShopService.
 
-Each instance declares its partners in `world.json`, for example:
+Each application declares its partners in `world.json`, for example:
 
 ```json
 "connections": {"email": ["email"]}
 ```
 
 A payment instance uses `"connections": {"bank": ["south-bank", "north-bank"]}`.
-Two separate passes read these lists and call:
+Separate passes read these lists and call:
 
 ```python
 bank.connectEmail(email)
@@ -154,3 +155,17 @@ After upgrading from the intermediary-account payment version, regenerate the
 deployment with fresh state. Rebuild the four customized application images
 listed in [docker_images](../../docker_images/README.md), then rebuild the generated
 Compose services before starting.
+
+## Marketplace
+
+Open <http://localhost:8449> (inside the world: <http://shop.com>).
+Administrator: `admin` / `ShopAdminDemo123!`. H99 starts with no customer stores
+or products. Register at `/my-account/`, open a store at `/store-registration/`,
+connect your Payment receiving wallet under **Account details**, and publish
+products in `/dashboard/products`.
+
+Buyers checkout through Payment and choose balance or a linked bank card.
+The shop verifies the payment before completing the order and unlocking digital
+downloads. Seller dashboards show their own orders. `world.json` declares
+`"connections": {"email": ["email"], "payment": ["payment"]}` for the shop.
+See [H23](../H23_shop_service/) for a prepopulated marketplace and walkthrough.

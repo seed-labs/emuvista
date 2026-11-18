@@ -2,6 +2,12 @@ import type { RouteRecordRaw } from 'vue-router';
 
 const routes: RouteRecordRaw[] = [
   {
+    path: '/checkout/:code/:id',
+    name: 'Checkout',
+    component: () => import('../pages/Checkout.vue'),
+    meta: { public: true, back: false }
+  },
+  {
     name: 'FrontLayout',
     path: '/',
     component: () => import('../layouts/Front.vue'),

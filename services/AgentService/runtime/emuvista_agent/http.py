@@ -24,7 +24,7 @@ def request(config, path='', method='GET', body=None, headers=None, opener=None,
             headers['Content-Type'] = 'application/json'
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with (opener or client(config)).open(req, timeout=15) as response:
+        with (opener or client(config)).open(req, timeout=config.get('timeout', 15)) as response:
             raw = response.read(1048576)
             try:
                 return json.loads(raw)

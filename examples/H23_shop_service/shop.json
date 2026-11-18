@@ -1,0 +1,230 @@
+{
+  "email": {
+    "domains": [
+      "mail.com"
+    ],
+    "users": [
+      {
+        "email": "bank@mail.com",
+        "password": "BankMailDemo123!"
+      },
+      {
+        "email": "payment@mail.com",
+        "password": "PaymentMailDemo123!"
+      },
+      {
+        "email": "shop@mail.com",
+        "password": "ShopMailDemo123!"
+      },
+      {
+        "email": "alice@mail.com",
+        "password": "EmailDemo123!"
+      },
+      {
+        "email": "bob@mail.com",
+        "password": "EmailDemo123!"
+      },
+      {
+        "email": "carol@mail.com",
+        "password": "EmailDemo123!"
+      }
+    ]
+  },
+  "payment": {
+    "groups": [
+      {
+        "code": "SEED",
+        "name": "Payments",
+        "currency": {
+          "name": "US Dollar",
+          "symbol": "USD",
+          "rate": 1
+        },
+        "users": [
+          {
+            "name": "Alice",
+            "email": "alice@mail.com",
+            "password": "PaymentDemo123!",
+            "balance": 100
+          },
+          {
+            "name": "Bob",
+            "email": "bob@mail.com",
+            "password": "PaymentDemo123!",
+            "balance": 100
+          },
+          {
+            "name": "Carol",
+            "email": "carol@mail.com",
+            "password": "PaymentDemo123!",
+            "balance": 100
+          }
+        ]
+      }
+    ]
+  },
+  "bank": {
+    "savingsProducts": [
+      {
+        "id": "USDC",
+        "name": "USD",
+        "currency": "USD",
+        "interestRate": 0
+      }
+    ],
+    "sender": "bank@mail.com",
+    "customers": [
+      {
+        "firstName": "Alice",
+        "lastName": "Example",
+        "password": "BankDemoPass123!",
+        "accounts": [
+          {
+            "id": "alice-checking",
+            "name": "Alice Checking",
+            "product": "USDC",
+            "balance": 1000
+          },
+          {
+            "id": "alice-savings",
+            "name": "Alice Savings",
+            "product": "USDC",
+            "balance": 600
+          }
+        ],
+        "cards": [
+          {
+            "id": "alice-salary",
+            "name": "Salary card",
+            "account": "alice-checking",
+            "number": "9900010000000019",
+            "expires": "2035-12"
+          },
+          {
+            "id": "alice-savings",
+            "name": "Savings card",
+            "account": "alice-savings",
+            "number": "9900010000000027",
+            "expires": "2035-12"
+          }
+        ],
+        "id": "4de4ceb9-78be-4d9b-8236-6d080b70d1f9",
+        "email": "alice@mail.com",
+        "emailPassword": "EmailDemo123!"
+      },
+      {
+        "firstName": "Bob",
+        "lastName": "Example",
+        "password": "BankDemoPass123!",
+        "accounts": [
+          {
+            "id": "bob-checking",
+            "name": "Bob Checking",
+            "product": "USDC",
+            "balance": 500
+          }
+        ],
+        "cards": [
+          {
+            "id": "bob-card",
+            "name": "Bob card",
+            "account": "bob-checking",
+            "number": "9900010000000050",
+            "expires": "2035-12"
+          }
+        ],
+        "id": "18d0a020-1e17-4603-bd52-e3fa5e2d3e85",
+        "email": "bob@mail.com",
+        "emailPassword": "EmailDemo123!"
+      },
+      {
+        "firstName": "Carol",
+        "lastName": "Example",
+        "password": "BankDemoPass123!",
+        "accounts": [
+          {
+            "id": "carol-checking",
+            "name": "Carol Checking",
+            "product": "USDC",
+            "balance": 500
+          }
+        ],
+        "cards": [
+          {
+            "id": "carol-card",
+            "name": "Carol card",
+            "account": "carol-checking",
+            "number": "9900010000000068",
+            "expires": "2035-12"
+          }
+        ],
+        "id": "5916d101-7015-4240-9fa0-5ff9ed92e51d",
+        "email": "carol@mail.com",
+        "emailPassword": "EmailDemo123!"
+      }
+    ]
+  },
+  "shop": {
+    "currency": "USD",
+    "users": [
+      {
+        "id": "4de4ceb9-78be-4d9b-8236-6d080b70d1f9",
+        "name": "Alice",
+        "email": "alice@mail.com",
+        "password": "ShopDemoPass123!"
+      },
+      {
+        "id": "18d0a020-1e17-4603-bd52-e3fa5e2d3e85",
+        "name": "Bob",
+        "email": "bob@mail.com",
+        "password": "ShopDemoPass123!",
+        "store": {
+          "name": "Bob's Photo Shop",
+          "products": [
+            {
+              "title": "Photo Tips",
+              "description": "Simple photography notes.",
+              "priceMinor": 350,
+              "content": "Try three compositions and compare the light."
+            }
+          ]
+        }
+      },
+      {
+        "id": "5916d101-7015-4240-9fa0-5ff9ed92e51d",
+        "name": "Carol",
+        "email": "carol@mail.com",
+        "password": "ShopDemoPass123!",
+        "store": {
+          "name": "Carol's Digital Shop",
+          "products": [
+            {
+              "id": "lemon-tart",
+              "title": "Lemon Tart Recipe",
+              "description": "A small recipe booklet with ingredients, a preparation checklist and serving ideas.",
+              "priceMinor": 300,
+              "currency": "USD",
+              "content": "LEMON TART RECIPE\n\nIngredients: one ready-made tart shell, 3 eggs, 100 g sugar, 100 ml lemon juice, zest of one lemon and 100 ml cream.\n\nWhisk the filling ingredients together, pour into the shell, and bake at 160 C until the center is just set. Let it cool before slicing. Check the tart as it bakes because ovens and shell sizes vary.\n\nPreparation checklist: read the shell instructions, wash the lemon, measure ingredients, preheat the oven and set out a cooling rack. Serve with berries or a little whipped cream.\n"
+            },
+            {
+              "id": "photo-walk",
+              "title": "Evening Photo Walk Guide",
+              "description": "A pocket checklist for planning an evening photo walk and comparing compositions.",
+              "priceMinor": 500,
+              "currency": "USD",
+              "content": "EVENING PHOTO WALK\n\nChoose a familiar route and check when it gets dark. Bring a charged camera or phone and a small support if you use one.\n\nAt each stop, make three versions: a wide view, a close detail, and a frame with a person or object providing scale. Compare horizontal and vertical compositions. Notice reflections and changes in light.\n\nBefore leaving, check sharpness and exposure. Afterward, pick three favorites and write a sentence about why each works. Share the photos you like with a friend.\n"
+            },
+            {
+              "id": "weekly-budget",
+              "title": "Weekly Budget Worksheet",
+              "description": "A plain-text worksheet for recording weekly income, spending and balances.",
+              "priceMinor": 400,
+              "currency": "USD",
+              "content": "WEEKLY BUDGET WORKSHEET\n\nWeek: ______\nOpening balance: ______\nIncome received: ______\n\nSpending\nFood: ______\nTransport: ______\nHousehold: ______\nHobbies: ______\nOther: ______\n\nTotal spending: ______\nClosing balance = opening balance + income - spending: ______\n\nCompare the closing balance with your account records. Note any pending payments separately. What did you enjoy this week, and what would you change next week?\n"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

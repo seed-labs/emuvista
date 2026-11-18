@@ -23,6 +23,7 @@ def createpeople(path=HERE / 'people.json', market_path=HERE / 'market.json'):
         person['email'] = person['accounts']['email']['email']
         person['mode'] = 'resident'
         person['knowledge'] = {'emails': [other['accounts']['email']['email'] for other in people]}
+        person['accounts']['shop'] = {'password': 'ShopDemoPass123!'}
         person['possessions'] = {}
         if person['id'] == market['owner']:
             person['possessions']['shop'] = {
@@ -33,33 +34,39 @@ def createpeople(path=HERE / 'people.json', market_path=HERE / 'market.json'):
     return people
 
 
-def initialize_accounts(people, bundles):
-    """Declare personal accounts in each Bundle's initialization metadata."""
+def initialize_accounts(people, systems):
+    """Declare personal accounts in each system's initialization metadata."""
     for person in people:
         accounts = person['accounts']
         mailbox = accounts['email']
-        bundles['email'].addUser(mailbox)
+        systems['email'].addUser(mailbox)
         wallet = accounts['payment']
-        bundles['payment'].addUser(wallet['group'], {
+        systems['payment'].addUser(wallet['group'], {
             'name': person['name'], 'email': mailbox['email'],
             'password': wallet['password'], 'balance': wallet['balance'],
         })
+        shop = {'id': person['id'], 'name': person['name'], 'email': mailbox['email'],
+                'password': accounts['shop']['password'],
+                'wallet': systems['payment'].getInitialAccountId(wallet['group'], mailbox['email'])}
+        if person['possessions'].get('shop'):
+            shop['store'] = person['possessions']['shop']
+            person['possessions']['shop'] = {'name': shop['store']['name']}
+        systems['shop'].addUser(shop)
         for bank, customer in accounts['bank'].items():
-            bundles[bank].addCustomer({
+            systems[bank].addCustomer({
                 **customer, 'id': person['id'],
                 'email': mailbox['email'], 'emailPassword': mailbox['password'],
             })
 
 
-def prepare_tools(bundles):
+def prepare_tools(systems):
     """Collect service-owned tools and private instance settings."""
     tools = [
         ToolPackage('network', ROOT / 'services/AgentService/tools/network'),
         ToolPackage('world', HERE / 'tools/world'),
         ToolPackage('life', HERE / 'tools/life'),
-        ToolPackage('shop', HERE / 'tools/shop'),
     ]
-    tools.extend(provider.getAgentTools() for provider in bundles.values())
+    tools.extend(provider.getAgentTools() for provider in systems.values())
     return tools
 
 
@@ -75,9 +82,9 @@ def main():
     if not (HERE / '.env').is_file():
         parser.error('Missing .env. Copy .env.example to .env and configure the LLM settings.')
     people = createpeople()
-    emu, bundles = createworld(args.state)
-    initialize_accounts(people, bundles)
-    agents = AgentService(tools=prepare_tools(bundles), environment_file=HERE / '.env')
+    emu, systems = createworld(args.state)
+    initialize_accounts(people, systems)
+    agents = AgentService(tools=prepare_tools(systems), environment_file=HERE / '.env')
     network = emu.getLayer('Base').getAutonomousSystem(171)
     emu.addBinding(Binding(agents.clock.vnode, action=Action.NEW,
                            filter=Filter(asn=171, nodeName=agents.clock.vnode, ip='10.171.0.79')))
@@ -86,25 +93,9 @@ def main():
         address = '10.171.0.' + str(79 + index)
         node = network.createHost(agent.vnode).joinNetwork('net0', address=address)
         emu.addBinding(Binding(agent.vnode, filter=Filter(asn=171, nodeName=agent.vnode)))
-        if person['possessions'].get('shop'):
-            node.appendStartCommand(
-                'runuser -u emuvista-agent -- python3 -u '
-                '/opt/emuvista-agent/packages/shop/server.py '
-                '> /home/emuvista-agent/shop.log 2>&1',
-                fork=True,
-            )
-            agents.addToolPackage(ToolPackage(
-                'shop', HERE / 'tools/shop',
-                configuration={
-                    'shop-' + person['id']: {
-                        'name': person['possessions']['shop']['name'],
-                        'url': f'http://{address}:8080',
-                    },
-                },
-            ))
     emu.addLayer(agents)
     emu.render()
-    emu.compile(createcompiler(bundles), str(args.output.resolve()), override=True)
+    emu.compile(createcompiler(emu, systems), str(args.output.resolve()), override=True)
 
 
 if __name__ == '__main__':

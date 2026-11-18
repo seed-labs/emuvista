@@ -12,6 +12,7 @@ import { createBaseService } from "../controller/base-service-builder"
 import { BaseService } from "../controller"
 import { getRoutes as getBankRoutes } from '../bank/routes'
 import { startBankRecovery } from '../bank/recovery'
+import { getRoutes as getCheckoutRoutes } from '../checkout/routes'
 
 
 export type ExpressExtended = express.Express & { komunitin: { service: BaseService, stopBankRecovery?: () => void } }
@@ -68,6 +69,7 @@ export const setupApp = async (expressApp: express.Express) => {
   app.use("/", getMigrationRoutes(service))
   app.use("/", getTopupRoutes(service))
   app.use('/', getBankRoutes(service))
+  app.use('/', getCheckoutRoutes(service))
   
 
   // Error handlers

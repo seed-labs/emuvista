@@ -10,7 +10,7 @@ Agents run inside the simulated network and interact with world services through
 - [docker_images](docker_images/): customized application image build inputs.
 - [docs](docs/): design and development notes.
 
-[H99](examples/H99_virtual_world/) combines email, payment and banks.
+[H99](examples/H99_virtual_world/) combines email, payment, banks and a marketplace.
 [H98](examples/H98_virtual_company/) deploys company applications on H00's AS164
 campus, starting with CloudDriveService. See the [company software research](docs/virtual-company-research.md).
 [E99](experiments/E99_virtual_world_with_agents/) adds five agents using a replaceable LangChain

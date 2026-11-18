@@ -38,9 +38,45 @@ def scrub(value, secrets=()):
     return value
 
 
-# Read local events, public persona fields and business orders; never framework memory.
+def paid_orders(log, shop='shop'):
+    """Observe buyer-confirmed purchases without asking sellers to query sales."""
+    orders = {}
+    for line in log.splitlines():
+        try:
+            event = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if (not isinstance(event, dict) or event.get('event') != 'tool_finished'
+                or event.get('status') != 'success'
+                or event.get('tool') not in ('shop.pay', 'shop.orders')):
+            continue
+        result = event.get('result')
+        if not isinstance(result, dict):
+            continue
+        payment = result.get('payment') or {}
+        for order in result.get('orders', []):
+            if not isinstance(order, dict) or order.get('paid') is not True or not order.get('id'):
+                continue
+            checkout = order.get('checkout')
+            receipt = payment if checkout and payment.get('id') == checkout else {}
+            instance = receipt.get('merchant', shop)
+            key = checkout or f'{instance}:{order["id"]}'
+            previous = orders.get(key, {})
+            sellers = [item['label'] for item in receipt.get('allocations', []) if item.get('label')]
+            orders[key] = {
+                'id': order['id'], 'checkout': checkout, 'shop': instance,
+                'buyer': order.get('buyer'), 'paid': True,
+                'title': ', '.join(item['title'] for item in order.get('items', [])),
+                'amountMinor': order.get('amountMinor'), 'currency': order.get('currency'),
+                'sellers': sellers or previous.get('sellers', []),
+                'observed_at': previous.get('observed_at') or event.get('timestamp'),
+            }
+    return list(orders.values())[-30:]
+
+
+# Read local events and public persona fields; never framework memory.
 # Credentials are used for redaction inside the container and never exported.
-COLLECT = 'import math, re\n' + inspect.getsource(scrub) + r'''
+COLLECT = 'import json, math, re\n' + inspect.getsource(scrub) + inspect.getsource(paid_orders) + r'''
 
 import fcntl, glob, json, pathlib, socket, struct
 p = pathlib.Path('/home/emuvista-agent/agent.log')
@@ -102,16 +138,9 @@ def find_secrets(value):
 
 find_secrets(configuration.get('persona', {}))
 find_secrets(configuration.get('tool_config', {}))
-sales = []
-try:
-    directory = configuration.get('framework', {}).get('state_directory')
-    path = pathlib.Path(directory) / 'shop/orders.json' if directory else None
-    if path and path.is_file() and path.stat().st_size <= 2097152:
-        orders = json.loads(path.read_text()).values()
-        sales = [item for item in orders if item.get('status') == 'delivered']
-        sales = sorted(sales, key=lambda item: item.get('created', ''), reverse=True)[:30]
-except (OSError, ValueError, TypeError, AttributeError):
-    pass
+account = configuration.get('persona', {}).get('accounts', {}).get('shop', {})
+shop = account.get('instance') or next(iter(configuration.get('tool_config', {}).get('shop', {})), 'shop')
+sales = paid_orders(text, shop)
 for secret in sorted(secrets, key=len, reverse=True):
     text = text.replace(secret, '[redacted]')
 print(json.dumps({'log': text, 'modified': modified,
