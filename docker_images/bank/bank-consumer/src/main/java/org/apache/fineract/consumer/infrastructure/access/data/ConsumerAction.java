@@ -1,0 +1,53 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+package org.apache.fineract.consumer.infrastructure.access.data;
+
+public enum ConsumerAction {
+    SAVINGS_LIST,
+    SAVINGS_VIEW,
+    SAVINGS_APPLICATION_TEMPLATE_VIEW,
+    LOANS_LIST,
+    LOANS_VIEW,
+    LOAN_SCHEDULE_CALCULATE,
+    LOAN_APPLICATION_TEMPLATE_VIEW,
+    LOAN_APPLICATION_SUBMIT,
+    LOAN_APPLICATION_MODIFY,
+    LOAN_APPLICATION_WITHDRAW,
+    TRANSFER_EXECUTE,
+    TRANSFER_LIST,
+    SUMMARY_VIEW,
+    USER_PROFILE_VIEW,
+    USER_CHARGES_LIST,
+    USER_OBLIGEES_VIEW,
+    USER_IMAGE_VIEW,
+    USER_PASSWORD_CHANGE,
+    BENEFICIARY_LIST,
+    BENEFICIARY_ADD,
+    BENEFICIARY_MODIFY,
+    BENEFICIARY_DELETE,
+    AUDIT_EVENT_SUBMIT,
+    AUDIT_EVENT_LIST,
+    OPENBANKING_ACCOUNTS_VIEW,
+    OPENBANKING_PAYMENT_EXECUTE,
+    OPENBANKING_CONSENT_VIEW,
+    OPENBANKING_CONSENT_REVOKE,
+    OPENBANKING_TPP_CONSENT_CREATE,
+    OPENBANKING_TPP_CONSENT_VIEW
+}

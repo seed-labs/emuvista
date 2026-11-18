@@ -1,0 +1,10 @@
+[
+  {
+    "name": "network.identity", "description": "Read this agent's identity and container hostname.",
+    "handler": "handlers:identity", "input_schema": {"type": "object", "properties": {}, "additionalProperties": false}
+  },
+  {
+    "name": "network.resolve", "description": "Resolve a hostname using this container's DNS resolver.",
+    "handler": "handlers:resolve", "input_schema": {"type": "object", "properties": {"hostname": {"type": "string", "minLength": 1, "maxLength": 253}}, "required": ["hostname"], "additionalProperties": false}
+  }
+]
