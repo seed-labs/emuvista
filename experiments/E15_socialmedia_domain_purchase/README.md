@@ -153,7 +153,7 @@ docker compose exec --user emuvista-agent hnode_161_agent_alice agentctl call do
 docker compose exec --user emuvista-agent hnode_161_agent_alice agentctl call domain_purchase.status '{"domain":"alice-tool-demo.com"}'
 ```
 
-The [DNS tool](../../services/AgentService/tools/dns/README.md) uses the agent's
+The [DNS tool](../../services/DomainService/DnsService/tools/README.md) uses the agent's
 resolver unless a server IP is specified. NXDOMAIN, empty NOERROR and timeout are
 different results. A newly purchased domain does not necessarily have an A record.
 

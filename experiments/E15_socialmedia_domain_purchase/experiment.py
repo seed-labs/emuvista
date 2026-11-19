@@ -41,7 +41,7 @@ def configure_agents(emu, env_file):
                        'payment': {'url': 'http://10.160.0.71:8080/health'}}))
     agents.addToolPackage(ToolPackage(**MastodonBundle.getAgentTools(),
                                       requirements=('pydantic>=2,<3',)))
-    agents.addToolPackage(ToolPackage('dns', ROOT / 'services/AgentService/tools/dns',
+    agents.addToolPackage(ToolPackage('dns', ROOT / 'services/DomainService/DnsService/tools',
                                       software=['dnsutils']))
     agents.addToolPackage(ToolPackage(**DomainRegistrarBundle.getAgentTools()))
     directory = {'services': {

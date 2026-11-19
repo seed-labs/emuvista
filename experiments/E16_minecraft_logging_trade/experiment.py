@@ -15,12 +15,12 @@ sys.path[:0] = [str(HERE), str(ROOT), str(ROOT.parent / 'seed-emulator')]
 
 import yaml
 from seedemu.compiler import Docker, Platform
-from seedemu.compiler.DockerImage import DockerImage
 from seedemu.containerBundle import InternetMap
 from seedemu.core import Binding, Filter
 from seedemu.layers import PeerRelationship
 from examples.internet.B02_mini_internet_with_dns.mini_internet_with_dns import build_emulator
-from services.AgentService import AgentService, ToolPackage
+from services.AgentService import ToolPackage
+from services.MinecraftAgentService import MinecraftAgentService
 from bundles.MinecraftBundle import MinecraftBundle
 from bundles.MastodonBundle import MastodonBundle
 from bundles.PaymentBundle import PaymentBundle
@@ -31,7 +31,6 @@ from bundles.PaymentBundle import PaymentBundle
 WORLD_SOURCE = HERE / 'world' / '新的世界'
 
 AGENT_ASN = 171
-AGENT_IMAGE = 'node:22-bookworm-slim'
 AGENT_NAMES = ('alice', 'bob', 'carol')
 # Minecraft login names, case-sensitive; e.g. ('seed', 'Alice').
 OP_NAMES = ('seed',)
@@ -59,63 +58,13 @@ def offline_player_uuid(name):
     return str(uuid.UUID(bytes=digest, version=3))
 
 
-def add_minecraft_notifications(source):
-    """Extend only E16's generated framework; fail explicitly if upstream changes."""
-    replacements = (
-        ('class ConversationState(AgentState):\n',
-         'class ConversationState(AgentState):\n    environment_observation: dict\n'),
-        ('    messages: list\n    cycle: int\n',
-         '    messages: list\n    environment_observation: dict\n    cycle: int\n'),
-        ('    middleware.append(model_observation)\n',
-         '    middleware.append(model_observation)\n'
-         '    from logging_trade_notifications import make_middleware\n'
-         '    middleware.append(make_middleware(context))\n'),
-    )
-    for original, replacement in replacements:
-        if source.count(original) != 1:
-            raise ValueError('Built-in framework changed; review E16 notification integration: '
-                             + original.strip())
-        source = source.replace(original, replacement, 1)
-    return source
-
-
-class MinecraftAgentService(AgentService):
-    """Install through SEED's render lifecycle, then use E16's bot supervisor."""
-
-    def _doInstall(self, node, server):
-        first = len(node.getStartCommands())
-        super()._doInstall(node, server)
-        if server is self.clock:
-            return
-        # Keep SEED routing/startup commands; replace only AgentService's launcher.
-        del node.getStartCommands()[first:]
-        config = next(json.loads(file.get()[1]) for file in node.getFiles()
-                      if file.get()[0] == '/etc/emuvista-agent/config.json')
-        # Keep the built-in entrypoint and configuration; extend this node's copy only.
-        entrypoint = config['framework']['entrypoint']
-        application = next(file.get()[1] for file in node.getFiles()
-                           if file.get()[0] == entrypoint)
-        node.setFile(entrypoint, add_minecraft_notifications(application))
-        node.importFile(str(HERE / 'notifications.py'), '/opt/emuvista-agent/logging_trade_notifications.py')
-        bridge = MinecraftBundle.getAgentBridge()
-        for path in bridge.rglob('*'):
-            if path.is_file() and not {'node_modules', '__pycache__'} & set(path.parts):
-                node.importFile(str(path), '/opt/minecraft-bridge/' + path.relative_to(bridge).as_posix())
-        node.importFile(str(HERE / 'start.py'), '/opt/minecraft-logging-trade/start.py')
-        node.addSoftware('util-linux')
-        node.addBuildCommandAtEnd('cd /opt/minecraft-bridge && npm ci --omit=dev && npm cache clean --force')
-        node.appendStartCommand(
-            'env PYTHONPATH=/opt/emuvista-agent PYTHONDONTWRITEBYTECODE=1 '
-            f'MC_AGENT_NAME={node.getName()} python3 -u /opt/minecraft-logging-trade/start.py '
-            '> /var/log/minecraft-logging-trade-supervisor.log 2>&1', fork=True)
-
-
 def create_agents(emu, env_file, *, asn, people):
-    package = ToolPackage(**MinecraftBundle.getAgentTools(),
-                          configuration={'local': {'bridge_url': 'http://127.0.0.1:8765'}})
     social = ToolPackage(**MastodonBundle.getAgentTools(), requirements=['pydantic>=2,<3'])
     payment = ToolPackage(**create_payment().getAgentTools())
-    agents = MinecraftAgentService(tools=[package, social, payment])
+    agents = MinecraftAgentService(
+        tools=[social, payment], supervisor=HERE / 'start.py',
+        notifications=HERE / 'notifications.py',
+    )
     network = emu.getLayer('Base').getAutonomousSystem(asn)
     clock = network.createHost('agent_clock').joinNetwork('net0', address=f'10.{asn}.0.79')
     emu.addBinding(Binding(agents.clock.vnode, filter=Filter(asn=asn, nodeName='^agent_clock$')))
@@ -382,6 +331,15 @@ def create_person(name):
         )
     if name in ('alice', 'bob'):
         role_help += (
+            # Alice 可以向 Bob 买斧头；付款前用 minecraft.chat 商定具体斧头、数量、美元总价和交货箱子。
+            # 斧头没有固定价格，与 Carol 按每个原木 1 美元收购木材的交易分开。
+            # Alice 先查余额，再用 payment.transfer 向 bob@mail.com 付款，amountMinor 以美分计，
+            # 提供 UUID id 和说明斧头交易的描述；重试复用相同 UUID 和参数，结果不确定时查 payment.receipt。
+            # Alice 在聊天中告知 Bob 付款 UUID；Bob 核对回执为 committed，并确认付款人、收款人、金额
+            # 和交易描述符合约定后，将约定斧头存入已确认属于自己的箱子，并告知 Alice 取货位置。
+            # Bob 确认备货完成后，Alice 只能取走约定购买的斧头及数量，不能拿走木材或其他财物。
+            # 双方检查箱子和背包的实际变化，分别记录付款与交货，避免重复付款或交货；Alice 使用前先装备斧头。
+            # 买斧头是可选活动；资金或斧头不足时推迟交易，继续日常工作。
             '\nAlice may buy axes from Bob. Use minecraft.chat to agree on the exact axe, '
             'quantity, total price in USD and delivery chest before payment. No fixed axe '
             'price is prescribed. This is separate from Carol buying logs at 1 USD each. '
@@ -422,8 +380,6 @@ def create_person(name):
                 'seller_accounts': {'alice': 'alice@mail.com', 'bob': 'bob@mail.com'},
             },
             'social_identity': f'@{name}@{MASTODON_DOMAIN}',
-            # 住所提示：姓名告示牌标识居民财产；在房屋侧面寻找楼梯。
-            'home_hint': 'Name signs identify residents\' property; look for stairs at the side of the house.',
         },
         # Compatibility identity for the shared payment client's eager email fallback.
         # This does not provision an email service.
@@ -499,14 +455,12 @@ def createworld(env_file):
     return emu, bundles, nodes
 
 
-def createcompiler(emu, bundles, nodes):
+def createcompiler(emu, bundles):
     # H20's payment bundle is configured after render on the existing AS150.
     payment = create_payment(emu)
     bundles = {**bundles, PAYMENT_ASN: payment}
-    compiler = Docker(platform=Platform.AMD64)
-    compiler.addImage(DockerImage(AGENT_IMAGE, software=['nodejs', 'npm']))
-    for node in nodes:
-        compiler.setImageOverride(node, AGENT_IMAGE)
+    # 下方显式添加 InternetMap Bundle；关闭默认旧地图，避免两者争用 8080。
+    compiler = Docker(platform=Platform.AMD64, internetMapEnabled=False)
     for asn, bundle in bundles.items():
         bundle.addInternalNetwork(str(asn), 'net0',
                                   [f'10.{asn}.0.{10 + i}'
@@ -534,28 +488,6 @@ def configure_world_import(compose, source):
         'type': 'bind', 'source': str(source.resolve()), 'target': '/world-template',
         'read_only': True, 'bind': {'create_host_path': False},
     })
-
-
-
-def configure_build_dependencies(compose, output):
-    """Tell BuildKit which FROM images are built by this Compose project."""
-    images = {service['image']: name for name, service in compose['services'].items()
-              if service.get('image') and service.get('build')}
-    for name, service in compose['services'].items():
-        build = service.get('build')
-        if not build:
-            continue
-        build = {'context': build} if isinstance(build, str) else build
-        dockerfile = Path(output) / build.get('context', '.') / build.get('dockerfile', 'Dockerfile')
-        if not dockerfile.is_file():
-            continue
-        for base in re.findall(r'^FROM\s+(?:--platform=\S+\s+)?(\S+)',
-                               dockerfile.read_text(), re.M | re.I):
-            dependency = images.get(base)
-            if dependency and dependency != name:
-                build.setdefault('additional_contexts', {})[base] = f'service:{dependency}'
-        service['build'] = build
-
 
 def package_mastodon_runtime(compose, output):
     """Bake E16-generated application files into its image, keeping state volumes."""
@@ -604,7 +536,7 @@ def generate(output, env_file):
         raise ValueError(f'{WORLD_SOURCE}: configured WORLD_SOURCE must contain level.dat')
     emu, bundles, nodes = createworld(env_file)
     emu.render()
-    emu.compile(createcompiler(emu, bundles, nodes), str(output), override=True)
+    emu.compile(createcompiler(emu, bundles), str(output), override=True)
 
     shutil.copytree(ROOT / 'docker_images/mastodon', output / 'application-images/mastodon')
     path = output / 'docker-compose.yml'
@@ -617,7 +549,6 @@ def generate(output, env_file):
     compose['name'] = 'output'
     package_mastodon_runtime(compose, output)
     configure_world_import(compose, WORLD_SOURCE)
-    configure_build_dependencies(compose, output)
     metadata = []
     for service_name, service in compose['services'].items():
         identity = service.get('labels', {}).get('org.seedsecuritylabs.seedemu.meta.org.emuvista.agent.id')

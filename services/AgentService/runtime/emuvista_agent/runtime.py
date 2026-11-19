@@ -14,50 +14,40 @@ from .events import result_summary
 from .clock import ClockClient
 
 
-def validate(value, schema, path='argument'):
+def validate(value, schema):
     supported = {'type', 'properties', 'required', 'additionalProperties', 'items',
                  'description', 'enum', 'minimum', 'maximum', 'minLength', 'maxLength'}
     if set(schema) - supported:
-        raise ValueError(f'{path}: unsupported tool schema keywords: {sorted(set(schema) - supported)}')
+        raise ValueError('unsupported tool schema keywords')
     kind = schema.get('type')
     matches = {'object': isinstance(value, dict), 'array': isinstance(value, list),
                'string': isinstance(value, str), 'integer': type(value) is int,
                'number': type(value) in (int, float), 'boolean': type(value) is bool,
                'null': value is None}
     if kind not in matches or not matches[kind]:
-        raise ValueError(f'{path}: expected type {kind}, got {type(value).__name__}. '
-                         'Use the type specified in the tool schema.')
+        raise ValueError('expected argument type ' + str(kind))
     if 'enum' in schema and value not in schema['enum']:
-        raise ValueError(f'{path}: value is not an allowed option. Choose one of {schema["enum"]!r}.')
+        raise ValueError('argument is outside its allowed values')
     if kind == 'object':
         props = schema.get('properties', {})
-        missing = set(schema.get('required', [])) - set(value)
-        if missing:
-            raise ValueError(f'{path}: missing required fields {sorted(missing)}. '
-                             'Supply these fields before retrying.')
+        if set(schema.get('required', [])) - set(value):
+            raise ValueError('required argument is missing')
         if not schema.get('additionalProperties', False) and set(value) - set(props):
-            raise ValueError(f'{path}: unknown fields {sorted(set(value) - set(props))}. '
-                             f'Allowed fields: {sorted(props)}. Remove or rename the unknown fields.')
+            raise ValueError('unknown argument')
         for key, item in value.items():
             if key in props:
-                validate(item, props[key], f'{path}.{key}')
+                validate(item, props[key])
     if kind == 'array':
-        for index, item in enumerate(value):
-            validate(item, schema['items'], f'{path}[{index}]')
+        for item in value:
+            validate(item, schema['items'])
     if kind in ('number', 'integer'):
         if type(value) is float and not math.isfinite(value):
-            raise ValueError(f'{path}: got {value}; expected a finite number, not NaN or infinity.')
+            raise ValueError('number must be finite')
         if value < schema.get('minimum', value) or value > schema.get('maximum', value):
-            minimum = schema.get('minimum', '-infinity')
-            maximum = schema.get('maximum', 'infinity')
-            raise ValueError(f'{path}: got {value}; allowed range is {minimum} to {maximum} inclusive. '
-                             'Retry with a value within this range.')
+            raise ValueError('number is outside its allowed range')
     if kind == 'string':
         if len(value) < schema.get('minLength', 0) or len(value) > schema.get('maxLength', len(value)):
-            minimum = schema.get('minLength', 0)
-            maximum = schema.get('maxLength', 'unbounded')
-            raise ValueError(f'{path} length is {len(value)}; allowed range is {minimum}–{maximum} characters. '
-                             'Adjust this argument to fit the allowed range.')
+            raise ValueError('string length is outside its allowed range')
 
 
 class AgentContext:
@@ -124,8 +114,7 @@ class ToolRegistry:
                               status='denied' if isinstance(error, PermissionError) else 'error',
                               error=str(error))
             raise
-        failed = isinstance(result, dict) and (bool(result.get('error')) or result.get('status') == 'failed')
-        self.context.emit('tool_finished', tool=name, call_id=call_id, status='error' if failed else 'success',
+        self.context.emit('tool_finished', tool=name, call_id=call_id, status='success',
                           source=source,
                           duration_ms=round((time.monotonic() - started) * 1000),
                           result=result, summary=result_summary(result), detail_version=2)

@@ -254,7 +254,7 @@ def main():
                 'Set LLM_API_KEY and LLM_MODEL in the experiment .env before starting agents')
         steps = number('AGENT_MAX_STEPS', 20, 4, 100, integer=True)
         maximum = number('AGENT_MAX_CYCLES', 0, 0, 1000000, integer=True)
-        default_rest = number('AGENT_DEFAULT_REST_SECONDS', 120, 2, 1800)
+        default_rest = number('AGENT_DEFAULT_REST_SECONDS', 120, 30, 1800)
         startup_delay = number('AGENT_START_DELAY_SECONDS', 10, 0, 3600)
         for name in (signal.SIGINT, signal.SIGTERM):
             previous_signals[name] = signal.signal(name, lambda *_: stop.set())

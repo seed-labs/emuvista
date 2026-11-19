@@ -5,7 +5,14 @@ Alice、Bob 白天砍树收集原木，晚上把原木存入自己的箱子、�
 Carol 不砍树，负责从 Alice、Bob 已确认归属的箱子中取出原木。
 Alice 不允许合成；Bob 擅长制作工具，可以自愿合成并装备斧头；
 网络恢复使用 SEED 的 B02 mini Internet with DNS；Minecraft 配置保留在 E16 入口，不依赖其他实验入口。
-继续复用仓库公共的 AgentService、MastodonBundle 和 E99 活动页面资源。
+通过公共的 [MinecraftAgentService](../../services/MinecraftAgentService/) 子类扩展 AgentService，
+继续复用 MastodonBundle 和 E99 活动页面资源。
+
+三个 agent 使用 `handsonsecurity/seedemu-base:2.0` 作为基础镜像。
+`AgentService` 安装 Python、虚拟环境及框架依赖；实验在构建时下载官方 Node.js 22.23.5
+Linux x64 安装包，验证固定的 SHA-256 后安装 Node.js 和随包提供的 npm，再执行 bridge 的
+`npm ci --omit=dev`。版本及校验值位于 `services/MinecraftAgentService/MinecraftAgentService.py`，对应当前 AMD64 编译目标；
+更新 Node.js 时需同时更新两者。构建需要访问 `nodejs.org` 和 npm registry。
 
 Minecraft 使用 `itzg/minecraft-server:java25`，`TYPE=VANILLA`、`VERSION=26.1`。
 服务器配置直接位于 `experiment.py`，底层实现位于 `bundles/MinecraftBundle`；Java 堆默认 2G。
@@ -349,7 +356,8 @@ E16 设置 `SPAWN_PROTECTION=0`：实验房屋位于世界出生点附近，允�
 
 ### Native framework and Minecraft notifications
 
-E16 uses `services/AgentService/frameworks/langchain/application.py` directly.
+E16 uses `MinecraftAgentService` to extend the generated copy of
+`services/AgentService/frameworks/langchain/application.py`; the shared source stays upstream.
 The framework owns the wake/act/rest loop, model-call limits, message history,
 summary policy and SQLite checkpoints. Default summarization triggers at 40
 messages and keeps 20 recent messages; the former E16 eight-round summary is removed.
@@ -357,8 +365,9 @@ Conversation and execution state persist in
 `/home/emuvista-agent/state/langgraph.sqlite` on each agent's existing state volume.
 Old E16 text logs and in-process summaries are not imported into checkpoints.
 
-`notifications.py` supplies the optional `observation_middleware` factory configured
-by E16. Before each model call it polls the existing Minecraft `/notifications`
+E16 passes `start.py` and `notifications.py` to the service as its supervisor and
+notification module. `notifications.py` supplies `make_middleware(context)`.
+Before each model call it polls the existing Minecraft `/notifications`
 feed, puts urgent events first, and adds observations plus their epoch/cursor to
 the checkpointed graph state. Model failures retain these observations. Bridge
 resets and buffer overflow are conveyed using `cursor_reset` and `truncated`.
