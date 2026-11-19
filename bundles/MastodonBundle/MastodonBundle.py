@@ -1,6 +1,7 @@
 """Mastodon application image with persistent state and exported agent tokens."""
 
 from pathlib import Path
+import json
 import re
 
 from seedemu.containerBundle import ContainerBundle
@@ -29,6 +30,8 @@ class MastodonBundle(ContainerBundle):
         self._volumes = []
         self._exports = []
         self._ca_certificate = None
+        self._site_title = None
+        self._bootstrap_email_domains = ()
         for path in ('/var/lib/postgresql', '/var/lib/redis', '/var/lib/mastodon',
                      '/opt/mastodon/public/system'):
             self.addStorage(path, f'{name}-http-' + path.rsplit('/', 1)[-1])
@@ -40,6 +43,18 @@ class MastodonBundle(ContainerBundle):
 
     def addStorage(self, target, name):
         self._volumes.append(BaseVolume(type='volume', source=name, name=name, target=target))
+        return self
+
+    def setStorage(self, target, name):
+        """Replace the named volume for one application path."""
+        self._volumes = [volume for volume in self._volumes
+                         if volume.asDict()['target'] != target]
+        return self.addStorage(target, name)
+
+    def setBootstrap(self, *, site_title=None, email_domains=()):
+        """Customize the site title and account-bootstrap email allowlist."""
+        self._site_title = site_title
+        self._bootstrap_email_domains = tuple(email_domains)
         return self
 
     def exportAgentToken(self, username, volume):
@@ -75,6 +90,14 @@ class MastodonBundle(ContainerBundle):
             # Build scripts remain owned by the application image.
             if target.endswith('/install.sh'):
                 continue
+            if target.endswith('/initialize.rb'):
+                if self._bootstrap_email_domains:
+                    content = ("Rails.configuration.x.email_domains_allowlist = "
+                               "Array(Rails.configuration.x.email_domains_allowlist) | "
+                               + json.dumps(self._bootstrap_email_domains) + '\n' + content)
+                if self._site_title is not None:
+                    content = content.replace("Setting.site_title = 'H16 Mastodon'",
+                                              'Setting.site_title = ' + json.dumps(self._site_title))
             path = root / Path(target).name
             path.write_text(content)
             path.chmod(0o600)
@@ -113,6 +136,8 @@ class MastodonBundle(ContainerBundle):
             'labels': {'org.emuvista.bundle': type(self).__name__,
                        'org.seedsecuritylabs.seedemu.meta.asn': network['asn'],
                        'org.seedsecuritylabs.seedemu.meta.nodename': self._name,
+                       'org.seedsecuritylabs.seedemu.meta.role': 'Host',
+                       'org.seedsecuritylabs.seedemu.meta.net.0.name': network['network_name'],
                        'org.seedsecuritylabs.seedemu.meta.net.0.address': network['ip_addresses'][0]},
             'healthcheck': {'test': ['CMD-SHELL',
                 f'test -f /run/mastodon-bundle.ready && {probe}'],

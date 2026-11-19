@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E16-local read-only monitor server; E99 is not modified."""
+"""E16 Minecraft logging trade activity and world dashboard."""
 
 import argparse
 import errno
@@ -33,7 +33,7 @@ running=False
 for path in glob.glob('/proc/[0-9]*/cmdline'):
     try:
         parts=pathlib.Path(path).read_bytes().split(b'\0')
-        if (any(part.endswith(b'/adapter/main.py') for part in parts)
+        if (any(part.endswith((b'/adapter/main.py', b'/framework/main.py')) for part in parts)
                 or (b'emuvista_agent' in parts and b'run' in parts)):
             running=True;break
     except (OSError,PermissionError):pass
@@ -49,9 +49,41 @@ profile={}
 try:
     configuration=json.loads(pathlib.Path('/etc/emuvista-agent/config.json').read_text())
     profile={'name':configuration['identity'],'tools':configuration.get('allowed_tools',[]),
-             'task':configuration.get('persona',{}).get('task','')}
+             'task':configuration.get('persona',{}).get('instructions', configuration.get('persona',{}).get('task',''))}
 except (OSError,ValueError,KeyError):pass
-print(json.dumps({'log':text,'modified':modified,'process_running':running,'address':address,'profile':profile}))
+from datetime import datetime, timezone
+from urllib.request import ProxyHandler, build_opener
+minecraft = {'observed_at': datetime.now(timezone.utc).isoformat()}
+try:
+    with build_opener(ProxyHandler({})).open('http://127.0.0.1:8765/observe', timeout=3) as response:
+        state = json.load(response)
+    fields = ('connected', 'username', 'health', 'food', 'position', 'dimension',
+              'held_item', 'inventory', 'active_action', 'time_of_day', 'raining', 'error')
+    minecraft.update({key: state[key] for key in fields if key in state})
+    if state.get('connected'):
+        try:
+            # An open window owns the freshest player slots; bot.inventory may lag.
+            # This is a read-only query: never close a container to refresh the UI.
+            with build_opener(ProxyHandler({})).open('http://127.0.0.1:8765/container', timeout=3) as response:
+                window = json.load(response)
+            if window is None:
+                minecraft['inventory_source'] = 'player_inventory'
+            elif isinstance(window, dict) and isinstance(window.get('player_inventory'), list):
+                minecraft['inventory'] = [
+                    {'name': item['name'], 'count': item['count']}
+                    for item in window['player_inventory'] if item is not None]
+                minecraft['inventory_source'] = 'open_window_player_inventory'
+            else:
+                raise ValueError('Current container inventory is unavailable')
+        except Exception as error:
+            # Do not present a possibly stale empty list as a verified empty backpack.
+            minecraft['inventory'] = None
+            minecraft['inventory_source'] = 'unavailable'
+            minecraft['inventory_error'] = str(error)
+except Exception as error:
+    minecraft['error'] = str(error)
+print(json.dumps({'log':text,'modified':modified,'process_running':running,'address':address,
+                  'profile':profile,'minecraft':minecraft}))
 '''
 
 
@@ -72,20 +104,18 @@ def scrub(value):
 
 
 def discover(output):
-    """Read only public metadata from compiler-staged agent configuration."""
+    metadata = output / 'agents.json'
+    if metadata.is_file():
+        return json.loads(metadata.read_text())
     agents = []
-    for folder in sorted(output.glob('hnode_*_agent_*')):
-        dockerfile = folder/'Dockerfile'
-        if not dockerfile.is_file():
+    for path in sorted(output.glob('*/rootfs/etc/emuvista-agent/config.json')):
+        service = path.relative_to(output).parts[0]
+        if not path.is_file():
             continue
-        match = re.search(r'^COPY ([a-f0-9]{32}) /etc/emuvista-agent/config\.json$',
-                          dockerfile.read_text(), re.M)
-        if not match:
-            continue
-        configuration = json.loads((folder/match[1]).read_text())
-        agents.append({'name': configuration['identity'], 'service': folder.name,
-                       'task': configuration.get('services', {}).get('persona', {}).get('task', ''),
-                       'tools': configuration.get('allowed_tools', [])})
+        config = json.loads(path.read_text())
+        agents.append({'name': config['identity'], 'service': service,
+                       'task': config.get('services', {}).get('persona', {}).get('task', ''),
+                       'tools': config.get('allowed_tools', [])})
     return agents
 
 
@@ -113,15 +143,21 @@ def summarize(metadata, container, observation=None, error=None):
     phase, terminal, last_error, reply, round_number = 'starting', None, None, '', None
     for index, event in enumerate(events):
         kind = event.get('event')
-        if 'round' in event:
-            round_number = event['round']
+        if 'round' in event or 'cycle' in event:
+            round_number = event.get('cycle', event.get('round'))
         if kind == 'run_started':
             calls.clear(); active.clear(); terminal = None; reply = ''
         if kind in ('starting', 'waiting', 'paused', 'round_started', 'round_completed', 'readiness_timeout'):
             phase = {'round_started': 'running', 'round_completed': 'running',
                      'readiness_timeout': 'running'}.get(kind, kind)
+        if kind in ('waking', 'moment_completed', 'resident_started', 'framework_resumed'):
+            phase = 'running'
+        elif kind in ('resting', 'recovering'):
+            phase = 'paused'
+        elif kind == 'resident_stopped':
+            phase = 'stopped'
         # Display the final round output, including tool results and legacy messages.
-        if (kind in ('round_completed', 'round_idle')
+        if (kind in ('round_completed', 'round_idle', 'moment_completed')
                 and isinstance(event.get('message'), str) and event['message'].strip()):
             reply = event['message']
         if kind in ('round_failed', 'run_failed') or event.get('error'):
@@ -174,7 +210,7 @@ def summarize(metadata, container, observation=None, error=None):
         match = re.search(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', container.get('Name', ''))
         address = match[0] if match else None
     latest = events[-1] if events else {}
-    return {**metadata, 'status': status, 'container_state': container_state, 'address': address,
+    result = {**metadata, 'status': status, 'container_state': container_state, 'address': address,
             'round': round_number, 'last_update': latest.get('timestamp'),
             'run_id': latest.get('run_id'), 'detailed_events': any(e.get('run_id') for e in events),
             'active_tools': list(active.values()), 'calls': list(calls.values())[-150:],
@@ -182,6 +218,17 @@ def summarize(metadata, container, observation=None, error=None):
             'waiting_for': latest.get('services', []) if phase == 'waiting' else [],
             'tool_count': len(calls),
             'failure_count': sum(c['status'] in ('error', 'denied', 'interrupted') for c in calls.values())}
+    state = scrub((observation or {}).get('minecraft', {}))
+    # Cached health/inventory remain last-known values, never live after failure.
+    state = {**state, 'stale': bool(error or container.get('State') != 'running'
+                                  or state.get('error') or not state.get('observed_at'))}
+    if error:
+        state['error'] = error
+    elif container.get('State') != 'running':
+        state['error'] = 'Agent container is not running.'
+    result['minecraft'] = state
+    return result
+
 
 
 class Observer:
@@ -257,8 +304,23 @@ class Observer:
             return self.snapshot
 
 
-def make_handler(observer, pages=None):
-    pages = pages or {}
+def make_handler(observer):
+    dashboard = HERE / 'dashboard'
+    index = (HERE.parent / 'E99_virtual_world_with_agents/dashboard/index.html').read_text()
+    index = index.replace('E99', 'E16 · Minecraft 伐木交易').replace('Email · Payment · Banking', 'Minecraft · Logging Trade')
+    index = index.replace('<div class="nav-caption">',
+                          '<a class="nav-item" href="/minecraft">Minecraft 状态 →</a><div class="nav-caption">', 1)
+    # A header link stays visible on small screens, where the shared sidebar hides.
+    index = index.replace('<h1>Agent activity</h1>',
+                          '<h1>Agent activity</h1><p><a href="/minecraft">Minecraft 状态 →</a></p>')
+    pages = {'/': (index.encode(), 'text/html')}
+    for route, filename, content_type in (
+        ('/minecraft', 'minecraft.html', 'text/html'),
+        ('/minecraft.js', 'minecraft.js', 'text/javascript'),
+        ('/minecraft.css', 'minecraft.css', 'text/css'),
+    ):
+        pages[route] = ((dashboard / filename).read_bytes(), content_type)
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             try:
@@ -295,18 +357,18 @@ def make_handler(observer, pages=None):
     return Handler
 
 
-def main(*, observer_factory=Observer, handler_factory=make_handler):
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=HERE/'output')
     parser.add_argument('--port', type=int, default=8090)
     args = parser.parse_args()
     if not 1 <= args.port <= 65535: parser.error('port must be between 1 and 65535')
     try:
-        observer = observer_factory(args.output)
+        observer = Observer(args.output)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     try:
-        server = ThreadingHTTPServer(('127.0.0.1', args.port), handler_factory(observer))
+        server = ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(observer))
     except OSError as error:
         if error.errno == errno.EADDRINUSE:
             parser.error(f'Port {args.port} is already in use. Stop the existing listener or choose another port with --port, for example --port 8091.')

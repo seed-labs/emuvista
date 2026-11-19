@@ -23,3 +23,10 @@ named volumes at Compose top level. This path currently supports HTTP.
 allowlist applies only to the Rails account-initialization process. E16 supplies
 its experiment-specific accounts, title, domain, port and token-volume mapping;
 application installation remains in `docker_images/mastodon`.
+
+
+Scenario configuration can use `setBootstrap(site_title=..., email_domains=[...])`
+to customize the title and the account-bootstrap allowlist. Defaults preserve
+existing behavior. `setStorage(target, name)` replaces one default application
+volume; `addStorage(target, name)` adds a mount. Experiments do not need to
+subclass the Bundle or rewrite generated initialization scripts for these options.

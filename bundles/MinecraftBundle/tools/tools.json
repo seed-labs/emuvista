@@ -2,7 +2,7 @@
   {
     "name": "minecraft.observe",
     "handler": "handlers:observe",
-    "description": "Read connection status, position, health, inventory and the nearest 20 client-known entities within 32 blocks. Each entity includes dropped_item with item name and count when available, otherwise null. Also returns nearby_blocks: up to 64 nearest loaded non-air blocks within 32 blocks, with name, position and distance. This is a limited block sample, not a complete terrain map; use find_blocks to locate a specific block type. No line-of-sight filtering. Includes time of day, weather, dimension, orientation, held item and block below. Block data comes from the client cache, which can include local digging predictions; air alone does not prove server-confirmed removal.",
+    "description": "Read connection status, game_mode, position, health, inventory and the nearest 20 client-known entities within 32 blocks. Each entity includes dropped_item with item name and count when available, otherwise null. Also returns nearby_blocks: up to 256 nearest loaded non-air blocks within 32 blocks, with name, position and distance. This is a limited block sample, not a complete terrain map; use find_blocks to locate a specific block type. No line-of-sight filtering. Includes time of day, weather, dimension, orientation, held item and block below. Block data comes from the client cache, which can include local digging predictions; air alone does not prove server-confirmed removal. navigation_landmarks separately lists up to 8 each of doors, gates, stairs, beds and signs within 32 blocks, with properties. These are loaded-block hints, not reachable-path guarantees; no line-of-sight filter.",
     "input_schema": {
       "type": "object",
       "properties": {},
@@ -30,7 +30,7 @@
   {
     "name": "minecraft.move_to",
     "handler": "handlers:move_to",
-    "description": "Start pathfinding to a position within 128 blocks. Uses mineflayer-pathfinder default movements; terrain and inventory may change during navigation. Returns action ID; running is not arrival. Query action_status and observe to verify. Stop the current move before starting another. Waits locally up to 10 seconds and returns the final result when available. Only query action_status if still running or pending.",
+    "description": "Start pathfinding to a position within 128 blocks. Uses the configured navigation engine; automatic digging may be disabled by the experiment. Terrain and inventory may otherwise change during navigation. Returns action ID; running is not arrival. Query action_status and observe to verify. Stop the current move before starting another. Waits locally up to 10 seconds and returns the final result when available. Only query action_status if still running or pending. Prefer entry/stair waypoints for indoor destinations. Closed doors are not opened automatically: use open_door first. On failure, inspect returned navigation_landmarks and choose a different waypoint rather than repeating the target. Completion requires client position to satisfy the goal, including height. For upstairs destinations, inspect a connected staircase and navigate via walkable entrance/turn/landing waypoints with arrival_radius=0; verify height before approaching the bed. A stairs block may be decorative, not a usable staircase. Target feet coordinates, not the supporting solid block.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -47,6 +47,14 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 120
+        },
+        "arrival_radius": {
+          "type": "integer",
+          "enum": [
+            0,
+            1
+          ],
+          "description": "Default 1 allows a neighboring block. Use 0 for a precise walkable waypoint at feet level, especially stair entrances, turns and landings."
         }
       },
       "required": [
@@ -120,7 +128,7 @@
   {
     "name": "minecraft.find_blocks",
     "handler": "handlers:find_blocks",
-    "description": "Find a named block type in loaded terrain only. Returns at most count coordinates; no matches does not prove absence in unexplored terrain. Not line-of-sight filtered. radius must be 1-32 (default 16); count must be 1-20 (default 10).",
+    "description": "Find a named block type in loaded terrain only. Returns at most count coordinates; no matches does not prove absence in unexplored terrain. Not line-of-sight filtered. radius must be 1-32 (default 16); count must be 1-20 (default 10). Use name=\"bed\" for all bed colors or name=\"sign\" for all standing, wall and hanging signs. Results include actual block names; inspect_block reads sign text. Also supports name=\"door\", \"gate\", \"stairs\" across materials. Returns properties including door open/half/facing. Doors are not trapdoors.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -242,9 +250,37 @@
     }
   },
   {
+    "name": "minecraft.search_items",
+    "handler": "handlers:search_items",
+    "description": "Search the connected Minecraft item registry by name, English display name, partial terms or approximate spelling. Returns exact names and IDs, with pagination. Use this when unsure of an item name, then choose a candidate yourself and call get_recipes. A registry match does not imply a recipe or available materials. Read-only.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "minecraft.get_recipes",
     "handler": "handlers:get_recipes",
-    "description": "Read up to 20 crafting recipes for an item, with ingredient counts, output per repetition, table requirement and current craftability. Uses a loaded crafting table within 4 blocks if available. Pass recipe_index to craft; pass the returned next_offset as the offset argument. Does not include furnace recipes.",
+    "description": "Read up to 20 crafting recipes for an item, with ingredient counts, output per repetition, table requirement and current craftability. Uses a loaded crafting table within 4 blocks if available. Pass recipe_index to craft; pass the returned next_offset as the offset argument. Does not include furnace recipes. materials_available describes ingredient counts for one repetition; crafting_table_available reports a nearby usable table, and missing_requirements separates missing materials from a missing table. craftable_once remains the native craftability result.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -252,7 +288,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 100,
-          "description": "Exact item registry name, e.g. birch_planks. Use the key item, not item_name or block."
+          "description": "Exact registry name, e.g. wooden_axe; minecraft:wooden_axe is also accepted. Use search_items if unsure. Use the key item."
         },
         "offset": {
           "type": "integer",
@@ -276,7 +312,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 100,
-          "description": "Exact item registry name, e.g. birch_planks. Use the key item, not item_name or block."
+          "description": "Exact registry name, e.g. wooden_axe; minecraft:wooden_axe is also accepted. Use search_items if unsure. Use the key item."
         },
         "recipe_index": {
           "type": "integer",
@@ -298,7 +334,7 @@
   {
     "name": "minecraft.dig_blocks",
     "handler": "handlers:dig_blocks",
-    "description": "Dig 1-16 loaded blocks in supplied order. Checks native canDigBlock reach/diggability before each dig; move closer and observe if rejected. No automatic navigation, equipment selection or retries. Skips client-known air as unverified. completed_blocks requires a server block update to air, not just Mineflayer local prediction. Stops on first error; missing or non-air server confirmation records unverified_blocks and fails with outcome_unknown. Do not blindly retry: client-known air is not proof of server removal. Server updates do not identify who removed the block or prove item pickup. Use action_status if running; stop can cancel. Default total timeout 120 seconds.",
+    "description": "Dig 1-16 loaded blocks in supplied order. Only survival/creative game modes are permitted; adventure, spectator and unknown modes are rejected before each block. On a mode rejection do not retry in place; leave the protected area and observe again. This does not identify natural trees: never target house logs. Checks native canDigBlock reach/diggability before each dig; move closer and observe if rejected. No automatic navigation, equipment selection or retries. Skips client-known air as unverified. completed_blocks requires a server block update to air, not just Mineflayer local prediction. Stops on first error; missing or non-air server confirmation records unverified_blocks and fails with outcome_unknown. Do not blindly retry: client-known air is not proof of server removal. Server updates do not identify who removed the block or prove item pickup. Use action_status if running; stop can cancel. Default total timeout 120 seconds.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -717,6 +753,42 @@
       "type": "object",
       "properties": {},
       "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.get_time",
+    "handler": "handlers:get_time",
+    "description": "Read the latest server game time immediately, with time_of_day (0-23999 ticks), clock_24h (HH:MM, tick 0 = 06:00) and dimension. This is game time, not wall-clock time. Does not wait, change time or decide whether to sleep. Actual sleep eligibility depends on server rules and circumstances.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "minecraft.open_door",
+    "handler": "handlers:open_door",
+    "description": "Approach and open a wooden door or fence gate within 32 blocks. Accepts either half of a door. Uses the configured navigation engine for approach; automatic digging depends on experiment policy and is disabled in the Minecraft logging trade experiment; does not cross the doorway. Already-open targets are left open. Requires visible reach and confirms a server block update with open=true after activation. Iron doors require redstone and are rejected. Returns action ID; poll action_status while running/pending. On failure inspect the door before retrying. Then move_to an inside waypoint.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "z": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
       "additionalProperties": false
     }
   }

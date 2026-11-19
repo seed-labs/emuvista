@@ -66,6 +66,7 @@ function renderAgent(agent, snapshotStale) {
     item.append(node('span', 'item-name', name), node('span', 'item-count', `× ${count}`));
     inventory.append(item);
   }
+  if (mc.inventory_error) body.append(node('p', 'notice', `背包读取失败：${mc.inventory_error}`));
   if (!counts.size) body.append(node('p', 'placeholder', Array.isArray(mc.inventory) ? '背包为空' : '暂无背包数据'));
   else body.append(inventory);
   card.append(head, body, node('div', 'observed', `${stale ? '上次采集' : '采集时间'} · ${clock(mc.observed_at)}`));

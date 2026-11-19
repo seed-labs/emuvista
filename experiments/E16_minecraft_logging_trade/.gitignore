@@ -1,0 +1,7 @@
+output/
+.env
+node_modules/
+__pycache__/
+.runtime/
+world/*
+!world/.gitkeep

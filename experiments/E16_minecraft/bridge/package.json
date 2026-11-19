@@ -1,7 +1,0 @@
-{
-  "name": "emuvista-e16-minecraft-bridge",
-  "version": "1.0.0",
-  "private": true,
-  "engines": {"node": ">=22"},
-  "dependencies": {"mineflayer": "4.39.0", "mineflayer-pathfinder": "2.4.5"}
-}

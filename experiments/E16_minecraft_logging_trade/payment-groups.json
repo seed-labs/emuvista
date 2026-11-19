@@ -1,0 +1,33 @@
+{
+  "groups": [
+    {
+      "code": "SEED",
+      "name": "Minecraft Community",
+      "currency": {
+        "name": "US Dollar",
+        "symbol": "USD",
+        "rate": 1
+      },
+      "users": [
+        {
+          "name": "Alice",
+          "email": "alice@mail.com",
+          "password": "payment-demo",
+          "balance": 0
+        },
+        {
+          "name": "Bob",
+          "email": "bob@mail.com",
+          "password": "payment-demo",
+          "balance": 0
+        },
+        {
+          "name": "Carol",
+          "email": "carol@mail.com",
+          "password": "payment-demo",
+          "balance": 1000
+        }
+      ]
+    }
+  ]
+}

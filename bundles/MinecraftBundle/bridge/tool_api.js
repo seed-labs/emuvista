@@ -1,5 +1,7 @@
 'use strict'
 const http = require('node:http')
+const { normalizeItemName, searchItems } = require('./item_registry')
+const { categories, blockInfo, landmarks, openDoor } = require('./navigation')
 const { randomUUID } = require('node:crypto')
 
 const FACES = { up: [0, 1, 0], down: [0, -1, 0], north: [0, 0, -1], south: [0, 0, 1], east: [1, 0, 0], west: [-1, 0, 0] }
@@ -21,6 +23,15 @@ function furnaceInfo (bot) {
     fuel_seconds: number(w.fuelSeconds), remaining_seconds: number(w.progressSeconds),
     player_inventory: w.slots.slice(w.inventoryStart, w.inventoryEnd).filter(Boolean).map(item),
     observation_scope: 'client-known window; null progress means unknown; output may change concurrently' }
+}
+
+// Project policy: do not submit digging in protected/adventure mode, even
+// when a special item could allow it. Recheck before each block in a batch.
+function requireDiggingMode (bot) {
+  const mode = bot.game?.gameMode
+  if (!['survival', 'creative'].includes(mode)) {
+    throw new Error(`Digging blocked in game mode ${mode ?? 'unknown'}. Adventure mode may mark a protected residential area. Do not retry digging here or change game mode; leave the protected area, observe again, and harvest only verified natural trees.`)
+  }
 }
 
 // Public native methods only. JSON references are converted to live objects; no eval
@@ -91,7 +102,7 @@ function nativeMethods (bot) {
     mount: method('entity_id:integer', p => bot.mount(entity(p.entity_id))),
     dismount: method('no parameters', () => bot.dismount()),
     moveVehicle: method('left:number, forward:number', p => bot.moveVehicle(p.left, p.forward)),
-    dig: method('position:{x,y,z}, force_look?:boolean; native single-block dig, no navigation', p => bot.dig(block(p.position), p.force_look)),
+    dig: method('position:{x,y,z}, force_look?:boolean; native single-block dig, no navigation', p => { requireDiggingMode(bot); return bot.dig(block(p.position), p.force_look) }),
     stopDigging: method('no parameters; stops native digging', () => bot.stopDigging(), false, true),
     canDigBlock: method('position:{x,y,z}', p => bot.canDigBlock(block(p.position)), true),
     canSeeBlock: method('position:{x,y,z}', p => bot.canSeeBlock(block(p.position)), true),
@@ -130,10 +141,129 @@ function nativeMethods (bot) {
   }
 }
 
+// One shared approach-and-swing primitive; the caller owns cancellation and limits.
+async function attackOnce (bot, target, check, { GoalFollow, ended, job }) {
+  check()
+  let following = false
+  while (true) {
+    check()
+    const reason = ended()
+    if (reason) return reason
+    if (bot.entity.position.distanceTo(target.position) <= 2.5) {
+      bot.pathfinder.setGoal(null)
+      following = false
+      job.phase = 'aiming'
+      await bot.lookAt(target.position.offset(0, (target.height || 1) * 0.8, 0), true)
+      check()
+      const reasonAfterLook = ended()
+      if (reasonAfterLook) return reasonAfterLook
+      if (bot.entity.position.distanceTo(target.position) <= 2.5) {
+        job.phase = 'attacking'
+        bot.attack(target)
+        job.attacks_submitted++
+        return 'attack_submitted'
+      }
+    }
+    job.phase = 'approaching'
+    if (!following) {
+      bot.pathfinder.setGoal(new GoalFollow(target, 1), true)
+      following = true
+    }
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+}
+
+// Observe protocol updates, not blockUpdate events: digging also emits those locally.
+// A received update establishes server state, not which player caused the change.
+function watchServerBlock (bot, position) {
+  let observed = null
+  const record = (p, stateId) => {
+    if (p.x !== position.x || p.y !== position.y || p.z !== position.z) return
+    const definition = bot.registry.blocksArray.find(b => stateId >= b.minStateId && stateId <= b.maxStateId)
+    observed = { state_id: stateId, name: definition?.name ?? null }
+  }
+  const single = packet => record(packet.location, packet.type)
+  const multiple = packet => {
+    const packed = bot.supportFeature('usesMultiblockSingleLong')
+    const chunk = bot.supportFeature('usesMultiblock3DChunkCoords')
+      ? packet.chunkCoordinates : { x: packet.chunkX, y: 0, z: packet.chunkZ }
+    for (const entry of packet.records) {
+      const x = packed ? (entry >> 8) & 15 : (entry.horizontalPos >> 4) & 15
+      const y = packed ? entry & 15 : entry.y
+      const z = packed ? (entry >> 4) & 15 : entry.horizontalPos & 15
+      record({ x: chunk.x * 16 + x, y: chunk.y * 16 + y, z: chunk.z * 16 + z },
+        packed ? entry >> 12 : entry.blockId)
+    }
+  }
+  bot._client.on('block_change', single)
+  bot._client.on('multi_block_change', multiple)
+  return {
+    async wait (accept, alive) {
+      const deadline = Date.now() + 1500
+      while (alive() && Date.now() < deadline) {
+        if (observed && accept(observed.name)) return observed
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
+      return observed
+    },
+    close () {
+      bot._client.removeListener('block_change', single)
+      bot._client.removeListener('multi_block_change', multiple)
+    }
+  }
+}
+
+// Execute in supplied order without automatic navigation, equipment selection or retries.
+async function digBatch ({ bot, targets, job, alive }) {
+  for (let index = 0; index < targets.length; index++) {
+    if (!alive()) return
+    const target = targets[index]
+    job.target = target.position
+    job.phase = 'digging'
+    const block = bot.blockAt(target.position)
+    try {
+      requireDiggingMode(bot)
+      if (!block) throw new Error('Requested block is not loaded')
+      job.block = block.name
+      if (['air', 'cave_air', 'void_air'].includes(block.name)) {
+        job.skipped_blocks.push({ position: target.position, reason: 'client_known_air', server_removal_verified: false })
+        job.remaining_blocks = targets.slice(index + 1).map(t => t.position)
+        continue
+      }
+      if (!bot.canDigBlock(block)) throw new Error('Block is out of digging reach or not diggable; move closer and observe before retrying')
+      const update = watchServerBlock(bot, target.position)
+      try {
+        await bot.dig(block)
+        if (!alive()) return
+        job.phase = 'confirming'
+        const isAir = name => ['air', 'cave_air', 'void_air'].includes(name)
+        const observed = await update.wait(isAir, alive)
+        if (!alive()) return
+        if (!observed || !isAir(observed.name)) {
+          job.outcome_unknown = true
+          job.unverified_blocks.push({ position: target.position, observed_server_block: observed,
+            completion_basis: 'mineflayer_promise_resolved', server_removal_verified: false })
+          throw new Error('Digging not confirmed by server: ' + (observed ? `received ${observed.name ?? observed.state_id}` : 'no target block update received') + '; do not treat client-known air as proof of removal')
+        }
+      } finally {
+        update.close()
+      }
+    } catch (error) {
+      if (!alive()) return
+      job.failed_blocks.push({ position: target.position, reason: error.message })
+      throw error
+    }
+    if (!alive()) return
+    job.completed_blocks.push({ position: target.position, block: block.name,
+      completion_basis: 'server_block_update_to_air', server_removal_verified: true })
+    job.remaining_blocks = targets.slice(index + 1).map(t => t.position)
+  }
+}
+
 function createToolApi (state, dependencies) {
   const { messages, notifications = [], notificationEpoch, jobs, ready, observe, finish, inventoryAction,
-    inventoryItem, inventorySnapshot, itemDefinition, nearbyTable, recipeKey, attackOnce, digBatch,
-    GoalNear, GoalFollow, watchServerBlock } = dependencies
+    inventoryItem, inventorySnapshot, itemDefinition, nearbyTable, recipeKey,
+    GoalNear, GoalFollow } = dependencies
   return function dispatch (method, path, args = {}) {
     // Named tools use a fixed method route and flat arguments; never take method from model input.
     if (method === 'POST' && path.startsWith('/native/')) {
@@ -185,6 +315,11 @@ function createToolApi (state, dependencies) {
       return { stopped: true, action_id: id }
     }
     ready()
+    // Canonicalize item arguments consistently for lookup, inventory comparisons and placement.
+    if (Object.hasOwn(args, 'item')) args = { ...args, item: normalizeItemName(args.item) }
+    if (method === 'GET' && path === '/items/search') {
+      return searchItems(bot.registry, args.query, Number(args.offset ?? 0), Number(args.limit ?? 20))
+    }
     if (method === 'GET' && path === '/native-methods') {
       return Object.fromEntries(Object.entries(nativeMethods(bot)).map(([name, spec]) =>
         [name, { parameters: spec.parameters, read_only: spec.readOnly, can_interrupt: spec.interrupt }]))
@@ -328,6 +463,15 @@ function createToolApi (state, dependencies) {
         return { completion_basis: 'mineflayer_promise_resolved', furnace: furnaceInfo(actor),
           guidance: 'Transfer returned; inspect slots and inventory. This does not prove smelting completed.' }
       })
+    }
+    if (method === 'POST' && path === '/door/open') {
+      if (!['x', 'y', 'z'].every(k => Number.isSafeInteger(args[k]))) throw new Error('Integer block coordinates required')
+      if (bot.currentWindow) throw new Error('Close the current window first')
+      const position = bot.entity.position.clone()
+      Object.assign(position, { x: args.x, y: args.y, z: args.z })
+      if (position.distanceTo(bot.entity.position) > 32) throw new Error('Door must be within 32 blocks')
+      return inventoryAction('open_door', { position }, (actor, check) =>
+        openDoor(actor, position, check, GoalNear, watchServerBlock), 25)
     }
     if (method === 'POST' && ['/use-on-block', '/interact-entity', '/sleep', '/wake'].includes(path)) {
       if (bot.currentWindow) throw new Error('Close the current window first')
@@ -487,12 +631,19 @@ function createToolApi (state, dependencies) {
       const available = new Set(bot.recipesFor(definition.id, null, 1, table).map(recipeKey))
       return { item: args.item, crafting_table: table?.position ?? null, total: recipes.length,
         next_offset: offset + 20 < recipes.length ? offset + 20 : null,
-        recipes: recipes.slice(offset, offset + 20).map((recipe, i) => ({
-          recipe_index: offset + i, output_count: recipe.result.count, requires_table: recipe.requiresTable,
-          craftable_once: available.has(recipeKey(recipe)),
-          ingredients: recipe.delta.filter(d => d.count < 0).map(d => ({
+        recipes: recipes.slice(offset, offset + 20).map((recipe, i) => {
+          const ingredients = recipe.delta.filter(d => d.count < 0).map(d => ({
             name: bot.registry.items[d.id]?.name ?? String(d.id), count: -d.count,
-            available: bot.inventory.count(d.id, d.metadata) })) })) }
+            available: bot.inventory.count(d.id, d.metadata) }))
+          const materials = ingredients.every(item => item.available >= item.count)
+          return { recipe_index: offset + i, output_count: recipe.result.count,
+            requires_table: recipe.requiresTable, crafting_table_available: Boolean(table),
+            materials_available: materials, craftable_once: available.has(recipeKey(recipe)),
+            missing_requirements: [
+              ...(!materials ? ['materials'] : []),
+              ...(recipe.requiresTable && !table ? ['crafting_table'] : [])],
+            ingredients }
+        }) }
     }
     if (method === 'POST' && path === '/craft') {
       const definition = itemDefinition(args.item), repetitions = args.repetitions ?? 1, index = args.recipe_index
@@ -560,10 +711,13 @@ function createToolApi (state, dependencies) {
     // 查询仅限已加载方块，结果不代表视线可见；限制范围和数量以避免过大响应。
     if (method === 'GET' && path === '/block') {
       const coords = ['x', 'y', 'z'].map(k => args[k] === undefined ? NaN : Number(args[k]))
-      if (!coords.every(Number.isSafeInteger)) throw new Error('Integer block coordinates required')
+      if (!coords.every(Number.isSafeInteger)) {
+        const invalid = ['x', 'y', 'z'].filter((key, index) => !Number.isSafeInteger(coords[index]))
+        throw new Error(`inspect_block: invalid coordinates ${invalid.join(', ')}; supply all of x, y, z as safe integers from an observed block position`)
+      }
       const position = bot.entity.position.clone()
       ;[position.x, position.y, position.z] = coords
-      if (position.distanceTo(bot.entity.position) > 32) throw new Error('Block must be within 32 blocks')
+      if (position.distanceTo(bot.entity.position) > 32) throw new Error(`inspect_block: target is ${position.distanceTo(bot.entity.position).toFixed(1)} blocks away; maximum is 32. Move closer before inspecting`)
       const block = bot.blockAt(position)
       if (!block) return { loaded: false, position }
       return { loaded: true, name: block.name, position: block.position, properties: block.getProperties(),
@@ -571,13 +725,15 @@ function createToolApi (state, dependencies) {
     }
     if (method === 'GET' && path === '/blocks') {
       const definition = bot.registry.blocksByName[args.name]
-      if (!definition) throw new Error('Unknown block name')
+      const category = categories[args.name] || null
+      if (!definition && !category) throw new Error(`find_blocks.name: unknown block name ${JSON.stringify(args.name)}. Use an exact block registry name such as oak_log or chest (without minecraft:), or a supported category: ${Object.keys(categories).join(', ')}. Generic log or wood is not supported`)
       const radius = Number(args.radius ?? 16), count = Number(args.count ?? 10)
-      if (!Number.isInteger(radius) || radius < 1 || radius > 32 ||
-          !Number.isInteger(count) || count < 1 || count > 20) throw new Error('Invalid search radius or count')
-      const positions = bot.findBlocks({ matching: definition.id, maxDistance: radius, count })
-      return { blocks: positions.map(position => ({ name: definition.name, position,
-        distance: position.distanceTo(bot.entity.position) })),
+      const invalid = []
+      if (!Number.isInteger(radius) || radius < 1 || radius > 32) invalid.push(`radius=${JSON.stringify(args.radius)}; expected an integer from 1 to 32`)
+      if (!Number.isInteger(count) || count < 1 || count > 20) invalid.push(`count=${JSON.stringify(args.count)}; expected an integer from 1 to 20`)
+      if (invalid.length) throw new Error(`find_blocks: ${invalid.join('; ')}. To explore farther, move to another observed location and search again within these limits`)
+      const positions = bot.findBlocks({ matching: category ? block => category.test(block.name) : definition.id, maxDistance: radius, count })
+      return { blocks: positions.map(position => bot.blockAt(position)).filter(Boolean).map(block => blockInfo(bot, block)),
         observation_scope: 'loaded blocks only; not line-of-sight filtered; empty does not prove absence elsewhere' }
     }
     // Native chat handles message splitting and server command semantics.
@@ -595,11 +751,16 @@ function createToolApi (state, dependencies) {
       if (target.distanceTo(bot.entity.position) > 128) throw new Error('Target must be within 128 blocks')
       const seconds = args.timeout_seconds ?? 30
       if (!Number.isInteger(seconds) || seconds < 1 || seconds > 120) throw new Error('Invalid movement timeout')
+      const radius = args.arrival_radius ?? 1
+      if (![0, 1].includes(radius)) throw new Error('arrival_radius must be 0 or 1')
+      const goal = new GoalNear(args.x, args.y, args.z, radius)
       // 创建任务记录和超时计时器；超时后将任务标为失败并停止寻路。
       const job = { id: randomUUID(), kind: 'move', status: 'running', target: { x: args.x, y: args.y, z: args.z } }
       jobs.set(job.id, job)
       if (jobs.size > 100) jobs.delete(jobs.keys().next().value)
       const timer = setTimeout(() => {
+        job.result = { position: bot.entity.position.clone(), navigation_landmarks: landmarks(bot),
+          guidance: 'Find an entrance or stairs and choose an intermediate waypoint. Open closed wooden doors with open_door. Do not repeatedly submit the same blocked target.' }
         finish('failed', 'Movement timed out; inspect current position before retrying')
         bot.pathfinder.setGoal(null)
       }, seconds * 1000)
@@ -608,15 +769,27 @@ function createToolApi (state, dependencies) {
       const actor = bot
       Promise.resolve().then(() => {
         if (state.active?.job !== job || state.bot !== actor) return
-        return actor.pathfinder.goto(new GoalNear(args.x, args.y, args.z, 1))
+        return actor.pathfinder.goto(goal)
       }).then(() => {
         if (state.active?.job === job && state.bot === actor) {
-          job.result = { position: actor.entity.position.clone(), arrival_radius: 1,
-            completion_basis: 'pathfinder_goto_resolved' }
+          // goto can resolve on an empty path even when the target was not reached.
+          const position = actor.entity.position.clone()
+          const standingBlock = { x: Math.floor(position.x), y: Math.floor(position.y), z: Math.floor(position.z) }
+          if (!goal.isEnd(standingBlock)) {
+            actor.pathfinder.setGoal(null)
+            throw new Error('Pathfinder stopped before reaching the target; inspect position and choose entrance/stair/landing waypoints')
+          }
+          job.result = { position, arrival_radius: radius, arrived: true,
+            completion_basis: 'client_position_satisfies_goal' }
           finish('completed')
         }
       }).catch(error => {
-        if (state.active?.job === job) finish('failed', error.message)
+        if (state.active?.job === job) {
+          job.result = { position: actor.entity.position.clone(), navigation_landmarks: landmarks(actor),
+            arrived: false, arrival_radius: radius,
+            guidance: 'Inspect entrances and stairs. For an upstairs target, find the connected staircase and use arrival_radius=0 for observed walkable entrance, turn and landing waypoints. Coordinates refer to feet, not the supporting block. Verify height before targeting the bed; never repeat the same failed target.' }
+          finish('failed', error.message)
+        }
       })
       return { ...job }
     }
@@ -641,7 +814,8 @@ function serve (bridge, port = 8765) {
     } catch (error) {
       // 当前将正文解析和业务错误统一映射为 HTTP 400。
       res.statusCode = 400
-      res.end(JSON.stringify({ error: error.message }))
+      res.end(JSON.stringify({ error: error.message,
+        ...(Array.isArray(error.candidates) ? { candidates: error.candidates } : {}) }))
     }
   })
   server.listen(port, '127.0.0.1')
@@ -649,4 +823,4 @@ function serve (bridge, port = 8765) {
 }
 
 
-module.exports = { createToolApi, serve, nativeMethods }
+module.exports = { createToolApi, serve, nativeMethods, attackOnce, digBatch, watchServerBlock }

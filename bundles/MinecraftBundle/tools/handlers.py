@@ -96,6 +96,10 @@ def craft(arguments, context):
     return _start_action(context, '/craft', arguments)
 
 
+def search_items(arguments, context):
+    return _call(context, '/items/search?' + urlencode(arguments))
+
+
 def get_recipes(arguments, context):
     return _call(context, '/recipes?' + urlencode(arguments))
 
@@ -178,3 +182,23 @@ def sleep(arguments, context):
 
 def wake(arguments, context):
     return _start_action(context, '/wake', arguments)
+
+
+def get_time(arguments, context):
+    """Read game time immediately; no waiting or server time changes."""
+    observation = observe({}, context)
+    if not observation.get('connected'):
+        return {'connected': False, 'error': observation.get('error', 'Minecraft is disconnected')}
+    ticks = observation.get('time_of_day')
+    if isinstance(ticks, bool) or not isinstance(ticks, (int, float)) or not 0 <= ticks < 24000:
+        return {'connected': True, 'error': 'Game time is unavailable'}
+    minutes = (int(ticks * 60 / 1000) + 6 * 60) % (24 * 60)
+    return {'connected': True, 'time_of_day': ticks,
+            'clock_24h': f'{minutes // 60:02d}:{minutes % 60:02d}',
+            'dimension': observation.get('dimension'),
+            'source': 'latest server time received by Mineflayer',
+            'clock_basis': '24000 ticks per game day; tick 0 = 06:00; not real-world time'}
+
+
+def open_door(arguments, context):
+    return _start_action(context, '/door/open', arguments)

@@ -11,8 +11,13 @@ from emuvista_agent.launch import read_environment
 
 
 def main():
-    os.environ.update(read_environment('/run/e16.env', ('MC_', 'LLM_', 'AGENT_')))
-    identity = os.environ.get('E16_AGENT_NAME')
+    os.environ.update(read_environment('/run/minecraft-logging-trade.env', ('MC_', 'LLM_', 'AGENT_')))
+    # E16 residents use doors; breaking obstacles requires an explicit dig_blocks call.
+    os.environ['MC_PATHFINDER_CAN_DIG'] = 'false'
+    # Accept older hostnames; simulated DNS resolves minecraft.com.
+    if os.environ.get('MC_HOST', 'minecraft') in ('minecraft', 'minecraft.e16.test', 'minecraft.e16.com'):
+        os.environ['MC_HOST'] = 'minecraft.com'
+    identity = os.environ.get('MC_AGENT_NAME')
     config = json.loads(Path('/etc/emuvista-agent/config.json').read_text())
     if not identity or identity != config['identity']:
         raise ValueError('Container identity does not match its agent configuration')
@@ -23,7 +28,7 @@ def main():
     os.environ['MC_AUTH'] = os.environ.get(prefix + 'AUTH') or os.environ.get('MC_AUTH', 'offline')
     port = os.environ.get('MC_PORT', '')
     if not port.isdecimal() or not 1 <= int(port) <= 65535:
-        raise ValueError('Set MC_PORT in E16 .env to the port displayed by Open to LAN, then restart the agent')
+        raise ValueError('Set MC_PORT in E16 .env to the Compose server port (25565), then restart the agent')
     if os.environ.get('MC_AUTH', 'offline') not in ('offline', 'microsoft'):
         raise ValueError('MC_AUTH must be offline or microsoft')
     timeout = float(os.environ.get('MC_READY_TIMEOUT_SECONDS', '180'))
