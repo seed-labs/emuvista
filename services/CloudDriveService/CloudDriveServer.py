@@ -391,6 +391,13 @@ class NextcloudServer(Server):
             raise RuntimeError("NextcloudServer has not been configured")
         return self._address
 
+    def getURL(self) -> str:
+        """Return the drive's internal HTTP or HTTPS origin."""
+        hostname = self._server_name[0] if self._server_name != ['_'] else self.getAddress()
+        scheme = 'https' if self._https_enabled else 'http'
+        port = 443 if self._https_enabled else self._port
+        return f'{scheme}://{hostname}:{port}'
+
     def install(self, node: Node) -> None:
         if node is not self._node or self._database is None or self._object_storage is None:
             raise RuntimeError("NextcloudServer installation target changed after configure")

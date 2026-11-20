@@ -70,6 +70,15 @@ drive.setAdminCredentials("...", "...")
 
 Use `getCredentialManager()` only when deployment automation must deliver generated credentials to an authorized component. Do not write returned credentials to logs or source files.
 
+## Agent tools
+
+After drive bindings are configured, `getAgentTools()` exports the `cloud` tool
+package and internal connection settings. Register it with
+`agents.addToolsFrom(cloud)`. Personal WebDAV credentials belong in
+`persona.accounts.cloud`, keyed by drive vnode. The tools run inside the Agent
+container and provide drive discovery, upload, download and read-only sharing.
+See [tools](tools/) for configuration and limits.
+
 ## Persistence and recovery
 
 Persistence is disabled by default. When enabled, PostgreSQL data, stored objects, Nextcloud configuration and data, and matching credentials are saved in a caller-selected host directory:
