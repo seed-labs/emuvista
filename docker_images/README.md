@@ -13,6 +13,7 @@ From the repository root, build all custom images for a Bundle:
 ```sh
 docker compose -f docker_images/payment/compose.yml build
 docker compose -f docker_images/bank/compose.yml build
+docker compose -f docker_images/erp/compose.yml build
 ```
 
 Alternatively, enter a group directory and run `docker compose build`. Append
@@ -24,6 +25,12 @@ Use `DOCKER_BUILDKIT=0 docker compose build` for the legacy builder.
 | PaymentBundle | [payment/compose.yml](payment/compose.yml) | payment-app, payment-accounting, payment-database, payment-cli, payment-files |
 | BankBundle | [bank/compose.yml](bank/compose.yml) | bank-consumer, bank-frontend |
 | ShopService | [shop/compose.yml](shop/compose.yml) | shop-app |
+| ERPBundle | [erp/compose.yml](erp/compose.yml) | erp-app |
+| IdentityBundle | [identity/compose.yml](identity/compose.yml) | identity-server, identity-directory, auth-gateway |
+| WorkChatBundle | [workchat/compose.yml](workchat/compose.yml) | workchat-cache, workchat-database |
+| ProjectBundle | [project/compose.yml](project/compose.yml) | project-app, auth-gateway |
+| KnowledgeBundle | [knowledge/compose.yml](knowledge/compose.yml) | knowledge-app |
+| HelpdeskBundle | [helpdesk/compose.yml](helpdesk/compose.yml) | helpdesk-app, auth-gateway |
 
 These files prepare images. Runtime configuration and startup remain in each
 example's generated `output/docker-compose.yml`, which also pulls unmodified
