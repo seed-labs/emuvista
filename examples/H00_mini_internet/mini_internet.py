@@ -7,6 +7,7 @@ import argparse
 from pathlib import Path
 
 from seedemu.compiler import Docker, Platform
+from seedemu.containerBundle import InternetMap
 from seedemu.core import Binding, Emulator, Filter
 from seedemu.layers import Base, Ebgp, Ibgp, Ospf, PeerRelationship, Routing
 from seedemu.services import DomainNameCachingService, DomainNameService
@@ -241,8 +242,11 @@ def main():
     emu = build_emulator(args.hosts_per_as)
     emu.render()
     platform = Platform.AMD64 if args.platform == 'amd' else Platform.ARM64
-    emu.compile(Docker(platform=platform, internetMapEnabled=True),
-                str(args.output.resolve()), override=True)
+    compiler = Docker(platform=platform)
+    internet_map = InternetMap(emu)
+    internet_map.setPorts([8083, 8080, 8084])
+    compiler.addContainerBundle(internet_map)
+    emu.compile(compiler, str(args.output.resolve()), override=True)
 
 
 if __name__ == '__main__':

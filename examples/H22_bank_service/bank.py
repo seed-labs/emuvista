@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from seedemu.compiler import Docker, Platform
+from seedemu.containerBundle import InternetMap
 from examples.H21_email_service.email_service import add_mail_records
 from examples.H00_mini_internet import DNS_RESOLVER, build_emulator, host_zone
 from bundles.BankBundle import BankBundle
@@ -55,7 +56,10 @@ def main():
     if args.state:
         email.setSavePath(args.state / 'email')
         bank.setSavePath(args.state / 'bank')
-    compiler = Docker(platform=Platform.AMD64, internetMapEnabled=True)
+    compiler = Docker(platform=Platform.AMD64)
+    internet_map = InternetMap(emu)
+    internet_map.setPorts([8083, 8080, 8084])
+    compiler.addContainerBundle(internet_map)
     compiler.addContainerBundle(email)
     compiler.addContainerBundle(bank)
     emu.compile(compiler, str(args.output.resolve()), override=True)
