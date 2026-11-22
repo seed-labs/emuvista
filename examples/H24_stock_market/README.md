@@ -4,9 +4,9 @@ H24 runs an LLM-driven order and settlement cycle through Stock Service and Quan
 
 1. Alice owns one `AMZ` share and rests a sell limit order at **$11.00**.
 2. Bob owns one `AMZ` share and rests a cheaper sell limit order at **$10.00**.
-3. Carol has **$50.00** in her Stock cash account and submits a buy limit order at **$10.50**.
+3. Carol has **$50.00** in her Stock cash account and submits a buy limit order for one share at **$11.00**.
 
-Carol's buy crosses both asks. QuantReplay matches Bob's lower-priced ask first, at Bob's resting price of **$10.00**. Bob's share moves to Carol, Bob receives $10.00, Carol's cash falls by $10.00, and Alice's $11.00 order remains open. The browser dashboard reads the live order book, fills, and ownership from Stock Service; it is not a replay fixture.
+Both asks are eligible at Carol's limit. QuantReplay is expected to match Bob's ask first at his resting price of **$10.00**, even though Alice placed her order earlier. Bob's share moves to Carol, Bob receives $10.00, Carol's cash falls by $10.00, and Alice's $11.00 order remains open. The browser dashboard reads live orders, fills, and holdings from Stock Service.
 
 The dashboard and `GET /api/v1/market/AMZ` show the best bid, best ask, and latest trade price from the simulated market. Prices appear as agents post orders and execute trades.
 

@@ -489,7 +489,7 @@ def run_actions() -> None:
         if bob["status"] not in {"NEW", "PARTIALLY_FILLED", "FILLED"}:
             raise RuntimeError("Bob's assigned sell order was not accepted")
 
-        publish("carol", "Carol's turn: review both asks and her cash, then decide whether to bid up to $10.50.")
+        publish("carol", "Carol's turn: review both asks and her cash, then decide whether to bid up to $11.00.")
         carol = ask_agent_vm("Carol")
         if carol["status"] != "FILLED" or Decimal(carol["average_fill_price"]) != Decimal("10.00"):
             raise RuntimeError("Carol's order did not fill against Bob at the expected $10.00 price")

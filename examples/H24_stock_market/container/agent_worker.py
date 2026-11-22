@@ -30,7 +30,7 @@ AGENT: dict | None = None
 ASSIGNMENTS = {
     "Alice": ("SELL", "11.00", "Offer exactly 1 AMZ share for sale at a $11.00 limit."),
     "Bob": ("SELL", "10.00", "Offer exactly 1 AMZ share for sale at a $10.00 limit."),
-    "Carol": ("BUY", "10.50", "Inspect the visible AMZ asks and your available cash. If safe, bid for exactly 1 share with a $10.50 limit. The exchange should choose the cheapest eligible ask."),
+    "Carol": ("BUY", "11.00", "Inspect the visible AMZ asks and your available cash. If safe, bid for exactly 1 share with a $11.00 limit. The exchange should choose the cheapest eligible ask."),
 }
 
 
