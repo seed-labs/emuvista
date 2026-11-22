@@ -160,20 +160,20 @@ def _configure_company_network(emu):
 
     company.getNetwork('net0').setDisplayName('Company Edge LAN')
     edge = company.getRouter('router0').setDisplayName('Company Edge Router')
-    company.createNetwork('edge_link', prefix=f'{prefix}.2.0/30')
+    company.createNetwork('edge_link', prefix=f'{prefix}.2.0/29')
     company.createNetwork('backbone', prefix=f'{prefix}.1.0/24').setDisplayName('Headquarters Backbone')
-    company.createNetwork('branch_link', prefix=f'{prefix}.3.0/30').setDisplayName('Branch Routed Link')
-    edge.joinNetwork('edge_link', address=f'{prefix}.2.1')
+    company.createNetwork('branch_link', prefix=f'{prefix}.3.0/29').setDisplayName('Branch Routed Link')
+    edge.joinNetwork('edge_link', address=f'{prefix}.2.2')
     core = company.createRouter('core').setDisplayName('Company Core Router')
-    core.joinNetwork('edge_link', address=f'{prefix}.2.2')
-    core.joinNetwork('backbone', address=f'{prefix}.1.1')
-    core.joinNetwork('branch_link', address=f'{prefix}.3.1')
+    core.joinNetwork('edge_link', address=f'{prefix}.2.3')
+    core.joinNetwork('backbone', address=f'{prefix}.1.254')
+    core.joinNetwork('branch_link', address=f'{prefix}.3.2')
 
     for name, subnet, display, hosts in COMPANY_LANS:
         company.createNetwork(name, prefix=f'{prefix}.{subnet}.0/24').setDisplayName(display)
         router = company.createRouter(name + '_router').setDisplayName(display + ' Router')
         if name == 'branch':
-            router.joinNetwork('branch_link', address=f'{prefix}.3.2')
+            router.joinNetwork('branch_link', address=f'{prefix}.3.3')
         else:
             router.joinNetwork('backbone', address=f'{prefix}.1.{subnet}')
         router.joinNetwork(name, address=f'{prefix}.{subnet}.254')

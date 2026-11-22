@@ -1,0 +1,8 @@
+services:
+  project-app:
+    image: handsonsecurity/emuvista-project-app:1.0
+    build: ./project-app
+
+  auth-gateway:
+    image: handsonsecurity/emuvista-auth-gateway:1.0
+    build: ../identity/auth-gateway

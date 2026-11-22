@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+mkdir -p /etc/sasl2 /var/lib/memcached
+printf '%s\n' 'mech_list: plain' 'pwcheck_method: auxprop' 'auxprop_plugin: sasldb' 'sasldb_path: /var/lib/memcached/sasldb2' > /etc/sasl2/memcached.conf
+printf '%s' "$CACHE_PASSWORD" | saslpasswd2 -p -c -f /var/lib/memcached/sasldb2 -u "$(hostname)" zulip
+printf '%s' "$CACHE_PASSWORD" | saslpasswd2 -p -c -f /var/lib/memcached/sasldb2 -u localhost zulip
+chown -R memcache:memcache /var/lib/memcached
+exec memcached -u memcache -S -m 128 -p 11211

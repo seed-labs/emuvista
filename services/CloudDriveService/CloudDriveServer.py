@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ipaddress import IPv4Address, ip_address
+from pathlib import Path
 from re import fullmatch
 from shlex import quote
 from typing import Callable, Iterable, Optional
@@ -314,6 +315,7 @@ class NextcloudServer(Server):
         self._address: Optional[str] = None
         self._database: Optional[PostgreSQLServer] = None
         self._object_storage: Optional[ObjectStorageServer] = None
+        self._identity = None
 
     def setVersion(self, version: str, sha256: str) -> NextcloudServer:
         if not fullmatch(r"[0-9]+(?:\.[0-9]+){2}", version):
@@ -355,6 +357,11 @@ class NextcloudServer(Server):
 
     def setCAServer(self, ca_server) -> NextcloudServer:
         self._https_callback = ca_server.enableHTTPSFunc
+        return self
+
+    def connectIdentity(self, identity) -> NextcloudServer:
+        """Record a company OIDC provider; install prepares the native plugin."""
+        self._identity = identity
         return self
 
     def enableHTTPS(self, enabled: bool = True) -> NextcloudServer:
@@ -500,9 +507,49 @@ class NextcloudServer(Server):
             "chmod +x /opt/seedvista/cloud-drive/nextcloud-init && "
             "/opt/seedvista/cloud-drive/nextcloud-init"
         )
+        if self._identity:
+            self._install_identity(node, primary_name)
         if self._https_enabled:
             self._https_callback(node, self)
         node.appendClassName("CloudDriveNextcloud")
         node.setDisplayName("Cloud Drive")
         for name in concrete_names:
             node.addHostName(name)
+
+    def _install_identity(self, node: Node, hostname: str) -> None:
+        """Install the supported OIDC backend and its provider configuration."""
+        port = next((host for host, target, _ in node.getPorts() if target == self._port), None)
+        public = f'http://localhost:{port}' if port else 'http://' + hostname
+        name = 'cloud-' + hostname.replace('.', '-')
+        redirects = [origin + path for origin in (public, 'http://' + hostname)
+                     for path in ('/apps/user_oidc/code', '/index.php/apps/user_oidc/code')]
+        provider = self._identity.registerClient(name, redirects)
+        self._identity.registerEmployeeConsumer(name, Path(__file__).with_name('identity.py'), {
+            'url': 'http://' + hostname, 'user': self._admin_user, 'password': self._admin_password,
+        })
+        archive = 'https://github.com/nextcloud-releases/user_oidc/releases/download/v8.13.0/user_oidc-v8.13.0.tar.gz'
+        checksum = '6f13fa0477144a6812d8648626c64cee91807d1d0b60ca41424543086b9e2775'
+        node.addBuildCommand(f'curl --fail --location --retry 5 {quote(archive)} -o /tmp/user-oidc.tar.gz')
+        node.addBuildCommand(f"echo '{checksum}  /tmp/user-oidc.tar.gz' | sha256sum --check - "
+                             '&& tar -xzf /tmp/user-oidc.tar.gz -C /var/www/html/apps '
+                             '&& rm /tmp/user-oidc.tar.gz')
+        command = 'php /var/www/html/occ '
+        script = '#!/bin/sh\nset -eu\n'
+        script += 'for attempt in $(seq 1 150); do\n'
+        script += '  if curl -fsS ' + quote(provider['discovery_url']) + ' >/dev/null; then break; fi\n'
+        script += '  sleep 2\ndone\n'
+        script += command + 'config:system:set allow_local_remote_servers --type=boolean --value=true\n'
+        script += command + 'config:system:set htaccess.RewriteBase --value=/\n'
+        script += command + 'maintenance:update:htaccess\n'
+        script += command + 'app:enable user_oidc\n'
+        script += command + 'config:app:set user_oidc allow_insecure_http --type=boolean --value=true\n'
+        script += command + 'config:app:set user_oidc allow_multiple_user_backends --value=0\n'
+        script += command + 'config:system:set overwrite.cli.url --value=' + quote(public) + '\n'
+        script += command + 'user_oidc:provider company --unique-uid=0 --mapping-uid=employee_id '
+        script += '--mapping-display-name=name --mapping-email=email '
+        script += '--clientid=' + quote(provider['client_id']) + ' '
+        script += '--clientsecret=' + quote(provider['client_secret']) + ' '
+        script += '--discoveryuri=' + quote(provider['discovery_url']) + '\n'
+        node.setFile('/opt/seedvista/cloud-drive/identity-init', script)
+        node.appendStartCommand('chmod +x /opt/seedvista/cloud-drive/identity-init && '
+                                'runuser -u www-data -- /opt/seedvista/cloud-drive/identity-init')

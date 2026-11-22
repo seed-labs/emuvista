@@ -70,6 +70,14 @@ drive.setAdminCredentials("...", "...")
 
 Use `getCredentialManager()` only when deployment automation must deliver generated credentials to an authorized component. Do not write returned credentials to logs or source files.
 
+## Company identity
+
+Call `drive.connectIdentity(identity_bundle)` to enable the native OIDC login
+plugin and register the drive with the shared employee directory. Employee IDs
+identify accounts; the directory updates names, email addresses and account status
+through Nextcloud's native APIs. Local administrator login remains available at
+`/login?direct=1`. See [H98](../../examples/H98_virtual_company/) for the complete example.
+
 ## Agent tools
 
 After drive bindings are configured, `getAgentTools()` exports the `cloud` tool
