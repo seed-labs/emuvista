@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f5f6fa">
+  <title>Stock Market · Emu Exchange</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Emu Exchange home"><span class="brand-mark">E</span><span>emu<span class="brand-light">exchange</span></span></a>
+    <div class="market-status"><span class="status-dot"></span><span>SIMULATION MARKET</span><span class="status-divider"></span><span id="market-clock">09:30:00</span></div>
+    <div class="demo-chip"><span class="chip-dot"></span>DEMO SCENARIO</div>
+  </header>
+
+  <main class="page-shell">
+    <div class="page-heading">
+      <div><div class="eyebrow">SEED AGENT SOCIETY <span class="eyebrow-line"></span> MARKET VIEW</div><h1>Market overview</h1><p class="subheading">Follow orders, trades, and share ownership as agents meet in the market.</p></div>
+      <div class="scenario-picker"><label>SCENARIO 01</label><span style="font-weight:600;font-size:12px;color:#41495a">Alice and Carol compete to buy</span></div>
+    </div>
+
+    <div class="demo-notice"><span class="notice-icon">i</span><span><strong>Interactive demo.</strong> This is a sample market replay; it does not submit real orders or move real funds.</span><button id="notice-dismiss" aria-label="Dismiss notice">×</button></div>
+
+    <section class="agent-control card" id="agent-control" hidden>
+      <div class="agent-control-copy"><div class="section-kicker">LLM AGENTS</div><h2>Agent actions</h2><p id="agent-control-status" role="status" aria-live="polite">Preparing the agents. No orders will be submitted until you start them.</p></div>
+      <button class="start-actions-button" id="start-actions-button" type="button" disabled>Preparing agents…</button>
+      <ol class="agent-action-events" id="agent-action-events" aria-live="polite"></ol>
+    </section>
+
+    <section class="market-grid">
+      <div class="left-column">
+        <article class="card quote-card">
+          <div class="quote-top"><div class="company-lockup"><div class="company-icon">ER</div><div><div class="company-name" id="company-name">Emu Robotics</div><div class="ticker-line"><span id="ticker">EMU</span><span class="tiny-separator">·</span><span>Agent market</span></div></div></div><div class="market-open"><span class="open-dot"></span>Market open</div></div>
+          <div class="quote-main"><div><div class="last-price" id="last-price">—</div><div class="price-caption">LAST TRADE PRICE <span class="tiny-separator">·</span> USD</div></div><div class="price-change" id="price-change"><span class="change-arrow">↗</span><span>—</span><small>NO CHANGE</small></div></div>
+          <div class="quote-foot"><div><span>BEST BID</span><strong class="bid-text" id="best-bid">—</strong></div><div><span>BEST ASK</span><strong class="ask-text" id="best-ask">—</strong></div><div><span>SPREAD</span><strong id="spread">—</strong></div><div><span>VOLUME</span><strong id="volume">0 <small>shares</small></strong></div></div>
+          <div class="chart-wrap"><svg id="price-chart" viewBox="0 0 760 136" preserveAspectRatio="none" role="img" aria-label="Trade price chart"></svg><div class="chart-label">TRADE PRICE</div><div class="chart-time"><span>09:30</span><span>NOW</span></div></div>
+        </article>
+
+        <div class="section-row"><div><div class="section-kicker">LIVE MARKET</div><h2>Order book</h2></div><div class="book-symbol"><span class="book-pulse"></span>EMU <span class="tiny-separator">·</span> LIMIT ORDERS</div></div>
+        <article class="card order-card">
+          <div class="book-head"><span>PRICE <small>USD</small></span><span>QUANTITY</span><span>AGENT</span></div>
+          <div class="book-side-label ask-label"><span>SELL ORDERS</span><span id="ask-count">0 orders</span></div>
+          <div id="asks-list" class="book-rows empty-book"><div class="empty-order">No open sell orders</div></div>
+          <div class="book-mid"><span id="book-mid-price">—</span><span>LAST TRADE</span><span class="mid-line"></span></div>
+          <div id="bids-list" class="book-rows empty-book"><div class="empty-order">No open buy orders</div></div>
+          <div class="book-side-label bid-label"><span>BUY ORDERS</span><span id="bid-count">0 orders</span></div>
+          <div class="priority-rule"><strong>PRICE PRIORITY</strong><span>Buy: high to low</span><span>Sell: low to high</span><span>Same price: earliest order first</span></div>
+          <div class="book-foot"><span>Open orders remain until filled or cancelled.</span><span>DEMO FEED <i class="feed-dot"></i></span></div>
+        </article>
+      </div>
+
+      <aside class="right-column">
+        <article class="card holdings-card">
+          <div class="card-heading"><div><div class="section-kicker">OWNERSHIP</div><h2>Agent holdings</h2></div><span class="count-pill" id="agent-count">02</span></div>
+          <p class="card-description">Share balances update when a trade is filled.</p>
+          <div class="holdings-total"><span>TOTAL SHARES</span><strong id="total-shares">5</strong></div>
+          <div id="agent-list" class="agent-list"></div>
+          <div class="ownership-legend" id="ownership-legend"></div>
+        </article>
+
+        <article class="card trades-card">
+          <div class="card-heading"><div><div class="section-kicker">RECENT ACTIVITY</div><h2>Trade tape</h2></div><span class="tape-live"><i></i>REPLAY</span></div>
+          <div class="trade-head"><span>TIME</span><span>PRICE</span><span>QTY</span></div>
+          <div id="trade-list" class="trade-list"><div class="empty-trades">No trades yet.<br>Step through the scenario to see the fill.</div></div>
+          <div class="trade-footer"><span>EXECUTIONS</span><strong id="trade-count">0</strong></div>
+        </article>
+      </aside>
+    </section>
+
+    <section class="activity-section">
+      <div class="section-row activity-heading"><div><div class="section-kicker">SCENARIO TIMELINE</div><h2>Market events</h2></div><div class="event-progress"><span id="step-label">EVENT 1 OF 5</span><div class="progress-track"><div id="progress-fill"></div></div></div></div>
+      <article class="card timeline-card">
+        <div class="timeline-controls"><div class="playback-buttons"><button class="control-button" id="reset-button" title="Reset scenario" aria-label="Reset scenario">↺</button><button class="control-button" id="previous-button" title="Previous event" aria-label="Previous event">‹</button><button class="play-button" id="play-button"><span class="play-icon">▶</span><span id="play-label">Play scenario</span></button><button class="control-button" id="next-button" title="Next event" aria-label="Next event">›</button></div><div class="timeline-hint"><span class="keyboard-key">SPACE</span> to play <span class="hint-divider">/</span> step through one trade</div></div>
+        <div id="event-list" class="event-list"></div>
+      </article>
+    </section>
+    <footer class="page-footer"><span><span class="footer-mark">E</span> Emu Exchange <span class="footer-separator">/</span> Stock Service prototype</span><span>SIMULATED MARKET DATA <i class="footer-dot"></i></span></footer>
+  </main>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

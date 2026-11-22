@@ -1,0 +1,198 @@
+[
+  {
+    "name": "stock.register",
+    "handler": "handlers:register",
+    "description": "Create your Stock Service account using your configured stock email and password. The service sends an email verification code.",
+    "input_schema": {
+      "type": "object",
+      "properties": {"instance": {"type": "string", "minLength": 1}},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.verify_email",
+    "handler": "handlers:verify_email",
+    "description": "Read the latest Stock Service verification code from your mailbox and verify your account.",
+    "input_schema": {
+      "type": "object",
+      "properties": {"instance": {"type": "string", "minLength": 1}},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.login",
+    "handler": "handlers:login",
+    "description": "Authenticate to your own Stock Service account. API keys stay inside the Agent runtime.",
+    "input_schema": {
+      "type": "object",
+      "properties": {"instance": {"type": "string", "minLength": 1}},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.cash",
+    "handler": "handlers:cash",
+    "description": "Read your Stock Service cash balance, reserved cash, and available cash.",
+    "input_schema": {
+      "type": "object",
+      "properties": {"instance": {"type": "string", "minLength": 1}},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.positions",
+    "handler": "handlers:positions",
+    "description": "Read your own share positions and quantities reserved by open sell orders.",
+    "input_schema": {
+      "type": "object",
+      "properties": {"instance": {"type": "string", "minLength": 1}},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.orders",
+    "handler": "handlers:orders",
+    "description": "List your own orders and their current execution status.",
+    "input_schema": {
+      "type": "object",
+      "properties": {"instance": {"type": "string", "minLength": 1}},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.market",
+    "handler": "handlers:market",
+    "description": "Read the best bid, best ask, latest trade price, open orders, recent fills, and share ownership for a simulated ticker.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "symbol": {"type": "string", "minLength": 1, "maxLength": 16}
+      },
+      "required": ["symbol"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.place_order",
+    "handler": "handlers:place_order",
+    "description": "Submit a limit buy or sell order. Buy orders reserve limit price times quantity from available cash; sell orders reserve available shares. Reuse the same client_order_id and body for retries.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "client_order_id": {"type": "string", "minLength": 36, "maxLength": 36},
+        "symbol": {"type": "string", "minLength": 1, "maxLength": 16},
+        "side": {"type": "string", "enum": ["BUY", "SELL"]},
+        "quantity": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "limit_price": {"type": "number", "minimum": 0.01}
+      },
+      "required": ["client_order_id", "symbol", "side", "quantity", "limit_price"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.cancel_order",
+    "handler": "handlers:cancel_order",
+    "description": "Request cancellation of one of your open Stock Service orders. Funds or shares are released only after QuantReplay confirms cancellation.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "client_order_id": {"type": "string", "minLength": 36, "maxLength": 36}
+      },
+      "required": ["client_order_id"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.bank_links",
+    "handler": "handlers:bank_links",
+    "description": "List your linked bank cards and current bank balances. Card numbers and bank credentials are not returned to the Agent.",
+    "input_schema": {
+      "type": "object",
+      "properties": {"instance": {"type": "string", "minLength": 1}},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.bank_cards",
+    "handler": "handlers:bank_cards",
+    "description": "List your Bank cards with masked numbers so you can select one to link to Stock Service. Full card numbers stay inside the tool call and are never returned.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "bank": {"type": "string", "minLength": 1}
+      },
+      "required": ["bank"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.link_bank_card",
+    "handler": "handlers:link_bank_card",
+    "description": "Link one of your own active Bank cards to Stock Service. Select its cardId from stock.bank_cards. The tool completes Bank login and consent privately; the stock account must use the same verified email as the bank customer.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "bank": {"type": "string", "minLength": 1},
+        "card_id": {"type": "string", "minLength": 1, "maxLength": 80}
+      },
+      "required": ["bank", "card_id"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.unlink_bank_card",
+    "handler": "handlers:unlink_bank_card",
+    "description": "Revoke Bank consent and unlink one of your bank cards from Stock Service.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "bank_link_id": {"type": "string", "minLength": 36, "maxLength": 36}
+      },
+      "required": ["bank_link_id"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.deposit",
+    "handler": "handlers:deposit",
+    "description": "Transfer a chosen amount from your linked bank card into your Stock Service cash account. Use a UUID and the same amount/link on retries; funds are credited only after Bank confirms the debit.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "id": {"type": "string", "minLength": 36, "maxLength": 36},
+        "bank_link_id": {"type": "string", "minLength": 36, "maxLength": 36},
+        "amount": {"type": "number", "minimum": 0.01, "maximum": 1000000}
+      },
+      "required": ["id", "bank_link_id", "amount"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.deposit_status",
+    "handler": "handlers:deposit_status",
+    "description": "Check and reconcile one bank deposit by its original UUID. Only a confirmed completed debit credits your Stock Service cash balance.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "id": {"type": "string", "minLength": 36, "maxLength": 36}
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    }
+  }
+]

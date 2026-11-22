@@ -455,7 +455,7 @@ http {{
             v = create(role, images['database'], ['docker-entrypoint.sh', 'postgres'],
                        {'POSTGRES_USER': username,
                            'POSTGRES_PASSWORD': key['database'], 'POSTGRES_DB': dbname},
-                       healthcheck=health(f'pg_isready -U {username} -d {dbname}'))
+                       healthcheck=health(f'pg_isready -h 127.0.0.1 -U {username} -d {dbname}'))
             volume(v, role, '/var/lib/postgresql/data')
             if role == 'core-db':
                 v['volumes'].append(

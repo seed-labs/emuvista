@@ -64,7 +64,10 @@ class EmailBundle(ContainerBundle):
 
     def getMailboxConnection(self):
         """Export mailbox access without a specific user's credentials."""
-        return {'host': self._hostname, 'imapPort': 143,
+        # Bundles sharing an emulated network can address the IMAP role directly,
+        # without requiring every simulation to add a DNS zone for this mail host.
+        host = self._addresses.get('imap', self._hostname)
+        return {'host': host, 'imapPort': 143,
                 'readyServices': [self.getContainer('initialize').getHostname()]}
 
     def getMailConnection(self, username, *, initializer=None):
@@ -75,7 +78,8 @@ class EmailBundle(ContainerBundle):
             username, self.getContainer('initialize').getHostname())
         if initializer:
             self._mail_initializers[username] = initializer
-        return {'host': self._hostname, 'username': username, 'password': user['password'],
+        host = self._addresses.get('front', self._hostname)
+        return {'host': host, 'username': username, 'password': user['password'],
                 'port': 587, 'imapPort': 143, 'initializer': previous}
 
     def setHostname(self, hostname):
