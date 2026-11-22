@@ -1,0 +1,88 @@
+{
+  "company": {
+    "name": "Example Company",
+    "abbreviation": "EC",
+    "country": "United States",
+    "currency": "USD",
+    "timezone": "Asia/Shanghai"
+  },
+  "departments": [
+    "Engineering",
+    "Human Resources",
+    "Finance"
+  ],
+  "employees": [
+    {
+      "id": "EMP0001",
+      "firstName": "Alice",
+      "lastName": "Chen",
+      "email": "alice@company.com",
+      "password": "EmployeeDemo123!",
+      "department": "Engineering",
+      "dateOfBirth": "1990-01-15",
+      "dateOfJoining": "2020-01-01",
+      "gender": "Female",
+      "roles": [
+        "Employee",
+        "Leave Approver",
+        "Expense Approver",
+        "Purchase Manager",
+        "Stock Manager",
+        "Sales Manager",
+        "Projects Manager",
+        "Interviewer",
+        "Projects User"
+      ]
+    },
+    {
+      "id": "EMP0002",
+      "firstName": "Bob",
+      "lastName": "Li",
+      "email": "bob@company.com",
+      "password": "EmployeeDemo123!",
+      "department": "Engineering",
+      "reportsTo": "EMP0001",
+      "dateOfBirth": "1995-06-10",
+      "dateOfJoining": "2021-01-01",
+      "gender": "Male",
+      "roles": [
+        "Employee"
+      ]
+    },
+    {
+      "id": "EMP0003",
+      "firstName": "Carol",
+      "lastName": "Wang",
+      "email": "carol@company.com",
+      "password": "EmployeeDemo123!",
+      "department": "Human Resources",
+      "dateOfBirth": "1992-03-20",
+      "dateOfJoining": "2020-01-01",
+      "gender": "Female",
+      "roles": [
+        "Employee",
+        "HR User",
+        "HR Manager",
+        "Leave Approver",
+        "Accounts Manager",
+        "Projects User"
+      ]
+    }
+  ],
+  "leave": {
+    "type": "Annual Leave",
+    "days": 20
+  },
+  "business": {
+    "project": "Company Operations",
+    "supplier": "Company Hardware Supplier",
+    "customer": "Company Customer",
+    "item": {
+      "code": "COMPANY-LAPTOP",
+      "name": "Office Laptop",
+      "price": 800
+    },
+    "monthlySalary": 5000,
+    "openingCash": 100000
+  }
+}

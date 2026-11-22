@@ -35,8 +35,10 @@ AS171 remains available for E99's existing nodes.
 | Branch | `10.164.110.0/24` | branch1–branch3 |
 
 LAN gateways use `.254`; hosts start at `.10` in the listed order. The backbone
-uses `10.164.1.0/24`, the edge-to-core link uses `10.164.2.0/30`, and the branch
-link uses `10.164.3.0/30`. The company has 37 added hosts and 13 routers in total.
+uses `10.164.1.0/24`, the edge-to-core link uses `10.164.2.0/29`, and the branch
+link uses `10.164.3.0/29`. Link endpoints use `.2` and `.3`, leaving `.1` for
+Docker's bridge gateway. The core uses `.254` on the backbone.
+The company has 37 added hosts and 13 routers in total.
 Host names reserve roles; H00 does not install company applications.
 
 These are routed LANs without firewall access policies or VLAN tags. The branch

@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+mkdir -p /etc/ldap/slapd.d /var/lib/ldap /run/slapd
+if [ ! -f /etc/ldap/slapd.d/cn=config.ldif ]; then
+    cp -a /opt/identity-ldap/config/. /etc/ldap/slapd.d/
+    cp -a /opt/identity-ldap/data/. /var/lib/ldap/
+fi
+chown -R openldap:openldap /etc/ldap/slapd.d /var/lib/ldap /run/slapd
+slapd -h ldap://0.0.0.0:389 -u openldap -g openldap -d 0 &
+directory_pid=$!
+trap 'kill "$directory_pid"; wait "$directory_pid"' TERM INT
+python3 /identity-config/ldap_initialize.py
+wait "$directory_pid"
