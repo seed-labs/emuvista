@@ -1,0 +1,4 @@
+services:
+  knowledge-app:
+    image: handsonsecurity/emuvista-knowledge-app:1.0
+    build: ./knowledge-app

@@ -1,0 +1,8 @@
+services:
+  helpdesk-app:
+    image: handsonsecurity/emuvista-helpdesk-app:1.0
+    build: ./helpdesk-app
+
+  auth-gateway:
+    image: handsonsecurity/emuvista-auth-gateway:1.0
+    build: ../identity/auth-gateway

@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from seedemu.compiler import Docker, Platform
+from seedemu.containerBundle import InternetMap
 from bundles.EmailBundle import EmailBundle
 from examples.H00_mini_internet import DNS_RESOLVER, build_emulator, host_zone
 
@@ -42,7 +43,10 @@ def main():
     bundle.enableHostAccess(args.host_port)
     if args.state:
         bundle.setSavePath(args.state)
-    compiler = Docker(platform=Platform.AMD64, internetMapEnabled=True)
+    compiler = Docker(platform=Platform.AMD64)
+    internet_map = InternetMap(emu)
+    internet_map.setPorts([8083, 8080, 8084])
+    compiler.addContainerBundle(internet_map)
     compiler.addContainerBundle(bundle)
     emu.compile(compiler, str(args.output.resolve()), override=True)
 

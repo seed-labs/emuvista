@@ -1,6 +1,6 @@
 # PaymentBundle
 
-Deploys Komunitin from prebuilt images. Each component has its own container and SEED network IP. No Service layer or virtual-node binding is required.
+Deploys the payment system using upstream and custom images. Each component has its own container and SEED network IP. No Service layer or virtual-node binding is required.
 
 ## Usage
 
@@ -105,11 +105,31 @@ New wallets have zero balance. H99 includes this mail connection and its sender.
 
 ## Images
 
-Requires Linux AMD64 and SEED Emulator's ContainerBundle API. Build the customized `app` and `accounting` images using [docker_images](../../docker_images/README.md). The remaining payment components use the existing prepared images. To load their archive:
+Requires Linux AMD64 and SEED Emulator's ContainerBundle API. Build all custom
+images from the repository root:
 
 ```sh
-docker load -i /path/to/payment-images.tar
+docker compose -f docker_images/payment/compose.yml build
 ```
+
+These builds require only the files in [docker_images](../../docker_images/README.md)
+and public upstream downloads. No pre-existing experiment images or archives are
+required. Unmodified components use their upstream names directly:
+
+| Component | Upstream image |
+| --- | --- |
+| Authentication | `komunitin/komunitin-auth` |
+| Communities | `komunitin/komunitin-social` |
+| Notifications | `komunitin/komunitin-notifications-ts` |
+| Ledger network | `stellar/quickstart` |
+| Cache / queues | `redis:7-bookworm` |
+| Web gateway | `nginx:stable-bookworm` |
+
+Application and Stellar references are pinned by digest in `DEFAULT_IMAGES`.
+The original Stellar image is used without the earlier experiment's trimming.
+The database, CLI and file-store images contain reusable runtime packaging;
+their Dockerfiles record every required input. The web app uses Debian nginx
+because the current SEED compiler installs network packages through `apt-get`.
 
 Override images with `PaymentBundle(emu, images={role: reference})` or `payment.setImage(role, reference)`.
 
@@ -124,7 +144,10 @@ Override images with `PaymentBundle(emu, images={role: reference})` or `payment.
 | `redis` | Redis 7 and `docker-entrypoint.sh` |
 | `gateway` | nginx with `http_sub_module` and `/docker-entrypoint.sh` |
 
-Images must support running the routing wrapper as root and provide `ip`, or an Alpine/Debian package manager to install it. Original prepared components use revision `124a87b639c37952dc9a029fc7056e523a10de5b`; customized image sources and pinned upstream bases are recorded in [sources.json](../../docker_images/sources.json).
+Images must support running the routing wrapper as root and provide `apt-get`
+for the current SEED compiler. The initialization CLI uses source revision
+`124a87b639c37952dc9a029fc7056e523a10de5b`. Custom image bases and changes are
+recorded in [docker_images](../../docker_images/README.md) and its Dockerfiles.
 
 ## Agent tools
 
@@ -144,3 +167,24 @@ stores these separately in `context.tool_config['payment']`. Personal
 selector; the email defaults to the person's mailbox. Tools resolve account IDs
 and API endpoints themselves. The model supplies a recipient email and amount;
 service routing data never enters its persona or prompt.
+
+## Merchant checkout
+
+`connectMerchant(merchant)` records a merchant's server credentials, allowed return
+origins and notification endpoint. ShopService calls it through
+`shop.connectPayment(payment)`. Configuration is generated during compilation;
+no customer cards are linked automatically.
+
+The accounting API provides `POST /<group>/checkout/merchants/<merchant>/sessions`
+and a merchant-authenticated receipt lookup at the same path with `/<id>`.
+A session fixes the order, recipients and amounts. Buyers open
+`/checkout/<group>/<id>` in the app, sign in and choose wallet balance or a
+linked card. `POST /<group>/checkout/sessions/<id>/pay` uses the buyer's JWT.
+The original transfer IDs are retained for retries. Multi-vendor sessions are
+confirmed only after every recipient payment completes; partial results stay
+pending for reconciliation. Shipping, fee distribution, refunds and
+cross-currency merchant checkout are not included in this version.
+
+Notifications contain the checkout ID. Merchants independently retrieve and
+verify the receipt before completing their order; a browser redirect alone
+cannot confirm payment. Rebuild both customized payment images when upgrading.

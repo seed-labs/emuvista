@@ -20,17 +20,18 @@ from .initialization import _identifier, load_configuration, prepare_bundle
 from .templates import BACKEND_START, BROWSER_LINKS, DATABASE_START, INITIALIZE, nginx_config
 
 
-REVISION = "124a87b639c37952dc9a029fc7056e523a10de5b"
 DEFAULT_IMAGES = {
-    **{role: f"h20-komunitin-{role}:{REVISION[:12]}" for role in
-       ("auth", "social", "notifications-ts", "cli")},
+    "auth": "komunitin/komunitin-auth@sha256:eeab8a10ac40524686708020029e40c211e0f0310222a558aa42933bbb4fc40e",
+    "social": "komunitin/komunitin-social@sha256:e1fd74796abb524faf054d3124ee239399d024174ba07e5995192ca4e3f5b0ba",
+    "notifications-ts": "komunitin/komunitin-notifications-ts@sha256:06b010dbcb63d88223d820bbd996261761c6adf346bf86d02b281932bb99fe9a",
+    "cli": "handsonsecurity/emuvista-payment-cli:1.0",
     "app": "handsonsecurity/emuvista-payment-app:1.0",
     "accounting": "handsonsecurity/emuvista-payment-accounting:1.0",
-    "database": f"h20-komunitin-db-auth:{REVISION[:12]}",
-    "redis": "redis:7-alpine",
-    "stellar": "h20-stellar-quickstart:core-horizon-beb4f2f",
-    "files": "h20-komunitin-s3:3.7.1",
-    "gateway": "nginx:stable-alpine",
+    "database": "handsonsecurity/emuvista-payment-database:1.0",
+    "redis": "redis:7-bookworm",
+    "stellar": "stellar/quickstart@sha256:58d3fba97b90a431d97c0efb135ea625ad62739ccfeb9e236c5e5fa16491b6d7",
+    "files": "handsonsecurity/emuvista-payment-files:1.0",
+    "gateway": "nginx:stable-bookworm",
 }
 
 
@@ -72,6 +73,7 @@ class PaymentBundle(ContainerBundle):
         self._configured = False
         self._application_options = {}
         self._banks = []
+        self._merchants = []
         self._mail_sources = []
         self._mail = None
         self._required_internal_address_count = len(ROLES)
@@ -158,6 +160,18 @@ class PaymentBundle(ContainerBundle):
 
     def getClientId(self):
         return self._name + '-wallet'
+
+    def connectMerchant(self, merchant):
+        """Record a merchant integration; shoppers authorize each purchase themselves."""
+        if merchant not in self._merchants:
+            self._merchants.append(merchant)
+        return self
+
+    def getMerchantConnection(self):
+        """Export canonical server endpoints and the browser-only host mapping."""
+        return {'url': self.getURL(), 'apiURL': self.getURL() + ':2025',
+                'authURL': self.getURL() + ':2026',
+                'browserURL': f'http://localhost:{self._host_port}' if self._host_port else self.getURL()}
 
     def connectBank(self, bank):
         """Record a bank partnership without configuring either application."""
@@ -253,6 +267,18 @@ class PaymentBundle(ContainerBundle):
                                           container.getHostname(), net['default_route'])
             self._addresses[role] = address
         self._configureFundingProviders()
+        if self._merchants:
+            for merchant in self._merchants:
+                registration = merchant.getPaymentRegistration()
+                browser = next((origin for origin in registration['returnOrigins'] if origin.startswith('http://localhost:')), None)
+                if browser:
+                    self._host_url_mappings[merchant.getURL()] = browser
+            options = self._application_options.get('accounting', {})
+            self.configureApplication('accounting',
+                environment={**options.get('environment', {}), 'PAYMENT_MERCHANT_CONFIG': '/payment-config/merchants.json'},
+                files={**options.get('files', {}), 'merchants.json': json.dumps([
+                    merchant.getPaymentRegistration() for merchant in self._merchants]) + '\n'},
+                dependencies=options.get('dependencies', []))
         if self._mail_sources:
             provider, username = self._mail_sources[0]
             self._mail = provider.getMailConnection(

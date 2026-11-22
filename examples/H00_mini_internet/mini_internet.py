@@ -7,6 +7,7 @@ import argparse
 from pathlib import Path
 
 from seedemu.compiler import Docker, Platform
+from seedemu.containerBundle import InternetMap
 from seedemu.core import Binding, Emulator, Filter
 from seedemu.layers import Base, Ebgp, Ibgp, Ospf, PeerRelationship, Routing
 from seedemu.services import DomainNameCachingService, DomainNameService
@@ -16,10 +17,27 @@ from seedemu.utilities import Makers
 DNS_AUTHORITY = '10.150.0.53'
 DNS_RESOLVER = '10.150.0.54'
 DNS_HOSTING = '10.154.0.53'
+COMPANY_ASN = 164
+
+# Network name, subnet number, display name, and physical host names.
+COMPANY_LANS = [
+    ('dmz', 10, 'Public Services', ['portal', 'website', 'vpn']),
+    ('applications', 20, 'Business Applications',
+     ['identity', 'hr', 'finance', 'oa', 'chat', 'projects', 'cloud']),
+    ('data', 30, 'Databases and Storage', ['database1', 'database2', 'storage']),
+    ('management', 40, 'IT Management', ['admin', 'monitoring', 'backup']),
+    ('hr', 50, 'Human Resources', ['hr1', 'hr2', 'hr3']),
+    ('finance', 60, 'Finance', ['finance1', 'finance2', 'finance3']),
+    ('engineering', 70, 'Engineering', ['engineer1', 'engineer2', 'engineer3', 'engineer4']),
+    ('sales', 80, 'Sales', ['sales1', 'sales2', 'sales3']),
+    ('operations', 90, 'Operations', ['operations1', 'operations2', 'operations3']),
+    ('guest', 100, 'Guest Devices', ['guest1', 'guest2']),
+    ('branch', 110, 'Branch Office', ['branch1', 'branch2', 'branch3']),
+]
 
 
 def build_emulator(hosts_per_as=2) -> Emulator:
-    """Return an unrendered mini Internet with hierarchical private DNS.
+    """Return an unrendered mini Internet with DNS and a company campus.
 
     Add application records and services before calling emu.render().
     The network includes an IPv4 gateway to destinations outside the emulation.
@@ -130,8 +148,40 @@ def build_emulator(hosts_per_as=2) -> Emulator:
     emu.addLayer(ebgp)
     emu.addLayer(Ibgp())
     emu.addLayer(Ospf())
+    _configure_company_network(emu)
     _configure_dns(emu)
     return emu
+
+
+def _configure_company_network(emu):
+    company = emu.getLayer('Base').getAutonomousSystem(COMPANY_ASN)
+    ospf = emu.getLayer('Ospf')
+    prefix = f'10.{COMPANY_ASN}'
+
+    company.getNetwork('net0').setDisplayName('Company Edge LAN')
+    edge = company.getRouter('router0').setDisplayName('Company Edge Router')
+    company.createNetwork('edge_link', prefix=f'{prefix}.2.0/29')
+    company.createNetwork('backbone', prefix=f'{prefix}.1.0/24').setDisplayName('Headquarters Backbone')
+    company.createNetwork('branch_link', prefix=f'{prefix}.3.0/29').setDisplayName('Branch Routed Link')
+    edge.joinNetwork('edge_link', address=f'{prefix}.2.2')
+    core = company.createRouter('core').setDisplayName('Company Core Router')
+    core.joinNetwork('edge_link', address=f'{prefix}.2.3')
+    core.joinNetwork('backbone', address=f'{prefix}.1.254')
+    core.joinNetwork('branch_link', address=f'{prefix}.3.2')
+
+    for name, subnet, display, hosts in COMPANY_LANS:
+        company.createNetwork(name, prefix=f'{prefix}.{subnet}.0/24').setDisplayName(display)
+        router = company.createRouter(name + '_router').setDisplayName(display + ' Router')
+        if name == 'branch':
+            router.joinNetwork('branch_link', address=f'{prefix}.3.3')
+        else:
+            router.joinNetwork('backbone', address=f'{prefix}.1.{subnet}')
+        router.joinNetwork(name, address=f'{prefix}.{subnet}.254')
+        ospf.markAsStub(COMPANY_ASN, name)
+        for index, hostname in enumerate(hosts, start=10):
+            company.createHost(hostname).joinNetwork(name, address=f'{prefix}.{subnet}.{index}')
+
+    ospf.markAsStub(COMPANY_ASN, 'net0')
 
 
 def _configure_dns(emu):
@@ -192,8 +242,11 @@ def main():
     emu = build_emulator(args.hosts_per_as)
     emu.render()
     platform = Platform.AMD64 if args.platform == 'amd' else Platform.ARM64
-    emu.compile(Docker(platform=platform, internetMapEnabled=True),
-                str(args.output.resolve()), override=True)
+    compiler = Docker(platform=platform)
+    internet_map = InternetMap(emu)
+    internet_map.setPorts([8083, 8080, 8084])
+    compiler.addContainerBundle(internet_map)
+    emu.compile(compiler, str(args.output.resolve()), override=True)
 
 
 if __name__ == '__main__':

@@ -53,6 +53,12 @@ class Startup:
         deployments = [json.loads(path.read_text())
                        for path in self.output.glob('*/deployment.json')]
         roots = {Path(item['state_path']).resolve(): item['persistent'] for item in deployments}
+        state_label = 'org.seedsecuritylabs.seedemu.meta.org.emuvista.state-'
+        for service in services.values():
+            labels = service.get('labels', {})
+            if state_label + 'path' in labels:
+                roots[Path(labels[state_label + 'path']).resolve()] = labels[state_label + 'persistent'] == 'true'
+
         self.runtime_data = {}
         for service in services.values():
             for volume in service.get('volumes', []):
@@ -61,8 +67,7 @@ class Startup:
                     if source.parent in roots:
                         self.runtime_data[source] = roots[source.parent]
 
-        state = next(
-            (Path(item['state_path']).parent for item in deployments if item['persistent']), None)
+        state = next((path.parent for path, persistent in roots.items() if persistent), None)
         self.agent_state = []
         self.state_mounts = {}
         if state:

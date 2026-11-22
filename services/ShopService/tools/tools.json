@@ -1,0 +1,188 @@
+[
+  {
+    "name": "shop.catalog",
+    "handler": "handlers:catalog",
+    "description": "Browse the real marketplace to discover products, seller stores and prices. Initial knowledge does not include products.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "shop.open_store",
+    "handler": "handlers:open_store",
+    "description": "Open your own real marketplace store.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "shop.publish",
+    "handler": "handlers:publish",
+    "description": "Publish a virtual product in your own store. Optional content becomes a protected download available only after payment.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "priceMinor": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "priceMinor"
+      ]
+    }
+  },
+  {
+    "name": "shop.order",
+    "handler": "handlers:order",
+    "description": "Create an unpaid order for products from the catalog. Use a unique requestId and reuse it if a request times out. Prices come from the server. This does not pay.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "product": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "quantity": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "product"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "items"
+      ]
+    }
+  },
+  {
+    "name": "shop.checkout",
+    "handler": "handlers:checkout",
+    "description": "Get the Payment checkout link for your unpaid shop order. A human can open it and pay with balance or a linked card.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "order": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "order"
+      ]
+    }
+  },
+  {
+    "name": "shop.pay",
+    "handler": "handlers:pay",
+    "description": "Pay your shop order through Payment, then retrieve the verified order status. Omit source for balance or use a linked card ID from payment.cards. Card payments debit the card directly. Retry the same order and source after a timeout; do not create another order.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "order": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "order"
+      ]
+    }
+  },
+  {
+    "name": "shop.orders",
+    "handler": "handlers:orders",
+    "description": "Read your actual buyer orders and refresh their payment confirmation.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "shop.sales",
+    "handler": "handlers:sales",
+    "description": "If you own a store, read its actual seller orders. Other sellers' orders are excluded.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "shop.downloads",
+    "handler": "handlers:downloads",
+    "description": "List downloads that your paid orders have unlocked.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "shop.read_download",
+    "handler": "handlers:read_download",
+    "description": "Read the text of a digital product you have purchased. Unpaid orders do not unlock content.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "product": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "product"
+      ]
+    }
+  }
+]

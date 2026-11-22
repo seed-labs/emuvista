@@ -1,0 +1,88 @@
+[
+  {
+    "name": "cloud.storage_find",
+    "handler": "handlers:storage_find",
+    "description": "List configured cloud drives for which you have an account. Use the returned service_id for file operations. Connections and credentials are resolved by the tools.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "cloud.file_upload",
+    "handler": "handlers:file_upload",
+    "description": "Upload a file of at most 256 KiB to your cloud drive through WebDAV. Supply base64-encoded content and an absolute file path whose parent folder already exists. An existing file at that path is replaced.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "service_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 512
+        },
+        "content_base64": {
+          "type": "string",
+          "maxLength": 349528
+        }
+      },
+      "required": ["service_id", "path", "content_base64"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "cloud.file_download",
+    "handler": "handlers:file_download",
+    "description": "Download a file of at most 256 KiB from your cloud drive through WebDAV. Returns base64 content, byte count and SHA-256. Use the file's absolute path in your own drive.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "service_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 512
+        }
+      },
+      "required": ["service_id", "path"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "cloud.file_share",
+    "handler": "handlers:file_share",
+    "description": "Share a file in your cloud drive with an existing user on the same drive. Supply the recipient's cloud username, not their display name. Only read permission is supported.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "service_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 512
+        },
+        "recipient": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "permission": {
+          "type": "string",
+          "enum": ["read"]
+        }
+      },
+      "required": ["service_id", "path", "recipient"],
+      "additionalProperties": false
+    }
+  }
+]

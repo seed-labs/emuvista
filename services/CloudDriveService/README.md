@@ -70,6 +70,23 @@ drive.setAdminCredentials("...", "...")
 
 Use `getCredentialManager()` only when deployment automation must deliver generated credentials to an authorized component. Do not write returned credentials to logs or source files.
 
+## Company identity
+
+Call `drive.connectIdentity(identity_bundle)` to enable the native OIDC login
+plugin and register the drive with the shared employee directory. Employee IDs
+identify accounts; the directory updates names, email addresses and account status
+through Nextcloud's native APIs. Local administrator login remains available at
+`/login?direct=1`. See [H98](../../examples/H98_virtual_company/) for the complete example.
+
+## Agent tools
+
+After drive bindings are configured, `getAgentTools()` exports the `cloud` tool
+package and internal connection settings. Register it with
+`agents.addToolsFrom(cloud)`. Personal WebDAV credentials belong in
+`persona.accounts.cloud`, keyed by drive vnode. The tools run inside the Agent
+container and provide drive discovery, upload, download and read-only sharing.
+See [tools](tools/) for configuration and limits.
+
 ## Persistence and recovery
 
 Persistence is disabled by default. When enabled, PostgreSQL data, stored objects, Nextcloud configuration and data, and matching credentials are saved in a caller-selected host directory:

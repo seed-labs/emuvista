@@ -12,7 +12,7 @@ cp .env.example .env
 # Fill LLM_API_KEY, LLM_BASE_URL and LLM_MODEL.
 python3 virtual_world_with_agents.py
 cd output
-docker compose build
+DOCKER_BUILDKIT=0 docker compose build
 cd ..
 python3 start.py
 ```
@@ -42,25 +42,12 @@ python3 virtual_world_with_agents.py --state .runtime/world
 
 Build this generated deployment once, then use the same `start.py` and
 `docker compose down` commands. Bank, payment and email data, resident memories
-and shop orders survive removal of the containers. Logs remain inside containers.
+and marketplace orders survive removal of the containers. Logs remain inside containers.
 `start.py` supplies saved-memory mounts through `output/docker-compose.agents.yml`;
 the compiled Compose file remains unchanged. Plain `docker compose down` still stops the whole project.
 Reusing the same `--state` directory when regenerating also preserves application
 credentials. Regeneration can change image contents; build again
 after regenerating or changing code.
-
-If building the whole world fails with `failed to receive status ... no such job`,
-build one service at a time from `output` to avoid the large Bake target set:
-
-```sh
-docker compose config --services |
-while IFS= read -r service; do
-    docker compose build "$service" || exit 1
-done
-```
-
-This reuses the build cache and leaves containers stopped. See the
-[Buildx issue](https://github.com/docker/buildx/issues/3810).
 
 Stop an existing deployment before recompiling. Existing deployments need
 regeneration, rebuilt agent images and recreated agent
@@ -128,9 +115,9 @@ Assembly keeps people and infrastructure independent:
 
 ```python
 people = createpeople("people.json")
-emu, bundles = createworld()  # H99 world; optionally pass args.state.
-initialize_accounts(people, bundles)
-agents = AgentService(tools=prepare_tools(bundles))
+emu, systems = createworld()  # H99 world; optionally pass args.state.
+initialize_accounts(people, systems)
+agents = AgentService(tools=prepare_tools(systems))
 network = emu.getLayer('Base').getAutonomousSystem(171)
 for index, person in enumerate(people, 1):
     agent = agents.createagent(person)
@@ -138,24 +125,24 @@ for index, person in enumerate(people, 1):
     emu.addBinding(Binding(agent.vnode, filter=Filter(asn=171, nodeName=agent.vnode)))
 emu.addLayer(agents)
 emu.render()
-emu.compile(createcompiler(bundles), "output", override=True)
+emu.compile(createcompiler(emu, systems), "output", override=True)
 ```
 
 `createpeople` loads stable UUIDs, names and backgrounds. IDs are saved in
 `people.json` and stay unchanged when names or deployment hosts change. Each person's
 `accounts` declares their email address/password, payment group/password/opening
-balance, and bank profiles with savings accounts and cards.
+balance, bank profiles with savings accounts and cards, and shop credentials.
 These personal accounts are not defined in H99's `world.json`. Each infrastructure
 instance has its own deployment fields and hostname in that file. `createworld`
 builds the network and application DNS without reading people.
 H99 loads `world.json` once and keeps it internal. `createworld(state=None)` returns
-the native Emulator and a separate map of declared Bundles. E99 has no `--config`
+the native Emulator and a separate map of application systems. E99 has no `--config`
 option and does not read world settings.
-After Agent setup, `emu.render()` and `emu.compile(createcompiler(bundles), ...)`
+After Agent setup, `emu.render()` and `emu.compile(createcompiler(emu, systems), ...)`
 use H99's network placement and the native Docker compiler.
-`initialize_accounts(people, bundles)` in `virtual_world_with_agents.py` declares
+`initialize_accounts(people, systems)` in `virtual_world_with_agents.py` declares
 mailboxes, wallets and bank customers
-through each Bundle's `addUser` or `addCustomer` method before
+through each system's `addUser` or `addCustomer` method before
 compilation. Mailu creates the mailboxes first. South Bank and North Bank then register
 customers sequentially against those mailboxes, using the shared `bank@mail.com` sender.
 The stable person UUID is the bank's external customer identifier. Payment and
@@ -164,18 +151,18 @@ configuration contains its personal metadata; the observer reads it inside the c
 
 `createpeople` loads people and [market.json](market.json), builds their contact
 directory, and assigns inventory to its owner by person UUID. Product definitions
-occur once in `market.json` and enter only the owner's possessions. Other residents
+occur once in `market.json` and are passed to ShopService during account initialization; only the store name remains in the owner's Agent metadata. Other residents
 start without product knowledge and discover the catalog through tools.
 `agents.createagent(person)` copies that configuration into one Agent and assigns
 its virtual node name. Host creation and binding are explicit in the main flow.
-`prepare_tools(bundles)` separately collects tool source and instance configuration
-from configured Bundles. AgentService merges instances of the same package and
+`prepare_tools(systems)` separately collects tool source and instance configuration
+from configured systems. AgentService merges instances of the same package and
 stores their addresses and routing maps in `tool_config`, separate from persona.
 Tools combine this configuration with personal credentials when called.
 `world.catalog` returns business names without connection details.
 Payment tools construct their own API endpoints;
 the model supplies business arguments such as a recipient email and amount.
-Passwords and sale-delivery contents stay available to tools only.
+Passwords stay in tool configuration. Product contents are imported into the shop and unlocked after payment.
 The framework's `build_system_prompt` renders personal facts, account types,
 initial knowledge and asset descriptions when the container starts. Tools use the
 runtime members `accounts`, `knowledge` and `possessions`; credentials and product
@@ -194,8 +181,7 @@ change, regenerate the experiment and use fresh application state.
 All five residents live in AS171 at `10.171.0.80`–`10.171.0.84`. All receive the
 same tools: world discovery/probing, network identity/DNS, email reading/sending,
 wallet balance/transfers, voluntary card linking, card-funded payments and receipts,
-bank account/card queries, wallet receipt/history queries, shop browsing/quotes/
-delivery/orders, and a local rest tool. Loan tools are not implemented.
+bank account/card queries, wallet receipt/history queries, marketplace browsing, stores, products, orders, payment and downloads, and a local rest tool. Loan tools are not implemented.
 Their accounts remain separate. Backgrounds and existing balances can differ.
 
 AgentService's shared ClockServer runs in a separate container at
@@ -214,35 +200,30 @@ pays from a chosen source while `payment.transfer` uses wallet balance.
 `completed` confirms a card payment; reuse the same operation UUID for retries.
 Card funding currently supports matching USD accounts.
 
-## Digital trade
+## Marketplace
 
-[market.json](market.json) defines the shop owner by person UUID and stores each
-product once. `createpeople` gives Carol her inventory in `possessions`.
-Her recipe, photography guide and
-budget worksheet cost 300, 500 and 400 USD cents. Public listings contain prices and
-descriptions; only Carol's inventory contains the actual delivery text. This
-is a resident's small business. A lightweight HTTP catalog runs inside Carol's
-Agent container on port 8080, with no host port mapping. `shop.catalog` requests
-`/catalog` over the emulated network and returns product descriptions and prices;
-delivery text stays private. `world.catalog` can discover the shop name and
-`world.probe` can check its availability. Product listings enter a customer's
-conversation only through observations such as tool results or Carol's emails.
-The experiment declares this shop's startup and private tool connection; generic
-AgentService contains no shop-specific deployment code.
+The real marketplace is at <http://localhost:8449>, with native customer,
+seller and administrator pages. All five residents have shop accounts using
+their mailbox address and `ShopDemoPass123!`; the administrator is `admin` /
+`ShopAdminDemo123!`. Carol's store and products come from `market.json` and
+are imported by ShopService. Other residents discover products through
+`shop.catalog`; delivery contents are not injected into their prompt.
 
-Residents can ask questions by email. Carol can make an order with `shop.quote`
-and send its UUID, price and payment reference to the buyer. Buyers can choose
-wallet balance or a voluntarily linked bank card. `payment.receipt` and
-`payment.history` read the real ledger. `shop.deliver` verifies amount, recipient,
-order reference and funding source before emailing the actual product. Completed
-orders appear in the observer's **Verified sales** panel. A repeated delivery does
-not resend the product; an uncertain delivery requires review. No buying quota or
-scheduled purchase is imposed.
+Residents can create an unpaid order with `shop.order`, inspect its Payment
+link with `shop.checkout` and pay with `shop.pay`. Omit `source` for balance or
+select a bound card ID from `payment.cards`. Payment directly pays each seller;
+the shop independently verifies the receipt. `shop.orders` and `shop.sales`
+show buyer and seller views. `shop.downloads` and `shop.read_download` expose
+purchased digital content only after payment. Sellers can open stores and
+publish more products using `shop.open_store` and `shop.publish`.
 
-Email sends now include Date/Message-ID, support `inReplyTo`, and append a copy to
-the mailbox's Sent folder. If SMTP succeeds but filing fails, the result reports
-`sent=true, savedToSent=false`; do not send a duplicate just to repair Sent. Old
-messages are not automatically backfilled into Sent.
+The observer shows actual tool arguments and payment results. **Verified sales**
+updates on the next dashboard refresh when a buyer's `shop.pay` returns a paid
+order; the seller does not need to call `shop.sales`. Buyer `shop.orders` results
+also update the panel. Repeated observations are deduplicated by checkout ID,
+and newly observed purchases appear first with their actual receiving stores.
+No per-Agent shop server or JSON order book is used. See
+[H23](../../examples/H23_shop_service/) for manual browser testing.
 
 ## Runtime controls
 

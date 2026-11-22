@@ -1,7 +1,8 @@
 # Mini Internet
 
 Shared network for the examples: six Internet exchanges, five transit ASes,
-twelve stub ASes and two hosts per stub AS by default.
+twelve stub ASes, and a company campus in AS164. Stub ASes have two original
+hosts by default; AS164 also includes the company hosts below.
 
 ```sh
 python3 mini_internet.py
@@ -11,6 +12,40 @@ docker compose up -d
 ```
 
 Internet Map: http://localhost:8080.
+
+## Company network
+
+AS164 contains the company topology used by H98. Its original `net0` and edge
+router remain connected to AS12 through IX104. The edge router connects to a
+core router, which connects to headquarters access routers and a branch router.
+AS171 remains available for E99's existing nodes.
+
+| LAN | Subnet | Hosts |
+| --- | --- | --- |
+| DMZ | `10.164.10.0/24` | portal, website, vpn |
+| Applications | `10.164.20.0/24` | identity, hr, finance, oa, chat, projects, cloud |
+| Data | `10.164.30.0/24` | database1, database2, storage |
+| Management | `10.164.40.0/24` | admin, monitoring, backup |
+| HR | `10.164.50.0/24` | hr1–hr3 |
+| Finance | `10.164.60.0/24` | finance1–finance3 |
+| Engineering | `10.164.70.0/24` | engineer1–engineer4 |
+| Sales | `10.164.80.0/24` | sales1–sales3 |
+| Operations | `10.164.90.0/24` | operations1–operations3 |
+| Guest | `10.164.100.0/24` | guest1–guest2 |
+| Branch | `10.164.110.0/24` | branch1–branch3 |
+
+LAN gateways use `.254`; hosts start at `.10` in the listed order. The backbone
+uses `10.164.1.0/24`, the edge-to-core link uses `10.164.2.0/29`, and the branch
+link uses `10.164.3.0/29`. Link endpoints use `.2` and `.3`, leaving `.1` for
+Docker's bridge gateway. The core uses `.254` on the backbone.
+The company has 37 added hosts and 13 routers in total.
+Host names reserve roles; H00 does not install company applications.
+
+These are routed LANs without firewall access policies or VLAN tags. The branch
+link has no VPN or WAN delay configured. All examples importing H00 include this
+topology; H98 only adds applications and their DNS records.
+
+## DNS
 
 | DNS component | Address |
 | --- | --- |
