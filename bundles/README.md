@@ -31,7 +31,7 @@ for its separate administration website.
 - [ProjectBundle](ProjectBundle/): projects, work packages and company login.
 - [KnowledgeBundle](KnowledgeBundle/): knowledge pages and company login.
 - [HelpdeskBundle](HelpdeskBundle/): IT tickets, assets and company login.
-
+- [SocialNetworkBundle](SocialNetworkBundle/): Mastodon's development version with streaming, background jobs and account initialization.
 ```python
 from bundles.PaymentBundle import PaymentBundle
 ```

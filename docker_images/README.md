@@ -31,6 +31,7 @@ Use `DOCKER_BUILDKIT=0 docker compose build` for the legacy builder.
 | ProjectBundle | [project/compose.yml](project/compose.yml) | project-app, auth-gateway |
 | KnowledgeBundle | [knowledge/compose.yml](knowledge/compose.yml) | knowledge-app |
 | HelpdeskBundle | [helpdesk/compose.yml](helpdesk/compose.yml) | helpdesk-app, auth-gateway |
+| SocialNetworkBundle | [social/compose.yml](social/compose.yml) | mastodon-dev |
 
 These files prepare images. Runtime configuration and startup remain in each
 example's generated `output/docker-compose.yml`, which also pulls unmodified
@@ -68,3 +69,21 @@ The single-container shop image packages MySQL, WooCommerce 11.3.0, MultiVendorX
 5.0.22 and Storefront 4.6.2. Release archives are checked with SHA-256. A local
 WordPress plugin connects orders to Payment; upstream application sources are
 not stored in this repository.
+
+The social image is the exception to fixed upstream revisions: it builds the
+development version from a local Mastodon checkout, so source changes can be
+tried in the emulation. Build it from the repository root with BuildKit:
+
+```sh
+docker compose -f docker_images/social/compose.yml build
+```
+
+The checkout defaults to `mastodon` beside this repository; set `MASTODON_SOURCE`
+to an absolute path to use another one. It is passed as the named build context
+`mastodon`, filtered by the checkout's `.dockerignore`.
+The Dockerfile merges the checkout's `.devcontainer/Dockerfile` (base image,
+Node.js from `.nvmrc`, OS packages, plus `iproute2`) and runs `bin/setup`'s gem
+and JavaScript installation at build time. It then builds `public/packs-dev`.
+A newer Ruby patch release in the devcontainer base replaces the exact
+`.ruby-version` inside the image only. Set `MASTODON_DEVCONTAINER_IMAGE` when the
+checkout's devcontainer changes its base image.

@@ -1,0 +1,14 @@
+#!/bin/sh
+# The devcontainer base tracks the newest Ruby patch release of its minor
+# version, while Mastodon's Gemfile requires the exact .ruby-version. Accept a
+# newer patch release of the same minor version for this development image.
+set -eu
+required="$(tr -d '[:space:]' < .ruby-version)"
+installed="$(ruby -e 'print RUBY_VERSION')"
+[ "$required" = "$installed" ] && exit 0
+if [ "${required%.*}" != "${installed%.*}" ]; then
+  echo "Mastodon requires Ruby $required, but the devcontainer base provides Ruby $installed" >&2
+  exit 1
+fi
+echo "Using Ruby $installed for Mastodon's .ruby-version $required"
+printf '%s\n' "$installed" > .ruby-version

@@ -20,4 +20,5 @@ AS164 campus. It currently reuses CloudDriveService, with separate application,
 database, and object-storage nodes.
 
 [H23_shop_service](H23_shop_service/) demonstrates multi-vendor shopping with Payment balance and bank-card checkout.
+[H24_social_network_service](H24_social_network_service/) runs Mastodon's development version with five initial users.
 [H30_cloud_drive_service](H30_cloud_drive_service/) uses DshAgentService to deploy Cloud Drive agents.
