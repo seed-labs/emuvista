@@ -1,0 +1,14 @@
+# Build-only configuration for SocialNetworkBundle's Mastodon development image.
+# MASTODON_SOURCE selects the Mastodon checkout (default: a sibling of this
+# repository; use an absolute path, since relative paths start from this
+# directory). MASTODON_DEVCONTAINER_IMAGE follows the base image named in the
+# checkout's .devcontainer/Dockerfile. The named source context requires BuildKit.
+services:
+  mastodon-dev:
+    image: handsonsecurity/emuvista-mastodon-dev:main
+    build:
+      context: ./mastodon-dev
+      additional_contexts:
+        mastodon: ${MASTODON_SOURCE:-../../../mastodon}
+      args:
+        DEVCONTAINER_IMAGE: ${MASTODON_DEVCONTAINER_IMAGE:-mcr.microsoft.com/devcontainers/ruby:4.0-trixie}

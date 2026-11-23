@@ -152,6 +152,17 @@ class CloudDriveService(Service):
     def getName(self) -> str:
         return "CloudDriveService"
 
+    def getAgentTools(self):
+        """Export local cloud tools after the drive bindings are configured."""
+        return {
+            'name': 'cloud',
+            'source': Path(__file__).parent / 'tools',
+            'configuration': {
+                vnode: {'url': server.getURL()}
+                for vnode, server in self._drives.items()
+            },
+        }
+
     def _createServer(self) -> Server:
         raise AssertionError(
             "CloudDriveService has multiple roles; use createDrive(), "

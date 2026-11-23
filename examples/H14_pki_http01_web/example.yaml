@@ -1,0 +1,52 @@
+id: pki-http01-webservice
+name: PKI HTTP-01 WebService Example
+description: The PKI tools request and deploy an HTTPS certificate from SEEDEmu CAService with HTTP-01.
+runner: internet
+script: scenario.py
+platform: amd
+features:
+  - example-runner
+  - pki-ca-service
+  - pki-acme-http01
+  - pki-tools
+  - web-service
+
+compile:
+  enabled: true
+  output: output-h14
+  clean:
+    - output-h14
+  expected:
+    - output-h14/docker-compose.yml
+  timeout: 300
+
+build:
+  enabled: true
+  timeout: 1200
+
+runtime:
+  compose: output-h14/docker-compose.yml
+  readiness:
+    - name: CA, DNS, HTTP web, and client nodes are running
+      type: compose-ps
+      services:
+        - hnode_150_ca
+        - hnode_150_dns
+        - hnode_150_web
+        - hnode_150_client
+      retries: 30
+      interval: 2
+
+probes:
+  - name: Client reaches the HTTP web service before tool-driven certificate issuance
+    type: exec
+    service: hnode_150_client
+    command: curl -fsS http://web.pki.test/
+    expect_exit: 0
+    retries: 40
+    interval: 3
+
+test_programs:
+  - name: verify the certificate requested and deployed by PKI tools
+    script: test_runtime.py
+    timeout: 180

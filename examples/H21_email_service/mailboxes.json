@@ -1,11 +1,35 @@
 {
-  "hostname": "mail.seed.example",
-  "domains": ["seed.example", "other.example"],
-  "admin": {"email": "postmaster@seed.example", "password": "MailAdminDemo123!"},
-  "users": [
-    {"email": "alice@seed.example", "password": "EmailDemo123!", "quota_bytes": 1073741824},
-    {"email": "bob@seed.example", "password": "EmailDemo123!", "quota_bytes": 1073741824},
-    {"email": "carol@other.example", "password": "EmailDemo123!", "quota_bytes": 1073741824}
+  "hostname": "mail.com",
+  "domains": [
+    "mail.com"
   ],
-  "aliases": [{"email": "support@seed.example", "destination": ["bob@seed.example"]}]
+  "users": [
+    {
+      "email": "alice@mail.com",
+      "password": "EmailDemo123!",
+      "quota_bytes": 1073741824
+    },
+    {
+      "email": "bob@mail.com",
+      "password": "EmailDemo123!",
+      "quota_bytes": 1073741824
+    },
+    {
+      "email": "carol@mail.com",
+      "password": "EmailDemo123!",
+      "quota_bytes": 1073741824
+    },
+    {
+      "email": "bank@mail.com",
+      "password": "BankMailDemo123!"
+    }
+  ],
+  "aliases": [
+    {
+      "email": "support@mail.com",
+      "destination": [
+        "bob@mail.com"
+      ]
+    }
+  ]
 }

@@ -9,24 +9,34 @@ docker compose build
 docker compose up -d
 ```
 
-Use the updated SEED Emulator with the DNSSEC validation and signing-key APIs. Mailu uses the official `ghcr.io/mailu/*:2024.06.67` images; first build downloads them and adds routing tools when needed. SEED generates its signing keys using the official ISC BIND Docker image.
+Mailu uses the official `ghcr.io/mailu/*:2024.06.67` images; first build downloads them and adds routing tools when needed.
 
 | Interface | Address |
 | --- | --- |
-| Webmail | https://localhost:8445/webmail/ |
-| Administration | https://localhost:8445/admin/ |
+| Webmail | http://localhost:8445/webmail/ |
+| Administration | http://localhost:8445/admin/ |
 | Internet Map | http://localhost:8080 |
 
-Accept the laboratory certificate in your browser. Alice and Bob use `alice@seed.example` / `bob@seed.example` with password `EmailDemo123!`. Carol uses `carol@other.example` with the same password. The administrator is `postmaster@seed.example` / `MailAdminDemo123!`.
+| Account | Password | Role |
+| --- | --- | --- |
+| `admin@mail.com` | `MailAdminDemo123!` | Built-in administrator |
+| `bank@mail.com` | `BankMailDemo123!` | Bank sender |
+| `alice@mail.com` | `EmailDemo123!` | Mailbox |
+| `bob@mail.com` | `EmailDemo123!` | Mailbox |
+| `carol@mail.com` | `EmailDemo123!` | Mailbox |
 
-Log into Webmail as Alice, click **Compose**, enter Bob's address, a subject and a message, then **Send**. Log into Bob's mailbox to read and reply. `support@seed.example` is an alias for Bob. Edit [mailboxes.json](mailboxes.json) to define domains, users, passwords, quotas and aliases.
+Administrator credentials are fixed by EmailBundle. Internal webmail:
+<http://mail.com/webmail/>.
 
-In Administration, open **Mail domains** to manage domains, mailboxes, aliases and quotas. Accounts are created from the JSON automatically; public sign-up is disabled.
+Log into Webmail as Alice, click **Compose**, enter Bob's address, a subject and a message, then **Send**. Log into Bob's mailbox to read and reply. `support@mail.com` is an alias for Bob. Edit [mailboxes.json](mailboxes.json) to define domains, users, passwords, quotas and aliases.
 
-Agents inside the emulator use `10.150.0.10`: SMTP submission on 587 with STARTTLS or 465 with TLS, and IMAPS on 993. Server-to-server SMTP uses port 25. Mail protocol traffic remains on SEED networks; browser HTTPS binds to localhost, and Internet Map uses port 8080. The certificate for client verification is `output/email/config/cert.pem`.
+In Administration, open **Mail domains** to manage domains, mailboxes, aliases and quotas. JSON creates the initial accounts. New users can register at
+<http://localhost:8445/admin/user/signup/mail.com> while the service is running.
+
+Agents inside the emulator use `mail.com` (`10.150.0.10`): authenticated SMTP submission on 587 and IMAP on 143. Server-to-server SMTP uses port 25. Mail protocol traffic remains on SEED networks; browser HTTP binds to localhost, and Internet Map uses port 8080.
 
 Without `--state`, recompilation creates fresh mail storage outside `output`. Stop the current stack before recompiling. To save and resume mailboxes, use `python3 email_service.py --state ./email-state` with the same configuration and network. Keep the state directory outside `output`.
 
-H00 provides authoritative DNS at `10.150.0.53`, signs the private root with its `Dnssec` layer, and validates queries at `10.150.0.54`. EmailBundle uses this resolver. The private zone contains mail-domain A/MX records and the `example.org` record required by Mailu's startup check. Public Internet mail delivery is not configured.
+H00 provides root and TLD DNS, a recursive resolver at `10.150.0.54` and shared zone hosting at `10.154.0.53`. The mail domains have their own hosted zones with A/MX records. DNSSEC is disabled; EmailBundle skips Mailu's DNSSEC startup check. Public Internet mail delivery is not configured.
 
-See [the bundle API](../../services/EmailService/README.md).
+See [the bundle API](../../bundles/EmailBundle/README.md).

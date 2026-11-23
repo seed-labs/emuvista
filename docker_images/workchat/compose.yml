@@ -1,0 +1,7 @@
+services:
+  workchat-database:
+    image: handsonsecurity/emuvista-workchat-database:1.0
+    build: ./workchat-database
+  workchat-cache:
+    image: handsonsecurity/emuvista-workchat-cache:1.0
+    build: ./workchat-cache

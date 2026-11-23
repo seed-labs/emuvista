@@ -1,0 +1,6 @@
+"""Shared image and container metadata for deployment and runtime control."""
+BASE = "/opt/emuvista/dshagent"
+VERSION = "0.2.0-rc.2"
+RUNTIME_IMAGE = f"seedemu-dsh-runtime:{VERSION}"
+LABEL_KEY = "dshagent"
+LABEL = f"org.seedsecuritylabs.seedemu.meta.{LABEL_KEY}"

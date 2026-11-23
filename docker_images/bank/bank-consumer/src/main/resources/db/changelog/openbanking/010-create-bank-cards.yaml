@@ -1,0 +1,27 @@
+databaseChangeLog:
+  - changeSet:
+      id: 010-create-bank-cards
+      author: emuvista
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE bank_cards (
+                id UUID PRIMARY KEY,
+                card_number VARCHAR(19) NOT NULL UNIQUE,
+                name VARCHAR(100) NOT NULL,
+                account_external_id VARCHAR(50) NOT NULL,
+                owner_email VARCHAR(254) NOT NULL,
+                currency VARCHAR(3) NOT NULL,
+                status VARCHAR(16) NOT NULL CHECK (status IN ('active','blocked')),
+                expires_on DATE NOT NULL
+              );
+              ALTER TABLE open_banking_consents ADD COLUMN bank_card_id UUID REFERENCES bank_cards(id);
+              ALTER TABLE open_banking_consents ADD COLUMN wallet_owner_email VARCHAR(254);
+              ALTER TABLE open_banking_payments ADD COLUMN bank_card_id UUID REFERENCES bank_cards(id);
+      rollback:
+        - sql:
+            sql: >
+              ALTER TABLE open_banking_payments DROP COLUMN bank_card_id;
+              ALTER TABLE open_banking_consents DROP COLUMN wallet_owner_email;
+              ALTER TABLE open_banking_consents DROP COLUMN bank_card_id;
+              DROP TABLE bank_cards;

@@ -1,0 +1,11 @@
+services:
+  identity-directory:
+    image: handsonsecurity/emuvista-identity-directory:1.0
+    build: ./identity-directory
+  identity-server:
+    image: handsonsecurity/emuvista-identity-server:1.0
+    build: ./identity-server
+
+  auth-gateway:
+    image: handsonsecurity/emuvista-auth-gateway:1.0
+    build: ./auth-gateway

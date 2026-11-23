@@ -1,0 +1,4 @@
+services:
+  erp-app:
+    image: handsonsecurity/emuvista-erp-app:1.0
+    build: ./erp-app

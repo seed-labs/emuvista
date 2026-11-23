@@ -1,0 +1,8 @@
+services:
+  bank-consumer:
+    image: handsonsecurity/emuvista-bank-consumer:1.0
+    build: ./bank-consumer
+
+  bank-frontend:
+    image: handsonsecurity/emuvista-bank-frontend:1.0
+    build: ./bank-frontend

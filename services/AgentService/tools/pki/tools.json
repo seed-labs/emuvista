@@ -1,0 +1,1354 @@
+[
+  {
+    "name": "pki.backup_certificate_material",
+    "description": "Back up application certificate material outside Certbot-managed paths.",
+    "handler": "handlers:backup_certificate_material",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the certificate material backup tool.",
+      "properties": {
+        "paths": {
+          "description": "Paths to back up",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "backup_directory_path": {
+          "description": "Backup directory outside Certbot-managed /etc/letsencrypt",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "paths",
+        "backup_directory_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.check_ca_installed",
+    "description": "Check whether a CA certificate is trusted.",
+    "handler": "handlers:check_ca_installed",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the CA-installed check tool.",
+      "properties": {
+        "trust_store_path": {
+          "description": "Trust-store path",
+          "minLength": 1,
+          "type": "string"
+        },
+        "ca_certificate_path": {
+          "description": "CA certificate path",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "trust_store_path",
+        "ca_certificate_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.check_certificate_expiration",
+    "description": "Check whether a certificate is expired or near expiration.",
+    "handler": "handlers:check_certificate_expiration",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the certificate-expiration check tool.",
+      "properties": {
+        "path": {
+          "description": "Certificate path inside the source container",
+          "minLength": 1,
+          "type": "string"
+        },
+        "warning_seconds": {
+          "description": "Warn if the certificate expires within this many seconds",
+          "maximum": 31536000,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.check_certificate_status",
+    "description": "Check leaf revocation using an explicit CRL; unknown on failure.",
+    "handler": "handlers:check_certificate_status",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "certificate_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "ca_file_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "crl_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "intermediate_chain_path": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "certificate_path",
+        "ca_file_path",
+        "crl_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.check_remote_certificate_expiration",
+    "description": "Check expiration for a certificate presented by a TLS service.",
+    "handler": "handlers:check_remote_certificate_expiration",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the remote certificate-expiration check tool.",
+      "properties": {
+        "target": {
+          "description": "TLS service host or address to connect to",
+          "minLength": 1,
+          "type": "string"
+        },
+        "port": {
+          "description": "TLS service port",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "server_name": {
+          "type": "string"
+        },
+        "warning_seconds": {
+          "description": "Warn if the certificate expires within this many seconds",
+          "maximum": 31536000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "timeout_seconds": {
+          "description": "Maximum time allowed for the TLS connection attempt",
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.check_tls_cipher",
+    "description": "Check whether a TLS service accepts or negotiates a cipher.",
+    "handler": "handlers:check_tls_cipher",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the TLS cipher check tool.",
+      "properties": {
+        "target": {
+          "description": "TLS service host or address to connect to",
+          "minLength": 1,
+          "type": "string"
+        },
+        "cipher": {
+          "description": "Cipher string to test with OpenSSL",
+          "minLength": 1,
+          "type": "string"
+        },
+        "port": {
+          "description": "TLS service port",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "server_name": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "description": "Maximum time allowed for the TLS connection attempt",
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target",
+        "cipher"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.check_tls_hostname",
+    "description": "Check whether a remote TLS certificate matches a hostname.",
+    "handler": "handlers:check_tls_hostname",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the TLS hostname verification tool.",
+      "properties": {
+        "target": {
+          "description": "TLS service host or address to connect to",
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_hostname": {
+          "description": "Hostname expected to be covered by the remote TLS certificate",
+          "minLength": 1,
+          "type": "string"
+        },
+        "port": {
+          "description": "TLS service port",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "server_name": {
+          "type": "string"
+        },
+        "ca_file_path": {
+          "type": "string"
+        },
+        "ca_directory_path": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "description": "Maximum time allowed for the TLS connection attempt",
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target",
+        "expected_hostname"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.check_tls_protocols",
+    "description": "Check which TLS protocol versions are accepted by a service.",
+    "handler": "handlers:check_tls_protocols",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the TLS protocol-version check tool.",
+      "properties": {
+        "target": {
+          "description": "TLS service host or address to connect to",
+          "minLength": 1,
+          "type": "string"
+        },
+        "port": {
+          "description": "TLS service port",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "server_name": {
+          "type": "string"
+        },
+        "protocols": {
+          "description": "OpenSSL protocol switches to test, without the leading dash",
+          "items": {
+            "enum": [
+              "tls1",
+              "tls1_1",
+              "tls1_2",
+              "tls1_3"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout_seconds": {
+          "description": "Maximum time allowed for each TLS connection attempt",
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.compare_certificate_versions",
+    "description": "Compare fingerprints and validity dates for two certificates.",
+    "handler": "handlers:compare_certificate_versions",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the certificate version comparison tool.",
+      "properties": {
+        "first_path": {
+          "description": "First certificate path",
+          "minLength": 1,
+          "type": "string"
+        },
+        "second_path": {
+          "description": "Second certificate path",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "first_path",
+        "second_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.deploy_acme_certificate_to_nginx",
+    "description": "Add an isolated nginx TLS site without replacing the default site or duplicating an existing TLS name.",
+    "handler": "handlers:deploy_acme_certificate_to_nginx",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Deploy a Certbot-managed certificate to an isolated nginx TLS site.",
+      "properties": {
+        "cert_name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "server_name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "cert_name",
+        "server_name"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.explain_verification_failure",
+    "description": "Normalize common OpenSSL verification errors.",
+    "handler": "handlers:explain_verification_failure",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the verification failure explanation tool.",
+      "properties": {
+        "output": {
+          "description": "OpenSSL stdout to classify",
+          "type": "string"
+        },
+        "stderr": {
+          "description": "OpenSSL stderr to classify",
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": []
+    }
+  },
+  {
+    "name": "pki.get_certificate_fingerprint",
+    "description": "Return a certificate fingerprint using a selected digest.",
+    "handler": "handlers:get_certificate_fingerprint",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the certificate fingerprint tool.",
+      "properties": {
+        "path": {
+          "description": "Certificate path inside the source container",
+          "minLength": 1,
+          "type": "string"
+        },
+        "digest": {
+          "description": "Fingerprint digest algorithm",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_acme_readiness",
+    "description": "Check the selected ACME authenticator and local prerequisites; CA-side challenge success remains unverified.",
+    "handler": "handlers:inspect_acme_readiness",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "ca_bundle_path": {
+          "type": "string"
+        },
+        "ca_service_source": {
+          "type": "string"
+        },
+        "ca_service_config_path": {
+          "type": "string"
+        },
+        "directory_url": {
+          "type": "string"
+        },
+        "domains": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "webroot_path": {
+          "type": "string"
+        },
+        "authenticator": {
+          "enum": [
+            "nginx",
+            "webroot",
+            "dns-rfc2136"
+          ],
+          "type": "string"
+        },
+        "dns_credentials_path": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ca_service_source",
+        "directory_url",
+        "domains"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_ca_events",
+    "description": "Read bounded, sanitized step-ca log events.",
+    "handler": "handlers:inspect_ca_events",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "log_path": {
+          "type": "string"
+        },
+        "limit": {
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_ca_service",
+    "description": "Inspect SEEDemu step-ca configuration and process state.",
+    "handler": "handlers:inspect_ca_service",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "config_path": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_certificate_extensions",
+    "description": "Inspect common X.509 certificate extensions.",
+    "handler": "handlers:inspect_certificate_extensions",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the certificate-extension inspection tool.",
+      "properties": {
+        "path": {
+          "description": "Certificate path inside the source container",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_certificate_file",
+    "description": "Inspect an X.509 certificate file inside an emulated node.",
+    "handler": "handlers:inspect_certificate_file",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the certificate-file inspection tool.",
+      "properties": {
+        "path": {
+          "description": "Certificate path inside the source container",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_certificate_names",
+    "description": "Inspect certificate subject and subject alternative names.",
+    "handler": "handlers:inspect_certificate_names",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the certificate-name inspection tool.",
+      "properties": {
+        "path": {
+          "description": "Certificate path inside the source container",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_certificate_public_key",
+    "description": "Inspect the public key embedded in a certificate.",
+    "handler": "handlers:inspect_certificate_public_key",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the certificate public-key inspection tool.",
+      "properties": {
+        "path": {
+          "description": "Certificate path inside the source container",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_csr",
+    "description": "Inspect subject, SANs, public key, and extensions requested by a CSR.",
+    "handler": "handlers:inspect_csr",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the CSR inspection tool.",
+      "properties": {
+        "csr_path": {
+          "description": "CSR path inside the source",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "csr_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_environment",
+    "description": "Inspect node PKI executables and CA bundle availability.",
+    "handler": "handlers:inspect_environment",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "ca_bundle_path": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_private_key",
+    "description": "Inspect private-key metadata without returning key material.",
+    "handler": "handlers:inspect_private_key",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the private-key inspection tool.",
+      "properties": {
+        "key_path": {
+          "description": "Private-key path inside the source",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "key_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_remote_tls_certificate",
+    "description": "Inspect the certificate presented by a remote TLS service.",
+    "handler": "handlers:inspect_remote_tls_certificate",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the remote TLS certificate inspection tool.",
+      "properties": {
+        "target": {
+          "description": "TLS service host or address to connect to",
+          "minLength": 1,
+          "type": "string"
+        },
+        "port": {
+          "description": "TLS service port",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "server_name": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "description": "Maximum time allowed for the TLS connection attempt",
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_remote_tls_chain",
+    "description": "Inspect every certificate presented by a remote TLS service.",
+    "handler": "handlers:inspect_remote_tls_chain",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the remote TLS chain inspection tool.",
+      "properties": {
+        "target": {
+          "description": "TLS service host or address to connect to",
+          "minLength": 1,
+          "type": "string"
+        },
+        "port": {
+          "description": "TLS service port",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "server_name": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "description": "Maximum time allowed for the TLS connection attempt",
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_renewal_status",
+    "description": "Inspect saved renewal configuration and scheduler observations.",
+    "handler": "handlers:inspect_renewal_status",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "cert_name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "config_directory": {
+          "type": "string"
+        },
+        "log_path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cert_name"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_tls_handshake",
+    "description": "Inspect negotiated TLS version, cipher, and verification status.",
+    "handler": "handlers:inspect_tls_handshake",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the TLS handshake inspection tool.",
+      "properties": {
+        "target": {
+          "description": "TLS service host or address to connect to",
+          "minLength": 1,
+          "type": "string"
+        },
+        "port": {
+          "description": "TLS service port",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "server_name": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "description": "Maximum time allowed for the TLS connection attempt",
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.inspect_trust_store",
+    "description": "Inspect trust-store material.",
+    "handler": "handlers:inspect_trust_store",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the trust-store inspection tool.",
+      "properties": {
+        "trust_store_path": {
+          "description": "Trust-store path",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "trust_store_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.install_certificate",
+    "description": "Install a certificate outside Certbot-managed paths.",
+    "handler": "handlers:install_certificate",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments for copying one certificate material file.",
+      "properties": {
+        "source_path": {
+          "description": "Existing source path",
+          "minLength": 1,
+          "type": "string"
+        },
+        "destination_path": {
+          "description": "Application-specific destination outside Certbot-managed /etc/letsencrypt",
+          "minLength": 1,
+          "type": "string"
+        },
+        "overwrite": {
+          "description": "Allow overwriting a non-symlink application destination",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source_path",
+        "destination_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.install_certificate_chain",
+    "description": "Install a certificate chain bundle outside Certbot-managed paths.",
+    "handler": "handlers:install_certificate_chain",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments for copying one certificate material file.",
+      "properties": {
+        "source_path": {
+          "description": "Existing source path",
+          "minLength": 1,
+          "type": "string"
+        },
+        "destination_path": {
+          "description": "Application-specific destination outside Certbot-managed /etc/letsencrypt",
+          "minLength": 1,
+          "type": "string"
+        },
+        "overwrite": {
+          "description": "Allow overwriting a non-symlink application destination",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source_path",
+        "destination_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.install_private_key",
+    "description": "Install an application private key outside Certbot-managed paths with restrictive permissions.",
+    "handler": "handlers:install_private_key",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments for copying one certificate material file.",
+      "properties": {
+        "source_path": {
+          "description": "Existing source path",
+          "minLength": 1,
+          "type": "string"
+        },
+        "destination_path": {
+          "description": "Application-specific destination outside Certbot-managed /etc/letsencrypt",
+          "minLength": 1,
+          "type": "string"
+        },
+        "overwrite": {
+          "description": "Allow overwriting a non-symlink application destination",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source_path",
+        "destination_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.list_expiring_certificates",
+    "description": "Scan a bounded directory for certificates expiring within a window.",
+    "handler": "handlers:list_expiring_certificates",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the directory expiration scan tool.",
+      "properties": {
+        "directory_path": {
+          "description": "Directory to scan inside the source",
+          "minLength": 1,
+          "type": "string"
+        },
+        "warning_seconds": {
+          "description": "Report certificates expiring within this many seconds",
+          "maximum": 31536000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_depth": {
+          "description": "Maximum find depth",
+          "maximum": 5,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "directory_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.list_managed_certificates",
+    "description": "List existing Certbot certificate lineages without changes.",
+    "handler": "handlers:list_managed_certificates",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "config_directory": {
+          "type": "string"
+        },
+        "limit": {
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.remove_ca_certificate",
+    "description": "Remove a fingerprint-pinned CA certificate from the SEEDEmu trust-store directory, then refresh trust.",
+    "handler": "handlers:remove_ca_certificate",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the CA removal tool.",
+      "properties": {
+        "ca_certificate_path": {
+          "description": "Installed CA certificate path",
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_fingerprint_sha256": {
+          "description": "Expected SHA-256 fingerprint of the CA certificate being removed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ca_certificate_path",
+        "expected_fingerprint_sha256"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.renew_acme_certificate",
+    "description": "Renew a Certbot-managed ACME certificate.",
+    "handler": "handlers:renew_acme_certificate",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Renew one Certbot-managed certificate.",
+      "properties": {
+        "ca_service_source": {
+          "description": "SEEDEmu CA Service node",
+          "type": "string"
+        },
+        "ca_service_config_path": {
+          "type": "string"
+        },
+        "cert_name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "force_renewal": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ca_service_source",
+        "cert_name"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.request_acme_certificate",
+    "description": "Request a certificate using HTTP-01 or the configured RFC 2136 DNS-01 plugin.",
+    "handler": "handlers:request_acme_certificate",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Request a certificate from an ACME CA available inside the emulator.",
+      "properties": {
+        "ca_service_source": {
+          "description": "SEEDEmu CA Service node",
+          "type": "string"
+        },
+        "ca_service_config_path": {
+          "type": "string"
+        },
+        "directory_url": {
+          "description": "ACME directory URL",
+          "minLength": 1,
+          "type": "string"
+        },
+        "domains": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "email": {
+          "minLength": 3,
+          "type": "string"
+        },
+        "authenticator": {
+          "enum": [
+            "nginx",
+            "webroot",
+            "dns-rfc2136"
+          ],
+          "type": "string"
+        },
+        "webroot_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "dns_credentials_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "dns_propagation_seconds": {
+          "maximum": 600,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cert_name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "force_renewal": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ca_service_source",
+        "directory_url",
+        "domains",
+        "email"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.restore_certificate_material",
+    "description": "Restore backed-up material outside Certbot-managed paths.",
+    "handler": "handlers:restore_certificate_material",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the certificate material restore tool.",
+      "properties": {
+        "backup_path": {
+          "description": "Backup path",
+          "minLength": 1,
+          "type": "string"
+        },
+        "restore_path": {
+          "description": "Application-specific restore path outside Certbot-managed /etc/letsencrypt",
+          "minLength": 1,
+          "type": "string"
+        },
+        "overwrite": {
+          "description": "Allow overwriting a non-symlink application destination",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "backup_path",
+        "restore_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.revoke_acme_certificate",
+    "description": "Revoke a certificate through its ACME CA.",
+    "handler": "handlers:revoke_acme_certificate",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Revoke one certificate through its issuing ACME CA.",
+      "properties": {
+        "ca_service_source": {
+          "description": "SEEDEmu CA Service node",
+          "type": "string"
+        },
+        "ca_service_config_path": {
+          "type": "string"
+        },
+        "directory_url": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "certificate_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "unspecified",
+            "keycompromise",
+            "affiliationchanged",
+            "superseded",
+            "cessationofoperation"
+          ],
+          "type": "string"
+        },
+        "delete_after_revoke": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ca_service_source",
+        "directory_url",
+        "certificate_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.test_mtls_connection",
+    "description": "Compare HTTPS HEAD requests with and without a client certificate.",
+    "handler": "handlers:test_mtls_connection",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_hostname": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "client_certificate_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "client_private_key_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "ca_file_path": {
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "timeout_seconds": {
+          "maximum": 15,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target",
+        "expected_hostname",
+        "client_certificate_path",
+        "client_private_key_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.update_trust_store",
+    "description": "Run the fixed update-ca-certificates command.",
+    "handler": "handlers:update_trust_store",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the trust-store update tool.",
+      "properties": {},
+      "required": [],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.verify_certificate_against_ca",
+    "description": "Verify a certificate against a single CA certificate file.",
+    "handler": "handlers:verify_certificate_against_ca",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the focused CA verification tool.",
+      "properties": {
+        "certificate_path": {
+          "description": "Certificate path inside the source",
+          "minLength": 1,
+          "type": "string"
+        },
+        "ca_file_path": {
+          "description": "CA certificate path inside the source",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "certificate_path",
+        "ca_file_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.verify_certificate_chain",
+    "description": "Verify a certificate chain against trusted CA material.",
+    "handler": "handlers:verify_certificate_chain",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the certificate-chain verification tool.",
+      "properties": {
+        "certificate_path": {
+          "description": "Certificate path inside the source",
+          "minLength": 1,
+          "type": "string"
+        },
+        "ca_file_path": {
+          "type": "string"
+        },
+        "ca_directory_path": {
+          "type": "string"
+        },
+        "untrusted_chain_path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "certificate_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.verify_certificate_with_intermediates",
+    "description": "Verify a certificate with supplied intermediate certificates.",
+    "handler": "handlers:verify_certificate_with_intermediates",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the intermediate-chain verification tool.",
+      "properties": {
+        "certificate_path": {
+          "description": "Certificate path inside the source",
+          "minLength": 1,
+          "type": "string"
+        },
+        "ca_file_path": {
+          "description": "CA certificate path inside the source",
+          "minLength": 1,
+          "type": "string"
+        },
+        "intermediate_chain_path": {
+          "description": "Intermediate chain path inside the source container",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "certificate_path",
+        "ca_file_path",
+        "intermediate_chain_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.verify_private_key_matches_certificate",
+    "description": "Check whether a private key corresponds to a certificate.",
+    "handler": "handlers:verify_private_key_matches_certificate",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the key/certificate match tool.",
+      "properties": {
+        "key_path": {
+          "description": "Private-key path inside the source",
+          "minLength": 1,
+          "type": "string"
+        },
+        "certificate_path": {
+          "description": "Certificate path inside the source",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "key_path",
+        "certificate_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.verify_remote_tls_chain",
+    "description": "Connect to a remote TLS service and verify its certificate chain.",
+    "handler": "handlers:verify_remote_tls_chain",
+    "input_schema": {
+      "additionalProperties": false,
+      "description": "Arguments accepted by the remote TLS chain verification tool.",
+      "properties": {
+        "target": {
+          "description": "TLS service host or address to connect to",
+          "minLength": 1,
+          "type": "string"
+        },
+        "port": {
+          "description": "TLS service port",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "server_name": {
+          "type": "string"
+        },
+        "ca_file_path": {
+          "type": "string"
+        },
+        "ca_directory_path": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "description": "Maximum time allowed for the TLS connection attempt",
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "pki.verify_tls_deployment",
+    "description": "Verify remote TLS trust, hostname and expected SHA-256 fingerprint.",
+    "handler": "handlers:verify_tls_deployment",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_hostname": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_fingerprint_sha256": {
+          "type": "string"
+        },
+        "ca_file_path": {
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "timeout_seconds": {
+          "maximum": 15,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target",
+        "expected_hostname",
+        "expected_fingerprint_sha256"
+      ],
+      "type": "object"
+    }
+  }
+]
