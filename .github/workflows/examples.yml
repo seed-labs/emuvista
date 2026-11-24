@@ -1,0 +1,97 @@
+name: Example smoke tests
+
+on:
+  pull_request:
+    branches: [main, development]
+  push:
+    branches: [main, development]
+  workflow_dispatch:
+    inputs:
+      example:
+        description: Any example code (H00, H12, H13, H14, H15, H20, etc.) or all
+        default: all
+        type: string
+      seedemu-ref:
+        description: SeedEmu branch, tag, or commit
+        default: release
+        type: string
+      full-lifecycle:
+        description: Also build images, start containers, check readiness, and clean up
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: examples-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      examples: ${{ steps.matrix.outputs.examples }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select examples
+        id: matrix
+        env:
+          SELECTED_EXAMPLE: ${{ inputs.example || 'all' }}
+        run: |
+          example_matrix=$(python3 tests/run_examples.py list "$SELECTED_EXAMPLE" --json)
+          echo "examples=$example_matrix" >> "$GITHUB_OUTPUT"
+
+  smoke:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        example: ${{ fromJSON(needs.prepare.outputs.examples) }}
+    env:
+      DOCKER_BUILDKIT: '1'
+      FULL_LIFECYCLE: ${{ inputs.full-lifecycle || false }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: emuvista
+      - uses: actions/checkout@v5
+        with:
+          repository: seed-labs/seed-emulator
+          ref: ${{ inputs.seedemu-ref || 'release' }}
+          path: seed-emulator
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+          cache: pip
+          cache-dependency-path: emuvista/requirements.txt
+      - name: Install dependencies
+        run: python -m pip install -e ./seed-emulator -r emuvista/requirements.txt
+      - name: Check the runner
+        working-directory: emuvista
+        run: python -m unittest discover -s tests/ci -p 'test_*.py'
+      - name: Prepare bridge forwarding
+        if: env.FULL_LIFECYCLE == 'true'
+        run: |
+          sudo modprobe br_netfilter
+          sudo sysctl -w net.bridge.bridge-nf-call-iptables=0
+      - name: Run the example
+        working-directory: emuvista
+        env:
+          EXAMPLE: ${{ matrix.example }}
+        run: |
+          if [ "$FULL_LIFECYCLE" = true ]; then
+            python tests/run_examples.py all "$EXAMPLE"
+          else
+            python tests/run_examples.py compile "$EXAMPLE"
+          fi
+      - name: Upload logs and results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: smoke-${{ matrix.example }}
+          path: emuvista/ci-artifacts/
+          if-no-files-found: warn
+          retention-days: 7

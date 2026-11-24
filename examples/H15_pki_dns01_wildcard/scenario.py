@@ -17,6 +17,7 @@ if str(SEEDEMU_ROOT) not in sys.path:
     sys.path.insert(0, str(SEEDEMU_ROOT))
 
 from seedemu.compiler import Docker, Platform  # noqa: E402
+from seedemu.containerBundle import InternetMap  # noqa: E402
 from seedemu.core import Binding, Emulator, Filter  # noqa: E402
 from seedemu.layers import Base, Routing  # noqa: E402
 from seedemu.services import (  # noqa: E402
@@ -132,11 +133,11 @@ def main() -> int:
     platform = Platform.AMD64 if args.platform == "amd" else Platform.ARM64
     output = args.output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    emu.compile(
-        Docker(platform=platform, internetMapEnabled=True, internetMapPort=8081),
-        str(output),
-        override=True,
-    )
+    compiler = Docker(platform=platform)
+    internet_map = InternetMap(emu)
+    internet_map.setPorts([8083, 8081, 8084])
+    compiler.addContainerBundle(internet_map)
+    emu.compile(compiler, str(output), override=True)
     print(f"Generated DNS-01 PKI example in {output}")
     return 0
 

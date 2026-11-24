@@ -1,0 +1,24 @@
+id: h98
+runner: internet
+script: virtual_company.py
+compile:
+  standard_args: false
+  args:
+  - --output
+  - output
+  output: output
+  expected:
+  - output/docker-compose.yml
+  timeout: 600
+build:
+  images:
+  - identity
+  - erp
+  - workchat
+  - project
+  - helpdesk
+  - knowledge
+  timeout: 3600
+runtime:
+  compose: output/docker-compose.yml
+  timeout: 1800

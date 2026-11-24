@@ -1,0 +1,22 @@
+id: e99
+runner: internet
+script: virtual_world_with_agents.py
+compile:
+  standard_args: false
+  args:
+  - --output
+  - output
+  output: output
+  expected:
+  - output/docker-compose.yml
+  timeout: 600
+build:
+  images:
+  - payment
+  - bank
+  - shop
+  timeout: 3600
+runtime:
+  compose: output/docker-compose.yml
+  timeout: 1200
+  startup: start.py

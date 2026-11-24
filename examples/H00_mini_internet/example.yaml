@@ -1,0 +1,18 @@
+id: h00
+runner: internet
+script: mini_internet.py
+compile:
+  standard_args: false
+  args:
+  - --output
+  - output
+  output: output
+  expected:
+  - output/docker-compose.yml
+  timeout: 600
+build:
+  images: []
+  timeout: 3600
+runtime:
+  compose: output/docker-compose.yml
+  timeout: 1200

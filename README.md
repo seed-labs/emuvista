@@ -19,4 +19,7 @@ adapter and per-agent tool permissions. Fill the experiment .env with your LLM A
 Requires a working SEED Emulator installation, Python dependencies from
 `requirements.txt`, and Docker. Individual examples document additional images.
 
+[Example smoke tests](tests/README.md) check compilation, image builds, and startup
+locally and in GitHub Actions.
+
 Licensed under [GPL-3.0](LICENSE).
