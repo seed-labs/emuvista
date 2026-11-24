@@ -15,10 +15,6 @@ on:
         description: SeedEmu branch, tag, or commit
         default: release
         type: string
-      full-lifecycle:
-        description: Also build images, start containers, check readiness, and clean up
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -52,7 +48,6 @@ jobs:
         example: ${{ fromJSON(needs.prepare.outputs.examples) }}
     env:
       DOCKER_BUILDKIT: '1'
-      FULL_LIFECYCLE: ${{ inputs.full-lifecycle || false }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -73,20 +68,14 @@ jobs:
         working-directory: emuvista
         run: python -m unittest discover -s tests/ci -p 'test_*.py'
       - name: Prepare bridge forwarding
-        if: env.FULL_LIFECYCLE == 'true'
         run: |
           sudo modprobe br_netfilter
           sudo sysctl -w net.bridge.bridge-nf-call-iptables=0
-      - name: Run the example
+      - name: Compile, build, and start the example
         working-directory: emuvista
         env:
           EXAMPLE: ${{ matrix.example }}
-        run: |
-          if [ "$FULL_LIFECYCLE" = true ]; then
-            python tests/run_examples.py all "$EXAMPLE"
-          else
-            python tests/run_examples.py compile "$EXAMPLE"
-          fi
+        run: python tests/run_examples.py all "$EXAMPLE"
       - name: Upload logs and results
         if: always()
         uses: actions/upload-artifact@v6

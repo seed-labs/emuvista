@@ -10,6 +10,7 @@ required for builds and startup; PKI examples also use Docker during compilation
 
 ```sh
 python tests/run_examples.py list
+python tests/run_examples.py all all
 python tests/run_examples.py compile all
 python tests/run_examples.py compile H12
 python tests/run_examples.py build H20
@@ -23,7 +24,8 @@ python tests/run_examples.py all H20
 | `all` | Compile, build, start, wait for readiness, collect logs, and stop |
 
 Replace `H20` with any listed code, or `all`. Examples run sequentially locally.
-Compilation covers every current example, including those before H20:
+Compilation, image builds, and startup checks cover every current example,
+including those before H20:
 
 | Code | Example |
 | --- | --- |
@@ -73,15 +75,16 @@ API credentials are copied. Agent decisions and tool execution are not verified.
 
 ## GitHub Actions
 
-[Example smoke tests](../.github/workflows/examples.yml) compiles all registered
-examples on pushes and PRs to `main` and `development`. Each example runs in a
-separate Ubuntu job, and logs are uploaded even after failures.
+[Example smoke tests](../.github/workflows/examples.yml) runs compile → build →
+up → container readiness → down for all examples on pushes and PRs to `main`
+and `development`. Each example runs in a separate Ubuntu job, and logs are
+uploaded even after failures. This checks startup only; no business probes or
+functional test programs are run.
 
 Use **Actions → Example smoke tests → Run workflow** to choose:
 
 - `example`: one code or `all`.
 - `seedemu-ref`: a SeedEmu branch, tag, or commit; defaults to `release`.
-- `full-lifecycle`: also build and start the deployment; defaults to false.
 
 Large worlds, especially H98, need substantial memory, disk space, and build
 time. Full lifecycle runs have a 180-minute job limit. Use a SeedEmu ref containing
