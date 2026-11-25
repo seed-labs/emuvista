@@ -20,4 +20,7 @@ AS164 campus. It currently reuses CloudDriveService, with separate application,
 database, and object-storage nodes.
 
 [H23_shop_service](H23_shop_service/) demonstrates multi-vendor shopping with Payment balance and bank-card checkout.
+
+[H24_stock_market](H24_stock_market/) demonstrates three agents trading through Stock Service and QuantReplay, with a dashboard for orders, fills, and holdings.
+
 [H30_cloud_drive_service](H30_cloud_drive_service/) uses DshAgentService to deploy Cloud Drive agents.

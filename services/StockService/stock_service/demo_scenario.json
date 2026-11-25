@@ -1,0 +1,84 @@
+{
+  "id": "agents-compete-for-bob-shares-price-priority",
+  "name": "Agents compete for Bob's shares",
+  "description": "Bob offers shares for sale. Alice and Carol submit buy orders at different prices; Alice's higher bid is filled first.",
+  "symbol": "EMU",
+  "company": "Emu Robotics",
+  "currency": "USD",
+  "initial_price": 10.0,
+  "agents": [
+    {"id": "agent-alice", "name": "Alice", "color": "#6558d3", "cash": 100.0, "shares": 0},
+    {"id": "agent-carol", "name": "Carol", "color": "#d18b45", "cash": 100.0, "shares": 0},
+    {"id": "agent-bob", "name": "Bob", "color": "#0f9f82", "cash": 100.0, "shares": 5}
+  ],
+  "events": [
+    {
+      "id": "start",
+      "time": "09:30:00",
+      "type": "market_open",
+      "title": "Market opens",
+      "detail": "Alice and Carol want to buy EMU shares. Bob owns five shares to sell.",
+      "price": 10.0,
+      "book": {"bids": [], "asks": []},
+      "agents": {"agent-alice": {"cash": 100.0, "shares": 0}, "agent-carol": {"cash": 100.0, "shares": 0}, "agent-bob": {"cash": 100.0, "shares": 5}},
+      "trades": []
+    },
+    {
+      "id": "bob-sell",
+      "time": "09:30:12",
+      "type": "order_placed",
+      "title": "Bob offers shares for sale",
+      "detail": "Sell 5 EMU shares at $10.00 each.",
+      "actor": "agent-bob",
+      "price": 10.0,
+      "book": {"bids": [], "asks": [{"agent": "agent-bob", "quantity": 5, "price": 10.0, "side": "SELL", "sequence": 1, "status": "OPEN"}]},
+      "agents": {"agent-alice": {"cash": 100.0, "shares": 0}, "agent-carol": {"cash": 100.0, "shares": 0}, "agent-bob": {"cash": 100.0, "shares": 5}},
+      "trades": []
+    },
+    {
+      "id": "carol-low-bid",
+      "time": "09:30:16",
+      "type": "order_placed",
+      "title": "Carol bids below the asking price",
+      "detail": "Buy 3 shares at up to $9.80. This bid stays open below Bob's $10.00 ask.",
+      "actor": "agent-carol",
+      "price": 10.0,
+      "book": {"bids": [{"agent": "agent-carol", "quantity": 3, "price": 9.8, "side": "BUY", "sequence": 2, "status": "OPEN"}], "asks": [{"agent": "agent-bob", "quantity": 5, "price": 10.0, "side": "SELL", "sequence": 1, "status": "OPEN"}]},
+      "agents": {"agent-alice": {"cash": 100.0, "shares": 0}, "agent-carol": {"cash": 100.0, "shares": 0}, "agent-bob": {"cash": 100.0, "shares": 5}},
+      "trades": []
+    },
+    {
+      "id": "alice-high-bid",
+      "time": "09:30:20",
+      "type": "order_placed",
+      "title": "Alice submits the higher bid",
+      "detail": "Buy 2 shares at up to $10.20. Alice's bid ranks ahead of Carol's $9.80 bid.",
+      "actor": "agent-alice",
+      "price": 10.0,
+      "book": {
+        "bids": [
+          {"agent": "agent-alice", "quantity": 2, "price": 10.2, "side": "BUY", "sequence": 3, "status": "OPEN"},
+          {"agent": "agent-carol", "quantity": 3, "price": 9.8, "side": "BUY", "sequence": 2, "status": "OPEN"}
+        ],
+        "asks": [{"agent": "agent-bob", "quantity": 5, "price": 10.0, "side": "SELL", "sequence": 1, "status": "OPEN"}]
+      },
+      "agents": {"agent-alice": {"cash": 100.0, "shares": 0}, "agent-carol": {"cash": 100.0, "shares": 0}, "agent-bob": {"cash": 100.0, "shares": 5}},
+      "trades": []
+    },
+    {
+      "id": "high-bid-fill",
+      "time": "09:30:20",
+      "type": "matched",
+      "title": "Alice's higher bid gets priority",
+      "detail": "Alice buys 2 shares at Bob's resting ask price of $10.00. Carol's lower bid remains open.",
+      "actor": "agent-alice",
+      "price": 10.0,
+      "book": {
+        "bids": [{"agent": "agent-carol", "quantity": 3, "price": 9.8, "side": "BUY", "sequence": 2, "status": "OPEN"}],
+        "asks": [{"agent": "agent-bob", "quantity": 3, "price": 10.0, "side": "SELL", "sequence": 1, "status": "OPEN"}]
+      },
+      "agents": {"agent-alice": {"cash": 80.0, "shares": 2}, "agent-carol": {"cash": 100.0, "shares": 0}, "agent-bob": {"cash": 120.0, "shares": 3}},
+      "trades": [{"time": "09:30:20", "buyer": "agent-alice", "seller": "agent-bob", "quantity": 2, "price": 10.0, "total": 20.0}]
+    }
+  ]
+}
