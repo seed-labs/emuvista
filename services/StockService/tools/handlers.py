@@ -87,6 +87,13 @@ def place_order(arguments, context):
                 instance=arguments.get("instance"))
 
 
+def buy_from_system(arguments, context):
+    body = {key: arguments[key] for key in ("client_order_id", "symbol", "quantity", "max_unit_price")
+            if key in arguments}
+    return call(context, "/api/v1/system-purchases", method="POST", body=body,
+                instance=arguments.get("instance"))
+
+
 def cancel_order(arguments, context):
     return call(context, "/api/v1/orders/" + arguments["client_order_id"] + "/cancel",
                 method="POST", body={}, instance=arguments.get("instance"))

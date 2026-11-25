@@ -68,7 +68,7 @@
   {
     "name": "stock.market",
     "handler": "handlers:market",
-    "description": "Read the best bid, best ask, latest trade price, open orders, recent fills, and share ownership for a simulated ticker.",
+    "description": "Read real-world prices and freshness through quote, and the separate virtual_quote, order book, recent fills, and holdings for a simulated ticker.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -76,6 +76,23 @@
         "symbol": {"type": "string", "minLength": 1, "maxLength": 16}
       },
       "required": ["symbol"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "stock.buy_from_system",
+    "handler": "handlers:buy_from_system",
+    "description": "Buy virtual shares directly from Stock Service at the latest real-market trade price from a recent successful provider check, using your available Stock cash. The system has unlimited inventory for configured symbols. Set max_unit_price to cap your purchase price. Reuse the same client_order_id and body for retries.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "client_order_id": {"type": "string", "minLength": 36, "maxLength": 36},
+        "symbol": {"type": "string", "minLength": 1, "maxLength": 16},
+        "quantity": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "max_unit_price": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "required": ["client_order_id", "symbol", "quantity"],
       "additionalProperties": false
     }
   },

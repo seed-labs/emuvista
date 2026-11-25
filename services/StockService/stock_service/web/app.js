@@ -2,6 +2,10 @@ const $ = (selector) => document.querySelector(selector);
 const state = {scenario: null, index: 0, timer: null, live: false, liveTimer: null, demoTimer: null, demoStatus: null, symbol: 'EMU'};
 const money = (value) => `$${Number(value).toFixed(2)}`;
 const quotePrice = (value) => value == null ? '—' : money(value);
+const usdQuote = new Intl.NumberFormat('en-US', {
+  style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 8,
+});
+const realPrice = (value) => value == null ? '—' : usdQuote.format(Number(value));
 const agentById = (id) => state.scenario.agents.find((agent) => agent.id === id);
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -14,18 +18,19 @@ async function loadScenario() {
     if (!/^[A-Za-z0-9._-]{1,16}$/.test(state.symbol)) throw new Error('Invalid market symbol');
     document.body.classList.add('live-mode');
     $('.demo-chip').textContent = 'LIVE STOCK SERVICE';
-    $('.demo-notice').innerHTML = '<span class="notice-icon">i</span><span><strong>Live market.</strong> Orders, fills, and holdings are read from Stock Service.</span><button id="notice-dismiss" aria-label="Dismiss notice">×</button>';
+    $('.demo-notice').innerHTML = '<span class="notice-icon">i</span><span><strong>Live market.</strong> Real prices come from the external data feed. Orders, fills, and holdings belong to the simulation.</span><button id="notice-dismiss" aria-label="Dismiss notice">×</button>';
     $('.scenario-picker').innerHTML = '<label>LIVE MARKET</label><span style="font-weight:600;font-size:12px;color:#41495a"></span>';
     $('.scenario-picker span').textContent = `${state.symbol} · USD`;
     $('.book-symbol').innerHTML = `<span class="book-pulse"></span>${state.symbol} <span class="tiny-separator">·</span> LIMIT ORDERS`;
-    $('.trades-card .tape-live')?.replaceChildren(document.createTextNode('LIVE'));
-    $('.book-foot span:last-child').innerHTML = 'LIVE FEED <i class="feed-dot"></i>';
+    $('.trades-card .tape-live')?.replaceChildren(document.createTextNode('VIRTUAL'));
+    $('.order-card .book-mid span:nth-child(2)').textContent = 'LAST VIRTUAL TRADE';
+    $('#volume-label').textContent = 'VIRTUAL VOLUME';
+    $('.book-foot span:last-child').innerHTML = 'VIRTUAL ORDER BOOK <i class="feed-dot"></i>';
     $('.timeline-controls').hidden = true;
     $('.activity-section .section-kicker').textContent = 'LIVE MARKET STATE';
     $('.activity-section h2').textContent = 'Current market state';
     $('#price-change').hidden = true;
-    $('#agent-control').hidden = false;
-    await updateDemoStatus();
+    await updateDemoStatus().catch(showError);
     await loadLiveMarket();
     state.liveTimer = setInterval(() => loadLiveMarket().catch(showError), 2000);
     state.demoTimer = setInterval(() => updateDemoStatus().catch(showError), 1200);
@@ -74,8 +79,8 @@ async function loadLiveMarket() {
     },
     agents: Object.fromEntries([...accounts].map(([id, agent]) => [id, {shares: agent.shares}])),
     trades: fills,
-    price: market.quote.last_trade_price,
-    quote: market.quote,
+    price: market.virtual_quote?.last_trade_price,
+    realQuote: market.quote,
   }];
   state.scenario = {
     company: `${market.symbol} Agent Market`, symbol: market.symbol,
@@ -100,7 +105,9 @@ function renderChart() {
   const trades = state.scenario.events.slice(0, state.index + 1).flatMap((event) => event.trades || []);
   const values = trades.map((trade) => trade.price);
   if (!state.live) values.unshift(state.scenario.initial_price);
-  $('.chart-label').textContent = values.length ? 'TRADE PRICE' : 'NO TRADES YET';
+  $('.chart-label').textContent = state.live
+    ? (values.length ? 'VIRTUAL TRADE PRICES' : 'NO VIRTUAL TRADES YET')
+    : (values.length ? 'TRADE PRICE' : 'NO TRADES YET');
   if (!values.length) {
     chart.replaceChildren();
     return;
@@ -134,11 +141,13 @@ function renderBook(event) {
   $('#bids-list').innerHTML = bids.length ? bids.map((o) => row(o, 'BUY')).join('') : '<div class="empty-order">No open buy orders</div>';
   $('#ask-count').textContent = `${asks.length} ${asks.length === 1 ? 'order' : 'orders'}`;
   $('#bid-count').textContent = `${bids.length} ${bids.length === 1 ? 'order' : 'orders'}`;
-  const ask = event.quote ? event.quote.best_ask : asks[0]?.price;
-  const bid = event.quote ? event.quote.best_bid : bids[0]?.price;
-  $('#best-ask').textContent = quotePrice(ask);
-  $('#best-bid').textContent = quotePrice(bid);
-  $('#spread').textContent = ask != null && bid != null ? money(ask - bid) : '—';
+  if (!state.live) {
+    const ask = asks[0]?.price;
+    const bid = bids[0]?.price;
+    $('#best-ask').textContent = quotePrice(ask);
+    $('#best-bid').textContent = quotePrice(bid);
+    $('#spread').textContent = ask != null && bid != null ? money(ask - bid) : '—';
+  }
   $('#book-mid-price').textContent = quotePrice(event.price);
 }
 
@@ -178,11 +187,33 @@ function renderTimeline() {
   $('#progress-fill').style.width = `${(state.index + 1) / events.length * 100}%`;
 }
 
+function renderRealQuote(quote) {
+  $('#quote-price-label').textContent = 'LATEST REAL TRADE';
+  $('#last-price').textContent = realPrice(quote.last_trade_price);
+  $('#best-bid').textContent = realPrice(quote.best_bid);
+  $('#best-ask').textContent = realPrice(quote.best_ask);
+  $('#spread').textContent = realPrice(quote.spread);
+  const source = $('#quote-source');
+  source.hidden = false;
+  if (quote.trade_status === 'not_configured') {
+    source.textContent = 'Real market data is not configured for this instrument.';
+    return;
+  }
+  const describe = (status, timestamp) => {
+    if (!timestamp || status === 'unavailable') return 'unavailable';
+    const time = new Date(timestamp).toLocaleString();
+    return status === 'stale' ? `${time} (stale)` : time;
+  };
+  const checkedAt = quote.checked_at ? new Date(quote.checked_at).toLocaleString() : 'unavailable';
+  source.textContent = `${quote.provider_symbol} · ${quote.source} · Last trade ${describe(quote.trade_status, quote.last_trade_at)} · Bid/ask ${describe(quote.quote_status, quote.quoted_at)} · Feed checked ${checkedAt}`;
+}
+
 function render() {
   const event = currentEvent();
   $('#company-name').textContent = state.scenario.company;
   $('#ticker').textContent = state.scenario.symbol;
-  $('#last-price').textContent = quotePrice(event.price);
+  if (state.live) renderRealQuote(event.realQuote);
+  else $('#last-price').textContent = quotePrice(event.price);
   $('#market-clock').textContent = event.time;
   if (!state.live) {
     $('#price-change').innerHTML = event.trades?.length ? '<span class="change-arrow">↗</span><span>0.00%</span><small>SCENARIO FILL</small>' : '<span class="change-arrow">↗</span><span>—</span><small>NO CHANGE</small>';
@@ -225,9 +256,11 @@ document.addEventListener('keydown', (event) => { if (event.code === 'Space' && 
 
 async function updateDemoStatus() {
   const response = await fetch('/api/v1/demo/status', {cache: 'no-store'});
+  if (response.status === 404) return;
   const status = await response.json();
   if (!response.ok) throw new Error(status.detail || status.error || 'Could not read agent status');
   state.demoStatus = status;
+  $('#agent-control').hidden = false;
   const button = $('#start-actions-button');
   const label = $('#agent-control-status');
   if (status.completed) {

@@ -44,6 +44,21 @@ CREATE TABLE IF NOT EXISTS stock_allocations (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS stock_system_purchases (
+    account_id UUID NOT NULL REFERENCES stock_accounts(id),
+    client_order_id UUID NOT NULL,
+    symbol TEXT NOT NULL,
+    quantity BIGINT NOT NULL CHECK (quantity > 0),
+    unit_price NUMERIC(20, 8) NOT NULL CHECK (unit_price > 0),
+    max_unit_price NUMERIC(20, 8),
+    total NUMERIC(20, 2) NOT NULL CHECK (total > 0),
+    source TEXT NOT NULL,
+    provider_symbol TEXT NOT NULL,
+    last_trade_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (account_id, client_order_id)
+);
+
 CREATE TABLE IF NOT EXISTS stock_orders (
     id UUID PRIMARY KEY,
     account_id UUID NOT NULL REFERENCES stock_accounts(id),

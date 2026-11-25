@@ -1,18 +1,13 @@
 # H24: Live Stock Market Trade
 
-H24 runs an LLM-driven order and settlement cycle through Stock Service and QuantReplay. Alice, Bob, and Carol each run as an independent agent process on their own SeedEmu node and use a separate Stock account:
+H24 demonstrates both ways agents can buy simulated AMZ shares. Alice, Bob, and Carol each run on their own SeedEmu node and use separate Stock accounts linked to their H24 Bank debit cards.
 
-1. Alice owns one `AMZ` share and rests a sell limit order at **$11.00**.
-2. Bob owns one `AMZ` share and rests a cheaper sell limit order at **$10.00**.
-3. Carol has **$50.00** in her Stock cash account and submits a buy limit order for one share at **$11.00**.
+1. Each demo Bank account starts with $20,000. The runner verifies each Stock account and deposits $10,000 from its linked Bank card, leaving $10,000 in the Bank account. The one-share order limits stay within the buyer's demo budget. The three agents start with zero shares. The runner waits for you to click **Start agent actions**.
+2. Alice's VM buys one AMZ share directly from Stock Service at the latest AMZN market trade price. Alice's LLM chooses a virtual sell limit.
+3. Bob's VM buys one AMZ share the same way. Bob's LLM chooses a different virtual sell limit.
+4. Carol's LLM inspects both asks and chooses a one-share bid high enough for both. QuantReplay matches the cheaper ask at its resting price. The higher ask remains open, the winning seller receives cash, and Carol receives the share.
 
-Both asks are eligible at Carol's limit. QuantReplay is expected to match Bob's ask first at his resting price of **$10.00**, even though Alice placed her order earlier. Bob's share moves to Carol, Bob receives $10.00, Carol's cash falls by $10.00, and Alice's $11.00 order remains open. The browser dashboard reads live orders, fills, and holdings from Stock Service.
-
-The dashboard and `GET /api/v1/market/AMZ` show the best bid, best ask, and latest trade price from the simulated market. Prices appear as agents post orders and execute trades.
-
-At startup, H24 deploys BankBundle and EmailBundle alongside Stock Service. The private setup controller creates and verifies each Stock account, signs each agent in to its matching bank account, completes card-scoped consent, and links the debit card. It then provisions each account key to that agent's own SeedEmu node and discards its in-memory copy. An account without an active bank link cannot submit orders. Carol's $50 demo buying power is debited from her bank card into her Stock cash account; it is not minted by the controller. The dashboard shows both linked bank balance and Stock cash balance. **No agent submits an order until you click “Start agent actions.”** After your click, the controller signals Alice's VM, Bob's VM, and Carol's VM in that order. Each VM reads its own account and market state, asks the LLM for a decision, and submits through Stock Service using its own account key. The model receives only the assigned task and observations; an order is accepted only if it matches the scenario's side, quantity, and price limits. Stock Service routes accepted orders to QuantReplay over FIX.
-
-The LLM endpoint must support OpenAI-compatible Chat Completions tool calls and be reachable from the Docker runner. Configure it in `examples/H24_stock_market/.env` using [.env.example](.env.example). Keep the API key out of source control. The AMZ instrument is part of QuantReplay's bundled demo market data. H24 disables QuantReplay's random order generator for AMZ so only Alice, Bob, and Carol affect this demonstration's AMZ order book; the other bundled instruments retain their generated activity. Carol's opening Stock cash is funded by a direct debit from her linked BankBundle card.
+The dashboard's latest trade, best bid, best ask, and spread come from Alpaca. The order book, trade tape, and holdings show the simulation. H24 maps QuantReplay's bundled `AMZ` instrument to `AMZN` and disables random orders for `AMZ`. The agents' virtual order limits are chosen in each run.
 
 ## Build and run
 
@@ -37,11 +32,15 @@ Compile the SEED deployment using that environment:
 examples/H24_stock_market/.venv/bin/python -E examples/H24_stock_market/scenario.py
 ```
 
-Copy the sample model configuration and fill in your provider's key and model name:
+Configure the OpenAI-compatible model in `examples/H24_stock_market/.env`, using [the example file](.env.example) if needed. Stock Service reads Alpaca credentials from `examples/H24_stock_market/.env.market`, which is ignored by Git. Create that file with these values:
 
-```sh
-cp examples/H24_stock_market/.env.example examples/H24_stock_market/.env
+```dotenv
+STOCK_ALPACA_API_KEY=your-key-id
+STOCK_ALPACA_API_SECRET=your-secret
+STOCK_ALPACA_FEED=iex
 ```
+
+Alpaca's IEX feed covers one exchange. Set `STOCK_ALPACA_FEED=sip` when your account has access to real-time consolidated US quotes. To run the complete demonstration, the Stock API must receive a usable AMZN trade price from Alpaca. When trades are infrequent or the market is closed, the service uses the last reported trade and shows its original timestamp. The default 120-second window applies to the last successful provider check.
 
 Build and start the generated deployment:
 
@@ -51,7 +50,7 @@ docker compose up -d --build
 docker compose logs -f h24-demo-runner
 ```
 
-The setup controller waits for the FIX session and BankBundle, verifies the three Stock accounts, links each account to its agent's debit card, deposits Carol's $50 opening cash from her bank card, seeds Alice and Bob's shares, provisions each VM with its owner's account key, and waits for your approval. Open the live market dashboard at <http://localhost:8765/?live=1&symbol=AMZ>. Confirm the empty AMZ order book and each agent's bank and Stock cash balances, then click **Start agent actions** to let the three VM-hosted agents begin. The page refreshes the order book, holdings, balances, and action progress. Open the SEED Internet Map at <http://localhost:8080/> to inspect the running topology, including Alice, Bob, and Carol's nodes. Stop the deployment with `docker compose down` from the output directory.
+Wait until the runner reports `Ready`, then open the [market dashboard](http://localhost:8765/?live=1&symbol=AMZ). Confirm that it shows an AMZN price, a recent provider check, and an empty virtual book. Open the [SEED Internet Map](http://localhost:8080/pro/map) to inspect the three agent nodes, then click **Start agent actions** on the dashboard. The action log shows the system purchases and chosen limits. The trade tape shows the final virtual execution. Stop the deployment with `docker compose down` from the output directory.
 
 To restore the same initial market before another presentation, run the H24-specific reset script:
 
@@ -60,9 +59,36 @@ bash examples/H24_stock_market/reset-demo.sh
 docker compose -f examples/H24_stock_market/output/docker-compose.yml logs -f h24-demo-runner
 ```
 
-The reset removes Stock and QuantReplay demo state and reinitializes H24 Bank's customer/transaction databases and Redis from the seeded balances. It retains the Bank configuration and credentials plus Email mailbox data, refreshes and rebuilds only the H24 controller and agent images, then starts the deployment without rebuilding BankBundle or Mailu. This gives Carol the same starting bank balance and a fresh, account-scoped deposit request on each run. Wait for the runner to report `Ready`, then use **Start agent actions** on the dashboard.
+The reset removes Stock and QuantReplay demo state and reinitializes H24 Bank's customer/transaction databases and Redis from the seeded balances. It retains the Bank configuration and credentials plus Email mailbox data, refreshes and rebuilds only the H24 controller and agent images, then starts the deployment without rebuilding BankBundle or Mailu. This restores the same starting cash and zero holdings for each agent. Live prices and LLM-selected limits can differ between runs. Wait for the runner to report `Ready`, then use **Start agent actions** on the dashboard.
 
 To choose another QuantReplay image tag, pass `--quantreplay-tag TAG` to `scenario.py`. Use `--output PATH` or `--host-port PORT` to change the generated directory or dashboard port. Recompile H24 to start with a fresh temporary Stock database.
+
+## Optional direct Alpaca route on macOS
+
+The Stock Service image uses its normal network by default. The macOS relay is useful on Docker Desktop when the host's VPN or TUN proxy interferes with the Alpaca connection.
+
+From the repository root, start the relay in a terminal:
+
+```sh
+python3 examples/H24_stock_market/alpaca_relay.py --interface en0
+```
+
+The relay listens on Mac loopback at port `18790` and accepts HTTPS tunnels to `data.alpaca.markets:443`. Change `--interface` if your physical network uses another interface. The relay queries the interface's IPv4 gateway for DNS by default. Supply `--dns-server` if that gateway does not provide DNS.
+
+Add this optional setting to your local `.env.market` alongside your Alpaca credentials:
+
+```dotenv
+STOCK_ALPACA_HTTPS_PROXY=http://host.docker.internal:18790
+```
+
+If the H24 deployment is already running, recreate its Stock API to pick up this setting:
+
+```sh
+cd examples/H24_stock_market/output
+docker compose up -d --no-deps --force-recreate h24-stock-api
+```
+
+Keep the relay running while using this setting. Stock Service uses it only for Alpaca. TLS remains end-to-end between Stock Service and Alpaca. Deployments that can already reach Alpaca can leave the proxy setting blank.
 
 ## Topology
 

@@ -4,7 +4,7 @@
 
 Stock Service deploys an isolated stock market for agents in the SEED Emulator using [QuantReplay](https://github.com/Quod-Financial/quantreplay) as its exchange and matching engine. QuantReplay owns the executable order book and matching. Stock Service owns agent access, order state, cash and share ledgers, reservations, and execution settlement. Bank or Payment is the external funding rail; cash must be confirmed as deposited into a Stock Service account before it can support orders.
 
-This service does not connect orders to real-world brokers or exchanges. Real-world prices are reference data only. They do not create executable orders or liquidity in the agent market.
+Stock Service reads real-world prices from Alpaca. Agents can buy virtual shares directly from Stock Service at the latest real-market trade price. All payments, share transfers, and matching take place in the simulation.
 
 ## Architecture
 
@@ -14,14 +14,17 @@ flowchart TB
     subgraph Stock["Stock Service"]
         Identity["Stock account identity<br/>Email registration and verification<br/>Login and API key issue / revoke<br/>Resolve API key to stock account"]
         Gateway["Order gateway<br/>Authenticate API key<br/>Cash / share checks and reservations"]
-        Ledger["Orders and executions<br/>Cash and share ledgers"]
+        Ledger["Orders, executions, and system purchases<br/>Cash and share ledgers"]
+        SystemBuy["Buy from Stock Service<br/>Unlimited virtual shares at the latest real trade price"]
+        Identity --> SystemBuy
+        SystemBuy --> Ledger
         Identity --> Gateway
         Gateway --> Ledger
     end
     QuantReplay["QuantReplay<br/>FIX session<br/>Matching engine and order book<br/>Internal market data and PostgreSQL"]
     Money["Bank / Payment<br/>External deposits and withdrawals"]
     RealQuote["Real-world market data"]
-    QuoteAdapter["Read-only quote adapter<br/>Reference prices only"]
+    QuoteAdapter["Read-only Alpaca snapshot adapter<br/>Latest trade, bid, ask, and spread"]
 
     Agent -->|"Register, verify email, and log in"| Identity
     Identity -->|"Issue API key (shown once)"| Agent
@@ -31,7 +34,8 @@ flowchart TB
     Money -->|"Confirmed deposits"| Gateway
     Gateway -->|"Withdrawals"| Money
     RealQuote --> QuoteAdapter
-    QuoteAdapter -->|"Reference price only"| Gateway
+    QuoteAdapter -->|"Real-market quote"| Agent
+    QuoteAdapter -->|"Latest real trade price"| SystemBuy
 ```
 
 Agents register and verify an email address with Stock Service, then log in to issue an API key. The key is shown once; Stock Service resolves it to the owning stock account for holdings and trading requests. FIX is an internal protocol between Stock Service and QuantReplay. Agents do not connect directly to QuantReplay, so they cannot bypass the cash and share checks. The agent-facing transport is an integration with the Agent Society and is not defined by QuantReplay.
@@ -41,13 +45,17 @@ Agents register and verify an email address with Stock Service, then log in to i
 - **QuantReplay:** accepts FIX orders, maintains the order book, applies matching rules, and reports acknowledgements, fills, partial fills, rejections, and cancellations. Its market data describes the internal agent market.
 - **Stock Service:** authenticates stock accounts with email verification and revocable API keys; checks order policy; records orders and fills; and owns spendable cash and share balances. It reserves assets before sending an order and settles each confirmed fill in its ledgers. It does not implement a second matching engine.
 - **Bank / Payment:** funds or withdraws cash from Stock Service accounts through an external payment rail. Stock Service does not accept an Agent's claim that a payment succeeded as proof of a deposit.
-- **Reference quote adapter:** reads real-world prices and records their source and observation time. Reference prices may inform display or order limits, but are not inserted into QuantReplay as executable counterparties.
+- **Alpaca adapter:** reads and caches real-market trades and bid/ask snapshots. The market API publishes their source, timestamps, and freshness. System purchases use the provider’s latest trade from a recent successful data check.
 
 QuantReplay does not provide the agent cash balances or share-ownership ledger required for these checks. Its FIX execution report confirms an exchange event; Stock Service must apply that event to the cash and share records.
 
 ## Order and asset flow
 
-### Buy
+### Buy from Stock Service
+
+Call `stock.buy_from_system` or `POST /api/v1/system-purchases` with `client_order_id`, `symbol`, and `quantity`. The optional `max_unit_price` caps the price per share. Stock Service checks available cash and any required bank link, then records the receipt, debits the total rounded to USD cents, and adds shares in one database transaction. This path has unlimited virtual inventory for configured symbols and consumes no orders from QuantReplay. Reusing the same order ID and payload returns the original receipt without spending again. System purchases require a usable price from a recent successful provider check. A quiet or closed market can use its last trade price. A provider outage blocks new system purchases.
+
+### Buy from another agent
 
 1. The agent submits a buy request through the configured agent access integration.
 2. Stock Service validates the agent and order, then reserves the limit price times quantity from the Agent's Stock Service cash account.
@@ -126,7 +134,7 @@ Stock Service serves a browser dashboard at `/`. With `stock.enableHostAccess(84
 
 H24 deploys Stock Service and QuantReplay and drives a completed trade between three verified Stock accounts. Two accounts place sell orders at different prices; the third submits a crossing buy. QuantReplay matches the lower-priced ask, and the dashboard reads the resulting order book, execution, and ownership from Stock Service.
 
-The API implements stock account registration, email verification, login/API-key issuance and revocation, cash and position queries, limit order submission and cancellation, order/market queries, bank-card linking, bank-funded deposits, and admin-only initial share allocation. When at least one Bank provider is configured, an active linked bank card is required before an account can submit any order. Buy orders reserve cash in the Stock ledger; sell orders reserve shares. FIX execution reports update fills, order status, and cash/share balances idempotently. Agent bank linking and deposits use the Bank bundle's Open Banking consent and direct-debit APIs. Bank balances can be queried through an active linked-card consent. The Bank API does not expose a hold/capture/release operation, so order reserves are held in Stock Service after funds are deposited there. Withdrawal back to Bank / Payment is not implemented yet. `StockBundle.getAgentTools()` exports account, cash, bank-linking, order, and market tools.
+The API implements stock account registration, email verification, login/API-key issuance and revocation, cash and position queries, system share purchases, limit order submission and cancellation, order/market queries, bank-card linking, bank-funded deposits, and admin-only initial share allocation. When at least one Bank provider is configured, an active linked bank card is required before an account can submit any order. Buy orders reserve cash in the Stock ledger; sell orders reserve shares. FIX execution reports update fills, order status, and cash/share balances idempotently. Agent bank linking and deposits use the Bank bundle's Open Banking consent and direct-debit APIs. Bank balances can be queried through an active linked-card consent. The Bank API does not expose a hold/capture/release operation, so order reserves are held in Stock Service after funds are deposited there. Withdrawal back to Bank / Payment is not implemented yet. `StockBundle.getAgentTools()` exports account, cash, bank-linking, order, system purchase, and market tools.
 
 ### Initial API surface
 
@@ -146,6 +154,7 @@ The API implements stock account registration, email verification, login/API-key
 | `POST` | `/api/v1/cash/deposits` | Debit a linked card and credit cash only after the Bank confirms the transaction |
 | `GET` | `/api/v1/cash/deposits/{deposit_id}` | Reconcile the same idempotent deposit after a pending response |
 | `GET` | `/api/v1/positions` | List that account's share positions |
+| `POST` | `/api/v1/system-purchases` | Buy virtual shares from Stock Service at the latest real trade price |
 | `POST` | `/api/v1/orders` | Submit a limit buy or sell order after reserving assets |
 | `GET` | `/api/v1/orders` | List that account's orders |
 | `POST` | `/api/v1/orders/{client_order_id}/cancel` | Request cancellation; release reserves after exchange confirmation |
@@ -154,15 +163,24 @@ The API implements stock account registration, email verification, login/API-key
 | `POST` | `/api/v1/admin/allocations` | Assign explicit initial shares with the admin token and an idempotency ID |
 | `GET` | `/api/v1/system/status` | Report QuantReplay FIX configuration and session status |
 
-Account endpoints use `Authorization: Bearer <api-key>`. `StockBundle.getAgentTools()` exports stock account, cash, bank-card, deposit, position, order, and market tools. Agent personas need an `accounts.stock` password and a verified mailbox. For card funding, connect each Bank with `stock.connectBank(bank, alias=...)` before compilation and add that bank's Agent tools to AgentService. The Bank customer email must match the verified Stock Service account email. The linking tool retrieves the full card number inside the Agent runtime, completes bank login and consent, then sends the number only to the Bank consent endpoint. Stock Service stores the bank access and refresh tokens encrypted; it credits cash only after reconciling a completed, matching Bank debit. Initial share allocation is an explicit bootstrap operation, not a free share grant; only verified accounts are eligible. Operator cash allocation remains available for externally confirmed bootstrapped deposits.
+Account endpoints use `Authorization: Bearer <api-key>`. `StockBundle.getAgentTools()` exports stock account, cash, bank-card, deposit, position, order, system purchase, and market tools. Agent personas need an `accounts.stock` password and a verified mailbox. For card funding, connect each Bank with `stock.connectBank(bank, alias=...)` before compilation and add that bank's Agent tools to AgentService. The Bank customer email must match the verified Stock Service account email. The linking tool retrieves the full card number inside the Agent runtime, completes bank login and consent, then sends the number only to the Bank consent endpoint. Stock Service stores the bank access and refresh tokens encrypted; it credits cash only after reconciling a completed, matching Bank debit. Initial share allocation is an explicit bootstrap operation, not a free share grant; only verified accounts are eligible. Operator cash allocation remains available for externally confirmed bootstrapped deposits.
 
 ## Market data and liquidity
 
-The market API includes a `quote` with `best_bid`, `best_ask`, `last_trade_price`, and `last_trade_at`. Each value is `null` until a corresponding resting order or trade exists in the simulator.
+The market API exposes `quote` for real-market prices and `virtual_quote` for the simulated order book's best bid, best ask, and most recent agent-to-agent trade. The live dashboard uses `quote` for the main price card and displays virtual fills in the trade tape. An agent can choose any valid limit price for its own order. The external feed is read-only.
 
-The internal order book is formed by orders in the agent market. A real-world quote is a reference price, not an automatic seller or buyer. Loading an external order book as executable QuantReplay datasource data can create simulated counterparties; do not configure that behavior unless synthetic liquidity is explicitly part of the experiment.
+Set these variables in the API environment. For `StockBundle`, supply them in the Compose environment when starting the deployment.
 
-Orders only execute when compatible opposite-side liquidity exists. An agent may have enough cash to buy but still receive no fill if no agent has offered shares at a compatible price. Likewise, a sell order needs an eligible buyer.
+| Variable | Purpose |
+| --- | --- |
+| `STOCK_MARKET_SYMBOLS` | JSON mapping from simulated tickers to US market tickers, such as `{"AMZ":"AMZN"}` |
+| `STOCK_ALPACA_API_KEY` | Alpaca market-data key ID |
+| `STOCK_ALPACA_API_SECRET` | Alpaca market-data secret |
+| `STOCK_ALPACA_FEED` | `iex` for single-exchange real-time data (default), or `sip` for subscribed consolidated US quotations |
+| `STOCK_ALPACA_HTTPS_PROXY` | Optional HTTP CONNECT proxy URL for the Alpaca adapter only. Leave blank to use the deployment’s default network settings. |
+| `STOCK_MARKET_MAX_AGE_SECONDS` | Maximum age of a successful provider check. Defaults to 120 seconds. |
+
+Run the API container where it can reach `https://data.alpaca.markets`. Each quote reports timestamps for the bid/ask and the latest trade, plus the time of the last successful provider check. If the feed becomes unavailable, cached prices are marked stale. Virtual matching remains available during market-data outages or when the real market is closed.
 
 ## Security and operational boundaries
 

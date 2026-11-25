@@ -406,6 +406,17 @@ class StockBundle(ContainerBundle):
             "QUANTREPLAY_FIX_TARGET_COMP_ID": "SIM_XETRA",
         }
         api_env = {key: str(value).replace("$", "$$") for key, value in api_env.items()}
+        api_env.update({
+            name: f"${{{name}:-{default}}}"
+            for name, default in {
+                "STOCK_MARKET_SYMBOLS": "",
+                "STOCK_ALPACA_API_KEY": "",
+                "STOCK_ALPACA_API_SECRET": "",
+                "STOCK_ALPACA_FEED": "iex",
+                "STOCK_ALPACA_HTTPS_PROXY": "",
+                "STOCK_MARKET_MAX_AGE_SECONDS": "120",
+            }.items()
+        })
         set_service(
             "api",
             self._images["api"],

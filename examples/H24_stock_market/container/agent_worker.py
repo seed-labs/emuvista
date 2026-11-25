@@ -8,7 +8,7 @@ import os
 import ssl
 import time
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.request import (HTTPSHandler, ProxyHandler, Request, build_opener,
@@ -22,15 +22,19 @@ LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_BASE_URL = (os.environ.get("LLM_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
 LLM_MODEL = os.environ.get("LLM_MODEL", "")
 SYMBOL = "AMZ"
+DEMO_STOCK_CASH = Decimal(os.environ["H24_DEMO_STOCK_CASH"])
 TLS = ssl.create_default_context(cafile="/app/server.crt")
 TLS.check_hostname = False
 STOCK_HTTP = build_opener(ProxyHandler({}), HTTPSHandler(context=TLS))
 AGENT: dict | None = None
 
 ASSIGNMENTS = {
-    "Alice": ("SELL", "11.00", "Offer exactly 1 AMZ share for sale at a $11.00 limit."),
-    "Bob": ("SELL", "10.00", "Offer exactly 1 AMZ share for sale at a $10.00 limit."),
-    "Carol": ("BUY", "11.00", "Inspect the visible AMZ asks and your available cash. If safe, bid for exactly 1 share with a $11.00 limit. The exchange should choose the cheapest eligible ask."),
+    "Alice": ("SELL", "Choose a limit price for selling your one AMZ share. Use the real quote and your "
+                      "acquisition price as context for choosing your own price."),
+    "Bob": ("SELL", "Choose your own limit price for selling your one AMZ share. Pick a price different "
+                    "from the existing virtual ask so this demonstration can compare price priority."),
+    "Carol": ("BUY", "Inspect both virtual asks and choose a limit at or above both ask prices. "
+                      "Buy exactly one share. The exchange should fill against the cheaper ask."),
 }
 
 
@@ -57,23 +61,29 @@ def stable_order_id() -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, "h24-stock-market:order:" + label))
 
 
-def observe() -> dict:
+def observe(purchase: dict | None) -> dict:
     assert AGENT is not None
-    observation = {
+    return {
         "positions": request_stock("/api/v1/positions", token=AGENT["api_key"]),
+        "cash": request_stock("/api/v1/cash", token=AGENT["api_key"]),
         "visible_market": request_stock("/api/v1/market/" + SYMBOL),
-        "assignment": {"side": ASSIGNMENTS[NAME][0], "quantity": 1,
-                       "limit_price": ASSIGNMENTS[NAME][1]},
+        "acquisition": purchase,
+        "assignment": {"side": ASSIGNMENTS[NAME][0], "quantity": 1},
     }
-    if NAME == "Carol":
-        observation["cash"] = request_stock("/api/v1/cash", token=AGENT["api_key"])
-    return observation
 
 
 def llm_order(observation: dict) -> dict:
     if not LLM_API_KEY or not LLM_MODEL:
         raise RuntimeError("Configure LLM_API_KEY and LLM_MODEL in the H24 .env file")
-    side, price, assignment = ASSIGNMENTS[NAME]
+    side, assignment = ASSIGNMENTS[NAME]
+    asks = [Decimal(str(order["price"])) for order in observation["visible_market"]["orders"]
+            if order["side"] == "SELL"]
+    minimum = max(asks) if side == "BUY" and asks else Decimal("0.01")
+    maximum = Decimal(observation["cash"]["available"]) if side == "BUY" else DEMO_STOCK_CASH
+    if minimum > maximum or side == "BUY" and len(asks) != 2:
+        raise RuntimeError("The two virtual asks must be within Carol's available cash")
+    if side == "SELL":
+        assignment += f" For this exercise, the buyer can spend up to ${maximum} per share."
     messages = [
         {"role": "system", "content": (
             f"You are {NAME}, an independent agent in a controlled stock-market simulation. "
@@ -90,7 +100,7 @@ def llm_order(observation: dict) -> dict:
             "symbol": {"type": "string", "enum": [SYMBOL]},
             "side": {"type": "string", "enum": [side]},
             "quantity": {"type": "integer", "enum": [1]},
-            "limit_price": {"type": "number", "minimum": float(price), "maximum": float(price)},
+            "limit_price": {"type": "number", "minimum": float(minimum), "maximum": float(maximum)},
         }, "required": ["symbol", "side", "quantity", "limit_price"], "additionalProperties": False},
     }}
     outgoing = Request(LLM_BASE_URL + "/chat/completions", data=json.dumps({
@@ -111,12 +121,22 @@ def llm_order(observation: dict) -> dict:
         if call.get("function", {}).get("name") != "place_order":
             raise RuntimeError("Model requested an unsupported action")
         args = json.loads(call["function"].get("arguments") or "{}")
+        if not isinstance(args, dict):
+            raise ValueError("Tool arguments must be an object")
     except (KeyError, IndexError, TypeError, ValueError):
         raise RuntimeError(f"{NAME}'s model did not return a valid place_order call") from None
-    if (args.get("symbol") != SYMBOL or args.get("side") != side or args.get("quantity") != 1
-            or Decimal(str(args.get("limit_price"))) != Decimal(price)):
-        raise RuntimeError(f"{NAME}'s order did not match the assigned side, quantity, and price")
-    return args
+    try:
+        price = Decimal(str(args["limit_price"]))
+        if (not price.is_finite() or not minimum <= price <= maximum
+                or price != price.quantize(Decimal("0.01"))):
+            raise ValueError("Invalid limit price")
+    except (InvalidOperation, TypeError, ValueError, KeyError):
+        raise RuntimeError(f"{NAME}'s model must choose a limit within the budget, in cents") from None
+    if args.get("symbol") != SYMBOL or args.get("side") != side or args.get("quantity") != 1:
+        raise RuntimeError(f"{NAME}'s order did not match the assigned symbol, side, and quantity")
+    if side == "SELL" and price in asks:
+        raise RuntimeError(f"{NAME}'s model must choose a different limit from the existing ask")
+    return {**args, "limit_price": str(price)}
 
 
 def order_by_id(client_order_id: str):
@@ -140,17 +160,23 @@ def wait_for_order(client_order_id: str, *, fill=False, timeout=60):
 
 def act() -> dict:
     assert AGENT is not None
-    side, price, _ = ASSIGNMENTS[NAME]
+    side, _ = ASSIGNMENTS[NAME]
     client_order_id = stable_order_id()
     row = order_by_id(client_order_id)
+    purchase = None
+    if side == "SELL":
+        purchase = request_stock("/api/v1/system-purchases", method="POST", token=AGENT["api_key"], body={
+            "client_order_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"h24-stock-market:purchase:{NAME}")),
+            "symbol": SYMBOL, "quantity": 1, "max_unit_price": str(DEMO_STOCK_CASH),
+        })
     if row is None:
-        args = llm_order(observe())
+        args = llm_order(observe(purchase))
         request_stock("/api/v1/orders", method="POST", token=AGENT["api_key"], body={
             "client_order_id": client_order_id, "symbol": args["symbol"], "side": args["side"],
             "quantity": args["quantity"], "limit_price": args["limit_price"],
         })
     row = wait_for_order(client_order_id, fill=(NAME == "Carol"))
-    return {"agent": NAME, "side": side, "limit_price": price, "order": row}
+    return {"agent": NAME, "purchase": purchase, "order": row}
 
 
 def state() -> dict:

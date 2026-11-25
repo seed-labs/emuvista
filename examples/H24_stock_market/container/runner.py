@@ -28,6 +28,7 @@ from urllib.request import (HTTPSHandler, HTTPCookieProcessor, HTTPRedirectHandl
 API_URL = os.environ["STOCK_API_URL"].rstrip("/")
 ADMIN_TOKEN = os.environ["STOCK_ADMIN_TOKEN"]
 SYMBOL = "AMZ"
+DEMO_STOCK_CASH = Decimal(os.environ["H24_DEMO_STOCK_CASH"])
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_BASE_URL = (os.environ.get("LLM_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
 LLM_MODEL = os.environ.get("LLM_MODEL", "")
@@ -172,7 +173,7 @@ def agent_control(name: str, path: str, *, method="GET", body=None):
         headers["Content-Type"] = "application/json"
     outgoing = Request(url.rstrip("/") + path, data=payload, headers=headers, method=method)
     try:
-        with HTTP.open(outgoing, timeout=120) as response:
+        with HTTP.open(outgoing, timeout=180) as response:
             content = response.read(1024 * 1024)
     except HTTPError as error:
         raise ApiError(error.code, error.read(8192).decode(errors="replace")) from None
@@ -455,14 +456,6 @@ def stable_id(label: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, "h24-stock-market:" + label))
 
 
-def seed_assets(agents: dict[str, dict]) -> None:
-    for seller in ("Alice", "Bob"):
-        request("/api/v1/admin/allocations", method="POST", admin=True, body={
-            "allocation_id": stable_id("shares:" + seller.lower()),
-            "account_id": agents[seller]["account_id"], "symbol": SYMBOL, "quantity": 1,
-        })
-
-
 def account_request(agent: dict, path: str):
     return request(path, token=agent["api_key"])
 
@@ -473,48 +466,68 @@ def ask_agent_vm(name: str) -> dict:
     order = result.get("order")
     if not isinstance(order, dict):
         raise RuntimeError(f"{name}'s VM did not return an order result")
-    publish("action", f"{name}'s VM submitted its assigned {result.get('side', '').lower()} order.")
-    return order
+    purchase = result.get("purchase")
+    if purchase:
+        publish("purchase", f"{name} bought 1 share from Stock Service at "
+                            f"${Decimal(purchase['unit_price']):.2f} ({purchase['provider_symbol']}).")
+    publish("action", f"{name}'s VM submitted a {order['side'].lower()} limit at "
+                      f"${Decimal(order['limit_price']):.2f}.")
+    return result
+
+
+def checked_seller(name: str) -> dict:
+    result = ask_agent_vm(name)
+    if (result["order"]["status"] not in {"NEW", "FILLED"}
+            or not result.get("purchase") or result["purchase"]["quantity"] != 1):
+        raise RuntimeError(f"{name}'s system purchase or sell order was not accepted")
+    refresh_participant_balance(name)
+    return result
 
 
 def run_actions() -> None:
     try:
-        publish("alice", "Alice's turn: check her AMZ holding and decide whether to post the $11.00 ask.")
-        alice = ask_agent_vm("Alice")
-        if alice["status"] not in {"NEW", "PARTIALLY_FILLED", "FILLED"}:
-            raise RuntimeError("Alice's assigned sell order was not accepted")
+        publish("alice", "Alice's turn: buy from Stock Service at the real market price and choose an ask.")
+        alice = checked_seller("Alice")
+        publish("bob", "Bob's turn: buy from Stock Service and choose a different ask.")
+        bob = checked_seller("Bob")
+        sellers = {"Alice": alice, "Bob": bob}
+        winner, remaining = sorted(sellers, key=lambda name: Decimal(sellers[name]["order"]["limit_price"]))
+        price = Decimal(sellers[winner]["order"]["limit_price"])
+        remaining_price = Decimal(sellers[remaining]["order"]["limit_price"])
+        if price >= remaining_price:
+            raise RuntimeError("The two agents must choose different ask prices for this demonstration")
 
-        publish("bob", "Bob's turn: after Alice's ask is confirmed, check his holding and consider the $10.00 ask.")
-        bob = ask_agent_vm("Bob")
-        if bob["status"] not in {"NEW", "PARTIALLY_FILLED", "FILLED"}:
-            raise RuntimeError("Bob's assigned sell order was not accepted")
+        publish("carol", "Carol's turn: review both virtual asks and choose her buy limit.")
+        carol = ask_agent_vm("Carol")["order"]
+        if (carol["status"] != "FILLED" or Decimal(carol["average_fill_price"]) != price
+                or Decimal(carol["limit_price"]) < remaining_price):
+            raise RuntimeError("Carol's limit must make both asks eligible and fill against the lower ask")
 
-        publish("carol", "Carol's turn: review both asks and her cash, then decide whether to bid up to $11.00.")
-        carol = ask_agent_vm("Carol")
-        if carol["status"] != "FILLED" or Decimal(carol["average_fill_price"]) != Decimal("10.00"):
-            raise RuntimeError("Carol's order did not fill against Bob at the expected $10.00 price")
-
-        alice_state = agent_control("Alice", "/state")
-        bob_state = agent_control("Bob", "/state")
+        deadline = time.monotonic() + 15
+        for name, result in sellers.items():
+            sold = name == winner
+            expected_status = "FILLED" if sold else "NEW"
+            while True:
+                state = agent_control(name, "/state")
+                final = next(row for row in state["orders"] if row["id"] == result["order"]["id"])
+                if final["status"] == expected_status or time.monotonic() >= deadline:
+                    break
+                time.sleep(1)
+            holding = next((row for row in state["positions"] if row["symbol"] == SYMBOL), None)
+            quantity, reserved = (holding["quantity"], holding["reserved"]) if holding else (0, 0)
+            expected_cash = DEMO_STOCK_CASH - Decimal(result["purchase"]["total"]) + (price if sold else 0)
+            if (final["status"] != expected_status or quantity != int(not sold)
+                    or reserved != int(not sold) or Decimal(state["cash"]["balance"]) != expected_cash):
+                raise RuntimeError(f"{name}'s order, share, or cash settlement was incorrect")
         carol_state = agent_control("Carol", "/state")
-        alice_final = next(row for row in alice_state["orders"]
-                           if row["client_order_id"] == stable_id("order:alice-ask"))
-        bob_final = next(row for row in bob_state["orders"]
-                         if row["client_order_id"] == stable_id("order:bob-ask"))
-        market = request("/api/v1/market/" + SYMBOL)
-        positions = {item["account_id"]: item for item in market["positions"]}
-        if (alice_final["status"] != "NEW" or bob_final["status"] != "FILLED"
-                or positions[AGENTS["Alice"]["account_id"]]["quantity"] != 1
-                or positions[AGENTS["Alice"]["account_id"]]["reserved"] != 1
-                or positions[AGENTS["Bob"]["account_id"]]["quantity"] != 0
-                or positions[AGENTS["Bob"]["account_id"]]["reserved"] != 0
-                or positions[AGENTS["Carol"]["account_id"]]["quantity"] != 1
-                or positions[AGENTS["Carol"]["account_id"]]["reserved"] != 0
-                or Decimal(bob_state["cash"]["balance"]) != Decimal("10.00")
-                or Decimal(carol_state["cash"]["balance"]) != Decimal("40.00")):
-            raise RuntimeError("Final order, share, or cash state did not match the expected trade")
-        refresh_participant_balances()
-        publish("complete", "Trade complete: Carol bought Bob's cheaper share for $10.00; Alice's $11.00 ask remains open.")
+        holding = next((row for row in carol_state["positions"] if row["symbol"] == SYMBOL), None)
+        if (holding is None or holding["quantity"] != 1 or holding["reserved"] != 0
+                or Decimal(carol_state["cash"]["balance"]) != DEMO_STOCK_CASH - price):
+            raise RuntimeError("Carol's purchase did not settle in her cash and share ledgers")
+        for name in AGENTS:
+            refresh_participant_balance(name)
+        publish("complete", f"Carol bought {winner}'s lower-priced share for ${price:.2f}. "
+                            f"{remaining}'s ${remaining_price:.2f} ask remains open.")
         with STATE_LOCK:
             STATE["completed"] = True
     except Exception as error:
@@ -539,9 +552,10 @@ def state_snapshot() -> dict:
         }
 
 
-def refresh_participant_balances() -> None:
-    for participant in PARTICIPANTS:
-        state = agent_control(participant["name"], "/state")
+def refresh_participant_balance(name: str) -> None:
+    state = agent_control(name, "/state")
+    with STATE_LOCK:
+        participant = next(item for item in PARTICIPANTS if item["name"] == name)
         participant["bank_balance"] = state["bank_balance"]
         participant["shares"] = sum(item["quantity"] for item in state["positions"]
                                      if item["symbol"] == SYMBOL)
@@ -601,21 +615,16 @@ def prepare() -> None:
         "Bob": make_account("Bob", "bob", password),
         "Carol": make_account("Carol", "carol", password),
     }
-    bank_links = {}
     for name, account in AGENTS.items():
         publish("bank-link", f"Binding {name}'s Stock account to the matching bank debit card.")
-        bank_links[name] = link_bank_card(name, account)
-    publish("funding", "Depositing $50.00 from Carol's linked bank card into her Stock cash account.")
-    # Scope the idempotency key to this Stock account. The H24 reset can
-    # recreate Stock accounts while Bank persists, so a global fixed key
-    # could return a payment addressed to the previous Stock account.
-    deposit_id = stable_id("bank-deposit:carol:" + AGENTS["Carol"]["account_id"])
-    deposit = request("/api/v1/cash/deposits", method="POST", token=AGENTS["Carol"]["api_key"], body={
-        "id": deposit_id, "bank_link_id": bank_links["Carol"]["id"], "amount": "50.00",
-    })
-    if deposit.get("status") != "COMPLETED":
-        raise RuntimeError("Carol's bank deposit did not complete")
-    seed_assets(AGENTS)
+        link = link_bank_card(name, account)
+        publish("funding", f"Transferring ${DEMO_STOCK_CASH:.2f} from {name}'s linked bank card to Stock.")
+        deposit_id = stable_id("bank-deposit:" + name.lower() + ":" + account["account_id"])
+        deposit = request("/api/v1/cash/deposits", method="POST", token=account["api_key"], body={
+            "id": deposit_id, "bank_link_id": link["id"], "amount": str(DEMO_STOCK_CASH),
+        })
+        if deposit.get("status") != "COMPLETED":
+            raise RuntimeError(f"{name}'s bank deposit did not complete")
     PARTICIPANTS = []
     for name, account in AGENTS.items():
         positions = account_request(account, "/api/v1/positions")

@@ -1149,3 +1149,9 @@ h1 {
     width:100%
   }
 }
+
+.quote-source {
+  color: #596477;
+  font-size: 0.8125rem;
+  margin: 0.75rem 0 0;
+}

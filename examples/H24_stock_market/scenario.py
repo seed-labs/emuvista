@@ -26,6 +26,7 @@ from bundles.EmailBundle import EmailBundle
 
 HERE = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "services/StockService/stock_service/web"
+DEMO_STOCK_CASH = 10_000
 STOCK_DB_IP = "10.250.0.30"
 STOCK_API_IP = "10.250.0.31"
 QUANTREPLAY_IP = "10.250.0.32"
@@ -163,7 +164,7 @@ def main() -> None:
                 "email": agent_emails[name], "password": bank_password,
                 "emailPassword": mailbox_password,
                 "accounts": [{"id": name.lower() + "-checking", "name": name + " Checking",
-                              "product": "USDC", "balance": 100}],
+                              "product": "USDC", "balance": DEMO_STOCK_CASH * 2}],
                 "cards": [{"id": name.lower() + "-debit", "number": card_number,
                            "name": name + " Debit", "account": name.lower() + "-checking"}],
             }
@@ -212,6 +213,9 @@ def main() -> None:
         image: {args.api_image}
         restart: unless-stopped
         command: [uvicorn, stock_service.api:app, --host, 0.0.0.0, --port, '8447', --ssl-certfile, /stock-config/server.crt, --ssl-keyfile, /stock-config/server.key]
+        env_file:
+            - path: ../.env.market
+              required: false
         environment:
             STOCK_DATABASE_URL: postgresql://stock:{stock_db_password}@{STOCK_DB_IP}:5432/stock
             STOCK_ADMIN_TOKEN: {admin_token}
@@ -220,6 +224,7 @@ def main() -> None:
             STOCK_EMAIL_FROM: stock@seed.example
             STOCK_EMAIL_STARTTLS: 'false'
             STOCK_ALLOW_TEST_EMAIL_DOMAIN: 'true'
+            STOCK_MARKET_SYMBOLS: '{{"AMZ":"AMZN"}}'
             STOCK_TOKEN_ENCRYPTION_KEY: {base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()}
             STOCK_BANK_PROVIDERS: '{bank_providers}'
             QUANTREPLAY_FIX_HOST: {QUANTREPLAY_IP}
@@ -312,6 +317,7 @@ def main() -> None:
         restart: unless-stopped
         environment:
             STOCK_API_URL: {api_url}
+            H24_DEMO_STOCK_CASH: '{DEMO_STOCK_CASH}'
             STOCK_ADMIN_TOKEN: {admin_token}
             BANK_API_URL: http://{BANK_GATEWAY_IP}/api/v1
             BANK_IMAP_HOST: {EMAIL_IMAP_IP}
@@ -340,6 +346,7 @@ def main() -> None:
             AGENT_NAME: {name}
             AGENT_CONTROL_TOKEN: {worker_tokens[name]}
             STOCK_API_URL: {api_url}
+            H24_DEMO_STOCK_CASH: '{DEMO_STOCK_CASH}'
         env_file:
             - ../.env
         depends_on:

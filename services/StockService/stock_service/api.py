@@ -22,6 +22,7 @@ from .db import connection, initialize_schema
 from .fix_gateway import QuantReplayFixGateway
 from . import banking
 from .mail import EmailNotConfigured, send_verification_code
+from .market_data import AlpacaMarketData
 from .security import (
     hash_api_secret,
     hash_code,
@@ -48,6 +49,10 @@ EmailAddress = Annotated[str, BeforeValidator(_validate_email_address)]
 
 fix_gateway: QuantReplayFixGateway | None = None
 fix_report_task: asyncio.Task | None = None
+market_data = AlpacaMarketData(
+    settings.market_symbols, settings.alpaca_key, settings.alpaca_secret, settings.alpaca_feed,
+    settings.market_max_age_seconds, https_proxy=settings.alpaca_https_proxy,
+)
 
 
 @asynccontextmanager
@@ -166,6 +171,25 @@ class OrderResponse(BaseModel):
     limit_price: Decimal
     average_fill_price: Decimal | None
     status: str
+    created_at: datetime
+
+
+class SystemPurchaseRequest(BaseModel):
+    client_order_id: uuid.UUID
+    symbol: str = Field(min_length=1, max_length=16, pattern=r"^[A-Za-z0-9._-]+$")
+    quantity: int = Field(gt=0, le=2**53 - 1)
+    max_unit_price: Decimal | None = Field(default=None, gt=0, max_digits=20, decimal_places=8)
+
+
+class SystemPurchaseResponse(BaseModel):
+    client_order_id: uuid.UUID
+    symbol: str
+    quantity: int
+    unit_price: Decimal
+    total: Decimal
+    source: str
+    provider_symbol: str
+    last_trade_at: datetime
     created_at: datetime
 
 
@@ -610,13 +634,7 @@ def _process_fix_report(report) -> None:
                 ).fetchone()
                 if changed is None:
                     raise ValueError("Reserved buy cash is insufficient for the reported fill")
-                conn.execute(
-                    """INSERT INTO stock_positions (account_id, symbol, quantity)
-                       VALUES (%s, %s, %s)
-                       ON CONFLICT (account_id, symbol) DO UPDATE SET
-                         quantity = stock_positions.quantity + EXCLUDED.quantity, updated_at = now()""",
-                    (order["account_id"], order["symbol"], report.last_quantity),
-                )
+                _add_shares(conn, order["account_id"], order["symbol"], report.last_quantity)
                 conn.execute(
                     """INSERT INTO stock_cash_ledger
                          (entry_id, account_id, entry_type, balance_delta, reserved_delta,
@@ -626,6 +644,10 @@ def _process_fix_report(report) -> None:
                      order["id"], ledger_execution_id),
                 )
             else:
+                conn.execute(
+                    "UPDATE stock_cash_accounts SET balance = balance + %s, updated_at = now() WHERE account_id = %s",
+                    (trade_value, order["account_id"]),
+                )
                 changed = conn.execute(
                     """UPDATE stock_positions SET quantity = quantity - %s,
                          reserved = reserved - %s, updated_at = now()
@@ -636,10 +658,6 @@ def _process_fix_report(report) -> None:
                 ).fetchone()
                 if changed is None:
                     raise ValueError("Reserved shares are insufficient for the reported fill")
-                conn.execute(
-                    "UPDATE stock_cash_accounts SET balance = balance + %s, updated_at = now() WHERE account_id = %s",
-                    (trade_value, order["account_id"]),
-                )
                 conn.execute(
                     """INSERT INTO stock_cash_ledger
                          (entry_id, account_id, entry_type, balance_delta, order_id, execution_id)
@@ -696,6 +714,94 @@ def _order_response(row: dict) -> OrderResponse:
     )
 
 
+def _require_trading_card(conn, account_id: uuid.UUID) -> None:
+    if settings.bank_providers and conn.execute(
+        "SELECT 1 FROM stock_bank_links WHERE account_id = %s AND active LIMIT 1",
+        (account_id,),
+    ).fetchone() is None:
+        raise HTTPException(status_code=403, detail="Link a bank card before trading")
+
+
+def _add_shares(conn, account_id: uuid.UUID, symbol: str, quantity: int) -> None:
+    conn.execute(
+        """INSERT INTO stock_positions (account_id, symbol, quantity) VALUES (%s, %s, %s)
+           ON CONFLICT (account_id, symbol) DO UPDATE SET
+             quantity = stock_positions.quantity + EXCLUDED.quantity, updated_at = now()""",
+        (account_id, symbol, quantity),
+    )
+
+
+def _previous_system_purchase(conn, account_id, payload):
+    existing = conn.execute(
+        """SELECT * FROM stock_system_purchases WHERE account_id = %s AND client_order_id = %s""",
+        (account_id, payload.client_order_id),
+    ).fetchone()
+    if existing and (existing["symbol"], existing["quantity"], existing["max_unit_price"]) != (
+        payload.symbol.upper(), payload.quantity, payload.max_unit_price,
+    ):
+        raise HTTPException(status_code=409, detail="Client order ID was already used")
+    return existing
+
+
+@app.post("/api/v1/system-purchases", response_model=SystemPurchaseResponse)
+def buy_from_system(
+    payload: SystemPurchaseRequest, account: dict = Depends(authenticated_account)
+) -> SystemPurchaseResponse:
+    account_id, symbol = account["id"], payload.symbol.upper()
+    with connection() as conn:
+        existing = _previous_system_purchase(conn, account_id, payload)
+        if existing:
+            return SystemPurchaseResponse(**existing)
+        _require_trading_card(conn, account_id)
+    if symbol not in settings.market_symbols:
+        raise HTTPException(status_code=404, detail="System purchases are unavailable for this symbol")
+
+    quote = market_data.quote(symbol)
+    with connection() as conn:
+        # Lock the same account row used by limit-order reservations before spending.
+        cash = conn.execute(
+            "SELECT balance, reserved FROM stock_cash_accounts WHERE account_id = %s FOR UPDATE",
+            (account_id,),
+        ).fetchone()
+        existing = _previous_system_purchase(conn, account_id, payload)
+        if existing:
+            return SystemPurchaseResponse(**existing)
+        _require_trading_card(conn, account_id)
+        if (quote["trade_status"] != "live"
+                or (datetime.now(timezone.utc) - quote["checked_at"]).total_seconds()
+                > settings.market_max_age_seconds):
+            raise HTTPException(status_code=503, detail="A recent market data check is required")
+        price = quote["last_trade_price"]
+        if payload.max_unit_price is not None and price > payload.max_unit_price:
+            raise HTTPException(status_code=409, detail="Current price exceeds max_unit_price")
+        total = (price * payload.quantity).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if total <= 0:
+            raise HTTPException(status_code=422, detail="Purchase total is below one cent")
+        if cash is None or cash["balance"] - cash["reserved"] < total:
+            raise HTTPException(status_code=409, detail="Insufficient available cash")
+
+        receipt = conn.execute(
+            """INSERT INTO stock_system_purchases
+                 (account_id, client_order_id, symbol, quantity, unit_price, max_unit_price,
+                  total, source, provider_symbol, last_trade_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+            (account_id, payload.client_order_id, symbol, payload.quantity, price, payload.max_unit_price,
+             total, quote["source"], quote["provider_symbol"], quote["last_trade_at"]),
+        ).fetchone()
+        conn.execute(
+            "UPDATE stock_cash_accounts SET balance = balance - %s, updated_at = now() WHERE account_id = %s",
+            (total, account_id),
+        )
+        _add_shares(conn, account_id, symbol, payload.quantity)
+        conn.execute(
+            """INSERT INTO stock_cash_ledger
+                 (entry_id, account_id, entry_type, balance_delta, external_reference)
+               VALUES (%s, %s, 'BUY_FILL', %s, %s)""",
+            (uuid.uuid4(), account_id, -total, f"system-purchase:{account_id}:{payload.client_order_id}"),
+        )
+    return SystemPurchaseResponse(**receipt)
+
+
 @app.post("/api/v1/orders", response_model=OrderResponse, status_code=status.HTTP_202_ACCEPTED)
 def submit_order(payload: OrderRequest, account: dict = Depends(authenticated_account)) -> OrderResponse:
     if not fix_gateway or not fix_gateway.connected:
@@ -706,13 +812,7 @@ def submit_order(payload: OrderRequest, account: dict = Depends(authenticated_ac
     order_id = uuid.uuid4()
     fix_client_order_id = str(order_id)
     with connection() as conn:
-        if settings.bank_providers:
-            linked = conn.execute(
-                "SELECT 1 FROM stock_bank_links WHERE account_id = %s AND active LIMIT 1",
-                (account["id"],),
-            ).fetchone()
-            if linked is None:
-                raise HTTPException(status_code=403, detail="Link a bank card before trading")
+        _require_trading_card(conn, account["id"])
         conn.execute(
             "INSERT INTO stock_cash_accounts (account_id) VALUES (%s) ON CONFLICT DO NOTHING",
             (account["id"],),
@@ -831,18 +931,22 @@ def market_view(symbol: str) -> dict[str, object]:
         positions = conn.execute(
             """SELECT a.id AS account_id, a.display_name,
                       COALESCE(p.quantity, 0) AS quantity, COALESCE(p.reserved, 0) AS reserved
-               FROM stock_orders o JOIN stock_accounts a ON a.id = o.account_id
-               LEFT JOIN stock_positions p ON p.account_id = a.id AND p.symbol = o.symbol
-               WHERE o.symbol = %s GROUP BY a.id, a.display_name, p.quantity, p.reserved
+               FROM (
+                   SELECT account_id FROM stock_positions WHERE symbol = %s
+                   UNION
+                   SELECT account_id FROM stock_orders WHERE symbol = %s
+               ) participants JOIN stock_accounts a ON a.id = participants.account_id
+               LEFT JOIN stock_positions p ON p.account_id = a.id AND p.symbol = %s
                ORDER BY quantity DESC, a.id""",
-            (symbol,),
+            (symbol, symbol, symbol),
         ).fetchall()
     # Orders are sorted best price first on each side. Each trade is already
     # represented by its buy-side fill in the most recent first result.
     last_trade = fills[0] if fills else None
     return {
         "symbol": symbol,
-        "quote": {
+        "quote": market_data.quote(symbol),
+        "virtual_quote": {
             "best_bid": next((row["limit_price"] for row in orders if row["side"] == "BUY"), None),
             "best_ask": next((row["limit_price"] for row in orders if row["side"] == "SELL"), None),
             "last_trade_price": last_trade["price"] if last_trade else None,

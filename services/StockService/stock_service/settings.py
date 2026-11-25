@@ -30,8 +30,26 @@ class Settings:
     token_encryption_key: str
     allow_test_email_domain: bool
 
+    market_symbols: dict[str, str]
+    alpaca_key: str
+    alpaca_secret: str
+    alpaca_feed: str
+    alpaca_https_proxy: str
+    market_max_age_seconds: int
+
     @classmethod
     def from_environment(cls) -> "Settings":
+        market_symbols = json.loads(_env("STOCK_MARKET_SYMBOLS") or "{}")
+        if not isinstance(market_symbols, dict) or not all(
+            isinstance(ticker, str) and ticker.strip() for ticker in market_symbols.values()
+        ):
+            raise ValueError("STOCK_MARKET_SYMBOLS must map virtual symbols to Alpaca tickers")
+        feed = _env("STOCK_ALPACA_FEED", "iex").lower()
+        if feed not in {"iex", "sip"}:
+            raise ValueError("STOCK_ALPACA_FEED must be iex or sip")
+        max_age = int(_env("STOCK_MARKET_MAX_AGE_SECONDS", "120"))
+        if max_age <= 0:
+            raise ValueError("STOCK_MARKET_MAX_AGE_SECONDS must be positive")
         return cls(
             database_url=_env("STOCK_DATABASE_URL", "postgresql://stock:stock@127.0.0.1:5432/stock"),
             admin_token=_env("STOCK_ADMIN_TOKEN"),
@@ -49,6 +67,12 @@ class Settings:
             bank_providers=json.loads(_env("STOCK_BANK_PROVIDERS", "{}")),
             token_encryption_key=_env("STOCK_TOKEN_ENCRYPTION_KEY"),
             allow_test_email_domain=_env("STOCK_ALLOW_TEST_EMAIL_DOMAIN", "false").lower() in {"1", "true", "yes"},
+            market_symbols={symbol.upper(): ticker.strip().upper() for symbol, ticker in market_symbols.items()},
+            alpaca_key=_env("STOCK_ALPACA_API_KEY"),
+            alpaca_secret=_env("STOCK_ALPACA_API_SECRET"),
+            alpaca_feed=feed,
+            alpaca_https_proxy=_env("STOCK_ALPACA_HTTPS_PROXY"),
+            market_max_age_seconds=max_age,
         )
 
 
