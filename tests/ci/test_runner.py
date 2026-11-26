@@ -57,6 +57,16 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self.runner.smoke('up'), 1)
         self.assertEqual(self.result()['stages']['down']['exit_code'], 1)
 
+    def test_interrupted_startup_records_failure_and_cleans_up(self):
+        self.runner.compile = Mock(return_value=0)
+        self.runner.build = Mock(return_value=0)
+        self.runner.up = Mock(side_effect=KeyboardInterrupt)
+        self.runner.down = Mock(return_value=0)
+        with self.assertRaises(KeyboardInterrupt):
+            self.runner.smoke('up')
+        self.runner.down.assert_called_once()
+        self.assertEqual(self.result()['stages']['up']['exit_code'], 130)
+
     def test_compile_only_does_not_use_docker(self):
         self.runner.down = Mock()
         self.assertEqual(self.runner.smoke('compile'), 0)
@@ -114,7 +124,14 @@ class RunnerTests(unittest.TestCase):
         self.runner.down()
         self.assertEqual(self.runner.docker_env()['COMPOSE_PROJECT_NAME'], 'emuvista-ci-unit')
         self.assertEqual(self.runner.compose.call_args.args,
-                         ('down', 'down', '--volumes', '--remove-orphans', '--timeout', '20'))
+                         ('down', 'down', '--volumes', '--remove-orphans', '--timeout', '5'))
+        self.assertEqual(self.runner.compose.call_args.kwargs, {'timeout': 900, 'parallel': 16})
+
+    def test_cleanup_parallelism_does_not_change_build_environment(self):
+        self.runner.run_command = Mock(return_value=subprocess.CompletedProcess([], 0))
+        self.runner.compose('down', 'down', parallel=16)
+        self.assertEqual(self.runner.run_command.call_args.kwargs['env']['COMPOSE_PARALLEL_LIMIT'], '16')
+        self.assertEqual(self.runner.docker_env()['COMPOSE_PARALLEL_LIMIT'], '1')
 
     def test_snapshot_excludes_credentials(self):
         module_path = Path(__file__).resolve().parents[1] / 'run_examples.py'

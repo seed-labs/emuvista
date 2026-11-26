@@ -58,10 +58,12 @@ class ExampleRunner(InternetTestRunner):
             output.write('\nEXIT: {}\n'.format(status))
         return subprocess.CompletedProcess(cmd, status, '', '')
 
-    def compose(self, name, *arguments, timeout=120):
+    def compose(self, name, *arguments, timeout=120, parallel=1):
         compose = self.compose_file()
+        environment = self.docker_env()
+        environment['COMPOSE_PARALLEL_LIMIT'] = str(parallel)
         return self.run_command(name, ['docker', 'compose', '-f', str(compose), *arguments],
-                                cwd=compose.parent, env=self.docker_env(), timeout=timeout)
+                                cwd=compose.parent, env=environment, timeout=timeout)
 
     def configuration(self):
         result = self.compose('compose-config', 'config', '--format', 'json')
@@ -175,7 +177,7 @@ class ExampleRunner(InternetTestRunner):
             except Exception as error:
                 self.log('Could not collect {}: {}'.format(name, error))
         return self.compose('down', 'down', '--volumes', '--remove-orphans',
-                            '--timeout', '20', timeout=180).returncode
+                            '--timeout', '5', timeout=900, parallel=16).returncode
 
     def smoke(self, stage):
         """Compile failure never triggers Docker cleanup of an old deployment."""
@@ -189,6 +191,9 @@ class ExampleRunner(InternetTestRunner):
                 results[name] = {'exit_code': status, 'seconds': round(time.monotonic() - before, 2)}
                 if status or name == stage:
                     break
+        except KeyboardInterrupt:
+            results[name] = {'exit_code': 130, 'error': 'Interrupted'}
+            raise
         except Exception as error:
             results[name] = {'exit_code': 1, 'error': str(error)}
             self.log(str(error))

@@ -66,6 +66,8 @@ Startup passes when every application and network container stays running for
 code 0. SEED's build-only dummy services are excluded. Unexpected exits and
 startup timeouts fail the test. After startup is attempted, success and failure
 both collect diagnostics and run project-scoped `down --volumes --remove-orphans`.
+Cleanup stops containers in parallel so large topologies do not exceed the
+cleanup timeout; image builds remain sequential.
 Images and build caches are retained. This checks container readiness; services
 without health checks need separate business tests to establish functionality.
 
@@ -84,7 +86,7 @@ functional test programs are run.
 Use **Actions → Example smoke tests → Run workflow** to choose:
 
 - `example`: one code or `all`.
-- `seedemu-ref`: a SeedEmu branch, tag, or commit; defaults to `release`.
+- `seedemu-ref`: a SeedEmu branch, tag, or commit; defaults to `master`.
 
 Large worlds, especially H98, need substantial memory, disk space, and build
 time. Full lifecycle runs have a 180-minute job limit. Use a SeedEmu ref containing
