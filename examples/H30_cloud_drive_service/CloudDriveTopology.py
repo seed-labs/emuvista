@@ -161,7 +161,7 @@ def compile_topology(output: Path = OUTPUT) -> None:
             "COPY --from=smallstep/step-cli:0.26.1 /usr/local/bin/step /usr/local/bin/step"
         )
     emulator.compile(
-        Docker(platform=Platform.AMD64, internetMapEnabled=False),
+        Docker(platform=Platform.AMD64),
         str(output), override=True,
     )
     print(f"CloudDrive topology compiled to {output}")

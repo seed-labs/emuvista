@@ -1,0 +1,19 @@
+id: h22
+runner: internet
+script: bank.py
+compile:
+  standard_args: false
+  args:
+  - --output
+  - output
+  output: output
+  expected:
+  - output/docker-compose.yml
+  timeout: 600
+build:
+  images:
+  - bank
+  timeout: 3600
+runtime:
+  compose: output/docker-compose.yml
+  timeout: 1200

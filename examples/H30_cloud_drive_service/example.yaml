@@ -1,0 +1,26 @@
+id: h30
+runner: internet
+script: CloudDriveTopology.py
+compile:
+  standard_args: false
+  args:
+  - --output
+  - output
+  output: output
+  expected:
+  - output/docker-compose.yml
+  timeout: 600
+build:
+  images: []
+  timeout: 3600
+  commands:
+  - - docker
+    - build
+    - -f
+    - docker_images/deepseek-harness/Dockerfile.dsh-runtime
+    - -t
+    - seedemu-dsh-runtime:0.2.0-rc.2
+    - docker_images/deepseek-harness
+runtime:
+  compose: output/docker-compose.yml
+  timeout: 1200

@@ -233,3 +233,6 @@ node_modules/
 .gradle/
 .angular/
 .quasar/
+
+# Example smoke test logs and reports
+ci-artifacts/
